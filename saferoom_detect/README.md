@@ -11,4 +11,4 @@ Some saferooms work less reliably. I will make a fix for them later:
 - Death Toll 3/4 church saferoom: it has a two-part non-boxy shape
 - Dead Air 1 greenhouse saferoom: it extends an upper area over a non-saferoom lower area
 
-Future updates will make the ugly switch() statement go away -- I'll make a saferoominfo.txt + keyvalues setup soon.
+Uses sourcemod/configs/saferoominfo.txt for coordinates. (So make sure you stick that in the right place!)
