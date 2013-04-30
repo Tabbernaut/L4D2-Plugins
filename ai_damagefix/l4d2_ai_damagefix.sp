@@ -41,6 +41,9 @@ new     bool:           bIsPouncing[MAXPLAYERS+1];                              
     Changelog
     ---------
         
+        1.0.1
+            - Fixed incorrect bracketing that caused error spam.
+        
         1.0.0
             - Blocked AI scratches-while-stumbling from doing any damage.
             - Replaced clunky charger tracking with simple netprop check.
@@ -58,7 +61,7 @@ public Plugin:myinfo =
     name = "Bot SI skeet/level damage fix",
     author = "Tabun",
     description = "Makes AI SI take (and do) damage like human SI.",
-    version = "1.0.0",
+    version = "1.0.1",
     url = "nope"
 }
 
@@ -225,7 +228,7 @@ public Event_AbilityUse(Handle:event, const String:name[], bool:dontBroadcast)
 
 public Action: Timer_GroundTouch(Handle:timer, any:client)
 {
-    if ((IsClientAndInGame(client) && IsGrounded(client)) || !IsPlayerAlive(client))
+    if (IsClientAndInGame(client) && (IsGrounded(client)) || !IsPlayerAlive(client))
     {
         // Reached the ground or died in mid-air
         bIsPouncing[client] = false;
