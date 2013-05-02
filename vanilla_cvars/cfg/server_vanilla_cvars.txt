@@ -1,0 +1,16 @@
+"DefaultCVars"
+{   
+    "sm_cvar"
+    {
+        "nb_update_frequency"                   "0"
+
+        "z_ghost_delay_max"                     "19"
+        "z_ghost_delay_min"                     "19"
+
+	"ammo_shotgun_max" 			"80"
+	"versus_tank_flow_team_variation" 	"0"
+
+	"z_leap_interval_post_incap" 		"15"
+	"z_jockey_control_variance" 		"0.15"
+    }
+}
