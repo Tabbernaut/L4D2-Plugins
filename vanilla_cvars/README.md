@@ -23,14 +23,16 @@ Put the *server_vanilla_cvars.txt* in /cfg/ and add any cvars you want only for 
 
 The syntaxis for that file is simple:
 
+<pre>
 "DefaultCVars"
 {
     "sm_cvar"
     {
-	"<variable name>" "<value>"
-	<etc>
+	"[variable name]" "[value]"
+	[etc]
     }
 }
+</pre>
 
 Just add variable names and values. Remember to use correct KeyValue syntax for this. Only CVars can be added, not commands.
 
