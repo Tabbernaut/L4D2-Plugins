@@ -12,12 +12,14 @@
 
     To Do
     =========
-        ?
+
         
         
     Changelog
     =========
-        
+        0.0.2
+            - added sm_bonus command to display bonus
+            
         0.0.1
             - optional simple tank/witch kill bonus (off by default).
             - optional bonus reporting on round end.
@@ -33,7 +35,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.1",
+    version = "0.0.2",
     url = ""
 }
 
@@ -103,8 +105,34 @@ public OnPluginStart()
     
     HookEvent("door_close",                 Event_DoorClose,            EventHookMode_PostNoCopy);
     HookEvent("finale_vehicle_leaving",     Event_FinaleVehicleLeaving, EventHookMode_PostNoCopy);
-    
+ 
+    // Chat cleaning
+    AddCommandListener(Command_Say, "say");
+    AddCommandListener(Command_Say, "say_team");
+
+    RegConsoleCmd("sm_bonus", Cmd_Bonus, "Prints the current extra bonus(es) for this round.");
 }
+
+public Action: Cmd_Bonus(client, args)
+{
+    DisplayBonus(client);
+    return Plugin_Handled;
+}
+
+public Action:Command_Say(client, const String:command[], args)
+{
+    if (IsChatTrigger())
+    {
+        decl String:sMessage[MAX_NAME_LENGTH];
+        GetCmdArg(1, sMessage, sizeof(sMessage));
+
+        if (StrEqual(sMessage, "!bonus")) return Plugin_Handled;
+        else if (StrEqual (sMessage, "!sm_bonus")) return Plugin_Handled;
+    }
+
+    return Plugin_Continue;
+}
+
 
 public OnPluginEnd()
 {
