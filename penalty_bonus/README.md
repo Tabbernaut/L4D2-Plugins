@@ -19,8 +19,8 @@ Usage
 The plugin offers the option to give a simple static bonus for killing tanks and witches. These are disabled by default.
 Set the following to anything but 0 to enable these.
 <pre>
-	sm_pbonus_tank <value>
-	sm_pbonus_witch <value>
+	sm_pbonus_tank [value]
+	sm_pbonus_witch [value]
 </pre>
 
 The plugin has built-in end-round reporting, on by default, which can be disabled with:
