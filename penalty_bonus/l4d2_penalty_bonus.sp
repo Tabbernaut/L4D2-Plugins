@@ -17,6 +17,9 @@
     Changelog
     =========
         
+        0.0.4
+            - fixed for config-set custom defib penalty values.
+            
         0.0.3
             - optional report of changes to bonus as they happen.
             - removed sm_bonus command effects when display mode is off.
@@ -40,7 +43,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.3",
+    version = "0.0.4",
     url = ""
 }
 
@@ -50,6 +53,8 @@ new     Handle:         g_hCvarDoDisplay                                    = IN
 new     Handle:         g_hCvarReportChange                                 = INVALID_HANDLE;
 new     Handle:         g_hCvarBonusTank                                    = INVALID_HANDLE;
 new     Handle:         g_hCvarBonusWitch                                   = INVALID_HANDLE;
+
+new     bool:           g_bFirstMapStartDone                                = false;                // so we can set the config-set defib penalty
 
 new     Handle:         g_hCvarDefibPenalty                                 = INVALID_HANDLE;
 new                     g_iOriginalPenalty                                  = 25;                   // original defib penalty
@@ -114,7 +119,6 @@ public OnPluginStart()
 {
     // store original penalty
     g_hCvarDefibPenalty = FindConVar("vs_defib_penalty");
-    g_iOriginalPenalty = GetConVarInt(g_hCvarDefibPenalty);
 
     // cvars
     g_hCvarDoDisplay = CreateConVar(    "sm_pbonus_display",        "1",    "Whether to display bonus at round-end and with !bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
@@ -136,32 +140,8 @@ public OnPluginStart()
     AddCommandListener(Command_Say, "say_team");
 
     RegConsoleCmd("sm_bonus", Cmd_Bonus, "Prints the current extra bonus(es) for this round.");
-}
-
-public Action: Cmd_Bonus(client, args)
-{
-    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
     
-    DisplayBonus(client);
-    return Plugin_Handled;
 }
-
-public Action:Command_Say(client, const String:command[], args)
-{
-    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
-    
-    if (IsChatTrigger())
-    {
-        decl String:sMessage[MAX_NAME_LENGTH];
-        GetCmdArg(1, sMessage, sizeof(sMessage));
-
-        if (StrEqual(sMessage, "!bonus")) return Plugin_Handled;
-        else if (StrEqual (sMessage, "!sm_bonus")) return Plugin_Handled;
-    }
-
-    return Plugin_Continue;
-}
-
 
 public OnPluginEnd()
 {
@@ -170,6 +150,13 @@ public OnPluginEnd()
 
 public OnMapStart()
 {
+    // save original defib penalty setting
+    if (!g_bFirstMapStart)
+    {
+        g_iOriginalPenalty = GetConVarInt(g_hCvarDefibPenalty);
+        g_bFirstMapStart = true;
+    }
+    
     SetConVarInt(g_hCvarDefibPenalty, g_iOriginalPenalty);
     
     g_bRoundOver[0] = false;
@@ -194,6 +181,30 @@ public OnRoundEnd()
     {
         DisplayBonus();
     }
+}
+
+public Action: Cmd_Bonus(client, args)
+{
+    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
+    
+    DisplayBonus(client);
+    return Plugin_Handled;
+}
+
+public Action:Command_Say(client, const String:command[], args)
+{
+    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
+    
+    if (IsChatTrigger())
+    {
+        decl String:sMessage[MAX_NAME_LENGTH];
+        GetCmdArg(1, sMessage, sizeof(sMessage));
+
+        if (StrEqual(sMessage, "!bonus")) return Plugin_Handled;
+        else if (StrEqual (sMessage, "!sm_bonus")) return Plugin_Handled;
+    }
+
+    return Plugin_Continue;
 }
 
 
