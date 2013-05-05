@@ -28,3 +28,7 @@ The plugin has built-in end-round reporting, on by default, which can be disable
 	sm_pbonus_display 0
 </pre>
 
+The plugin also reports changes to the current bonus, which can be disabled with:
+<pre>
+	sm_pbonus_reportchanges 0
+</pre>
