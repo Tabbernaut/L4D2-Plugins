@@ -12,13 +12,18 @@
 
     To Do
     =========
-
         
         
     Changelog
     =========
+        
+        0.0.3
+            - optional report of changes to bonus as they happen.
+            - removed sm_bonus command effects when display mode is off.
+            - fixed report error.
+        
         0.0.2
-            - added sm_bonus command to display bonus
+            - added sm_bonus command to display bonus.
             
         0.0.1
             - optional simple tank/witch kill bonus (off by default).
@@ -35,13 +40,14 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.2",
+    version = "0.0.3",
     url = ""
 }
 
 
 
 new     Handle:         g_hCvarDoDisplay                                    = INVALID_HANDLE;
+new     Handle:         g_hCvarReportChange                                 = INVALID_HANDLE;
 new     Handle:         g_hCvarBonusTank                                    = INVALID_HANDLE;
 new     Handle:         g_hCvarBonusWitch                                   = INVALID_HANDLE;
 
@@ -50,7 +56,7 @@ new                     g_iOriginalPenalty                                  = 25
 
 new     bool:           g_bRoundOver[2]                                     = {false,...};          // tank/witch deaths don't count after this true
 new                     g_iDefibsUsed[2]                                    = {0,...};              // defibs used this round
-new                     g_iCurrentBonus                                     = 0;                    // bonus to be added when this round ends
+new                     g_iBonus[2]                                         = {0,...};              // bonus to be added when this round ends
 
 
 
@@ -61,26 +67,44 @@ new                     g_iCurrentBonus                                     = 0;
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
     CreateNative("PBONUS_GetRoundBonus", Native_GetRoundBonus);
+    CreateNative("PBONUS_ResetRoundBonus", Native_ResetRoundBonus);
     CreateNative("PBONUS_SetRoundBonus", Native_SetRoundBonus);
     CreateNative("PBONUS_AddRoundBonus", Native_AddRoundBonus);
+    CreateNative("PBONUS_GetDefibsUsed", Native_GetDefibsUsed);
+    
     return APLRes_Success;
 }
 
 public Native_GetRoundBonus(Handle:plugin, numParams)
 {
-    return _: g_iCurrentBonus;
+    return _: g_iBonus[RoundNum()];
 }
+
+public Native_ResetRoundBonus(Handle:plugin, numParams)
+{
+    g_iBonus[RoundNum()] = 0;
+}
+
 public Native_SetRoundBonus(Handle:plugin, numParams)
 {
     new bonus = GetNativeCell(1);
-    g_iCurrentBonus = bonus;
+    g_iBonus[RoundNum()] = bonus;
+    
+    if (GetConVarBool(g_hCvarReportChange)) { ReportChange(0, -1, true); }
 }
+
 public Native_AddRoundBonus(Handle:plugin, numParams)
 {
     new bonus = GetNativeCell(1);
-    g_iCurrentBonus += bonus;
+    g_iBonus[RoundNum()] += bonus;
+    
+    if (GetConVarBool(g_hCvarReportChange)) { ReportChange(bonus); }
 }
 
+public Native_GetDefibsUsed(Handle:plugin, numParams)
+{
+    return _: g_iDefibsUsed[RoundNum()];
+}
 
 
 // Init and round handling
@@ -93,9 +117,10 @@ public OnPluginStart()
     g_iOriginalPenalty = GetConVarInt(g_hCvarDefibPenalty);
 
     // cvars
-    g_hCvarDoDisplay = CreateConVar(    "sm_pbonus_display",    "1",    "Whether to display bonus at round-end.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-    g_hCvarBonusTank = CreateConVar(    "sm_pbonus_tank",       "0",    "Give this much bonus when a tank is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
-    g_hCvarBonusWitch = CreateConVar(   "sm_pbonus_witch",      "0",    "Give this much bonus when a witch is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
+    g_hCvarDoDisplay = CreateConVar(    "sm_pbonus_display",        "1",    "Whether to display bonus at round-end and with !bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+    g_hCvarReportChange = CreateConVar( "sm_pbonus_reportchanges",  "1",    "Whether to report changes when they are made to the current bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+    g_hCvarBonusTank = CreateConVar(    "sm_pbonus_tank",           "0",    "Give this much bonus when a tank is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
+    g_hCvarBonusWitch = CreateConVar(   "sm_pbonus_witch",          "0",    "Give this much bonus when a witch is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
     
     // hook events
     HookEvent("defibrillator_used",         Event_DefibUsed,            EventHookMode_PostNoCopy);
@@ -115,12 +140,16 @@ public OnPluginStart()
 
 public Action: Cmd_Bonus(client, args)
 {
+    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
+    
     DisplayBonus(client);
     return Plugin_Handled;
 }
 
 public Action:Command_Say(client, const String:command[], args)
 {
+    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
+    
     if (IsChatTrigger())
     {
         decl String:sMessage[MAX_NAME_LENGTH];
@@ -154,12 +183,12 @@ public OnRoundStart()
     // reset
     SetConVarInt(g_hCvarDefibPenalty, g_iOriginalPenalty);
     
-    g_iCurrentBonus = 0;
+    g_iBonus[RoundNum()] = 0;
 }
 
 public OnRoundEnd()
 {
-    g_bRoundOver[GameRules_GetProp("m_bInSecondHalfOfRound")] = true;
+    g_bRoundOver[RoundNum()] = true;
     
     if (GetConVarBool(g_hCvarDoDisplay))
     {
@@ -212,16 +241,18 @@ public Event_FinaleVehicleLeaving(Handle:event, const String:name[], bool:dontBr
 
 public TankKilled()
 {
-    if ( GetConVarInt(g_hCvarBonusTank) == 0 || g_bRoundOver[GameRules_GetProp("m_bInSecondHalfOfRound")] ) { return; }
+    if ( GetConVarInt(g_hCvarBonusTank) == 0 || g_bRoundOver[RoundNum()] ) { return; }
     
-    g_iCurrentBonus += GetConVarInt(g_hCvarBonusTank);
+    g_iBonus[RoundNum()] += GetConVarInt(g_hCvarBonusTank);
+    ReportChange( GetConVarInt(g_hCvarBonusTank) );
 }
 
 public Action: Event_WitchKilled(Handle:event, const String:name[], bool:dontBroadcast)
 {
-    if ( GetConVarInt(g_hCvarBonusWitch) == 0 || g_bRoundOver[GameRules_GetProp("m_bInSecondHalfOfRound")] ) { return Plugin_Continue; }
+    if ( GetConVarInt(g_hCvarBonusWitch) == 0 || g_bRoundOver[RoundNum()] ) { return Plugin_Continue; }
     
-    g_iCurrentBonus += GetConVarInt(g_hCvarBonusWitch);
+    g_iBonus[RoundNum()] += GetConVarInt(g_hCvarBonusWitch);
+    ReportChange( GetConVarInt(g_hCvarBonusWitch) );
     
     return Plugin_Continue;
 }
@@ -245,7 +276,7 @@ public SetBonus()
 public CalculateBonus()
 {
     // negative = actual bonus, otherwise it is a penalty
-    return ( g_iOriginalPenalty * g_iDefibsUsed[GameRules_GetProp("m_bInSecondHalfOfRound")] ) - g_iCurrentBonus;
+    return ( g_iOriginalPenalty * g_iDefibsUsed[RoundNum()] ) - g_iBonus[RoundNum()];
 }
 
 stock DisplayBonus(client=-1)
@@ -253,7 +284,7 @@ stock DisplayBonus(client=-1)
     new String:msgPartHdr[48];
     new String:msgPartBon[48];
     
-    for (new round = 0; round <= GameRules_GetProp("m_bInSecondHalfOfRound"); round++)
+    for (new round = 0; round <= RoundNum(); round++)
     {
         if (g_bRoundOver[round]) {
             Format(msgPartHdr, sizeof(msgPartHdr), "Round \x05%i\x01 extra bonus", round+1);
@@ -261,10 +292,10 @@ stock DisplayBonus(client=-1)
             Format(msgPartHdr, sizeof(msgPartHdr), "Current extra bonus");
         }
         
-        Format(msgPartBon, sizeof(msgPartBon), "\x04%4d\x01", g_iCurrentBonus);
+        Format(msgPartBon, sizeof(msgPartBon), "\x04%4d\x01", g_iBonus[RoundNum()]);
 
         if (g_iDefibsUsed[round]) {
-            Format(msgPartBon, sizeof(msgPartBon), "%s (- \x04%d\x01 defib penalty)", msgPartBon, g_iOriginalPenalty * g_iDefibsUsed[GameRules_GetProp("m_bInSecondHalfOfRound")] );
+            Format(msgPartBon, sizeof(msgPartBon), "%s (- \x04%d\x01 defib penalty)", msgPartBon, g_iOriginalPenalty * g_iDefibsUsed[RoundNum()] );
         }
         
         if (client == -1) {
@@ -277,6 +308,30 @@ stock DisplayBonus(client=-1)
     }
 }
 
+stock ReportChange(bonusChange, client=-1, absoluteSet=false)
+{
+    if (bonusChange == 0 && !absoluteSet) { return; }
+    
+    // report bonus to all
+    new String:msgPartBon[48];
+    
+    if (absoluteSet) {  // set to a specific value
+        Format(msgPartBon, sizeof(msgPartBon), "Extra bonus set to: \x04%i\x01", g_iBonus[RoundNum()]);
+    } else {
+        Format(msgPartBon, sizeof(msgPartBon), "Extra bonus change: %s\x04%i\x01",
+                (bonusChange > 0) ? "\x04+\x01" : "\x03-\x01",
+                bonusChange
+            );
+    }
+    
+    if (client == -1) {
+        PrintToChatAll("\x01%s", msgPartBon);
+    } else if (client) {
+        PrintToChat(client, "\x01%s", msgPartBon);
+    } else {
+        PrintToServer("\x01%s", msgPartBon);
+    }
+}
 
 
 // Defib tracking
@@ -284,12 +339,18 @@ stock DisplayBonus(client=-1)
 
 public Event_DefibUsed(Handle:event, const String:name[], bool:dontBroadcast)
 {
-    g_iDefibsUsed[GameRules_GetProp("m_bInSecondHalfOfRound")]++;
+    g_iDefibsUsed[RoundNum()]++;
 }
 
 
 // Support functions
 // -----------------
+
+RoundNum()
+{
+    return GameRules_GetProp("m_bInSecondHalfOfRound");
+}
+
 /*
 public PrintDebug(const String:Message[], any:...)
 {
