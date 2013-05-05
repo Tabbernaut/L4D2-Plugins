@@ -4,20 +4,19 @@
 #include <sdktools>
 #include <left4downtown>
 
-#define MAX_CONFIG_LEN          128
 #define MAX_VARLENGTH           64
 #define MAX_VALUELENGTH         128
 #define MAX_SETVARS             64
 
-#define DEBUG                   true
-
-
+#define DEBUG                   false
 
 
 /*
+
     Simply reads and applies a bunch of cvar settings
     so it can be done dependent on this plugin being
     loaded, instead of cluttering up server.cfg
+    
  */
 
 new const String: g_sKeyValues[]        = "../../cfg/server_vanilla_cvars.txt";
@@ -25,14 +24,14 @@ new const String: g_sKeyValues[]        = "../../cfg/server_vanilla_cvars.txt";
 new const String: g_sCvarKeySM[]        = "sm_cvar";
 
 
-new Handle: g_hKvOrig = INVALID_HANDLE;         // kv to store original values in
-
+new     Handle:         g_hKvOrig                                           = INVALID_HANDLE;       // kv to store original values in
+new     bool:           g_bFirstMapStartDone                                = false;                // so we can store the defaults at the right time
 
 
 public Plugin:myinfo = {
     name        = "L4D(2) default vanilla server cvars loader.",
     author      = "Tabun",
-    version     = "0.0.1",
+    version     = "0.0.3",
     description = "Loads cvars for vanilla, so they don't have to be in server.cfg."
 };
 
@@ -41,7 +40,6 @@ public OnPluginStart()
 {
     // prepare KV for saving old states
     g_hKvOrig = CreateKeyValues("VanillaCvars_Orig");     // store original values
-    GetThisServerPrefs();
 }
 
 public OnPluginEnd()
@@ -49,6 +47,16 @@ public OnPluginEnd()
     ResetServerPrefs();
     if (g_hKvOrig != INVALID_HANDLE) { CloseHandle(g_hKvOrig); }
 }
+
+public OnMapStart()
+{
+    if (!g_bFirstMapStartDone)
+    {
+        g_bFirstMapStartDone = true;
+        GetThisServerPrefs();
+    }
+}
+
 
 public GetThisServerPrefs()
 {
@@ -139,11 +147,19 @@ public GetThisServerPrefs()
                         iNumChanged++;
                         KvSetString(g_hKvOrig, tmpKey, tmpValueOld);
                         
+                        // cheat flags change
+                        new saveFlags = GetConVarFlags(hConVar);
+                        new tmpFlags = saveFlags;
+                        tmpFlags &= ~FCVAR_CHEAT;
+                        tmpFlags &= ~FCVAR_SPONLY;
+                        SetConVarFlags(hConVar, tmpFlags);
+                        
                         // apply the new
                         SetConVarString(hConVar, tmpValueNew);
-                        //if (iConVarFlags & FCVAR_CHEAT) {
-                            
-                        //}
+                        
+                        // reset flags
+                        SetConVarFlags(hConVar, saveFlags);
+                        
                     }
                 }
             } else {
@@ -206,8 +222,19 @@ public ResetServerPrefs()
                     // read, save and set value
                     if (!StrEqual(tmpValueOld,"[:none:]")) {
                         
+                        // cheat flags change
+                        new saveFlags = GetConVarFlags(hConVar);
+                        new tmpFlags = saveFlags;
+                        tmpFlags &= ~FCVAR_CHEAT;
+                        tmpFlags &= ~FCVAR_SPONLY;
+                        SetConVarFlags(hConVar, tmpFlags);
+                        
                         // reset the old
                         SetConVarString(hConVar, tmpValueOld);
+                        
+                        // reset flags
+                        SetConVarFlags(hConVar, saveFlags);
+                        
                         PrintToServer("[vcv] cvar value reset to original: [%s] => [%s])", tmpKey, tmpValueOld);
                     }
                 } else {
