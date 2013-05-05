@@ -16,7 +16,7 @@ The trick used is to set the defib penalty (vs_defib_penalty) to a negative valu
 
 Usage
 -----
-The plugin offers the option to give a simple static bonus for killing tanks and witches. These are disabled by default.
+The plugin offers the option to give a simple static bonuses for killing tanks and witches. They are disabled by default.
 Set the following to anything but 0 to enable these.
 <pre>
 	sm_pbonus_tank [value]
