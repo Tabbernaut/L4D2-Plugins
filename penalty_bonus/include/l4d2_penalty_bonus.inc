@@ -8,7 +8,7 @@
 native PBONUS_GetRoundBonus();
 
 // Resets the bonus for the current round to 0 (does not do a change-report!)
-native PBONUS_SetRoundBonus();
+native PBONUS_ResetRoundBonus();
 
 // Set the bonus for the current round
 native PBONUS_SetRoundBonus(bonus);
