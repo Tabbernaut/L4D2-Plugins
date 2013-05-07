@@ -16,7 +16,11 @@
         
     Changelog
     =========
-        
+        0.0.5
+            - fixed incorrect reporting on round end (twice the 2nd team's score).
+            - added enable cvar.
+            - avoided messing with bonus unless it's really necessary.
+            
         0.0.4
             - fixed for config-set custom defib penalty values.
             
@@ -43,12 +47,13 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.4",
+    version = "0.0.5",
     url = ""
 }
 
 
 
+new     Handle:         g_hCvarEnabled                                      = INVALID_HANDLE;
 new     Handle:         g_hCvarDoDisplay                                    = INVALID_HANDLE;
 new     Handle:         g_hCvarReportChange                                 = INVALID_HANDLE;
 new     Handle:         g_hCvarBonusTank                                    = INVALID_HANDLE;
@@ -121,6 +126,7 @@ public OnPluginStart()
     g_hCvarDefibPenalty = FindConVar("vs_defib_penalty");
 
     // cvars
+    g_hCvarEnabled = CreateConVar(      "sm_pbonus_enable",         "1",    "Whether the penalty-bonus system is enabled.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
     g_hCvarDoDisplay = CreateConVar(    "sm_pbonus_display",        "1",    "Whether to display bonus at round-end and with !bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
     g_hCvarReportChange = CreateConVar( "sm_pbonus_reportchanges",  "1",    "Whether to report changes when they are made to the current bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
     g_hCvarBonusTank = CreateConVar(    "sm_pbonus_tank",           "0",    "Give this much bonus when a tank is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
@@ -140,7 +146,6 @@ public OnPluginStart()
     AddCommandListener(Command_Say, "say_team");
 
     RegConsoleCmd("sm_bonus", Cmd_Bonus, "Prints the current extra bonus(es) for this round.");
-    
 }
 
 public OnPluginEnd()
@@ -151,10 +156,10 @@ public OnPluginEnd()
 public OnMapStart()
 {
     // save original defib penalty setting
-    if (!g_bFirstMapStart)
+    if (!g_bFirstMapStartDone)
     {
         g_iOriginalPenalty = GetConVarInt(g_hCvarDefibPenalty);
-        g_bFirstMapStart = true;
+        g_bFirstMapStartDone = true;
     }
     
     SetConVarInt(g_hCvarDefibPenalty, g_iOriginalPenalty);
@@ -177,7 +182,7 @@ public OnRoundEnd()
 {
     g_bRoundOver[RoundNum()] = true;
     
-    if (GetConVarBool(g_hCvarDoDisplay))
+    if (GetConVarBool(g_hCvarEnabled) && GetConVarBool(g_hCvarDoDisplay))
     {
         DisplayBonus();
     }
@@ -185,7 +190,7 @@ public OnRoundEnd()
 
 public Action: Cmd_Bonus(client, args)
 {
-    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
+    if (!GetConVarBool(g_hCvarEnabled) || !GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
     
     DisplayBonus(client);
     return Plugin_Handled;
@@ -193,7 +198,7 @@ public Action: Cmd_Bonus(client, args)
 
 public Action:Command_Say(client, const String:command[], args)
 {
-    if (!GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
+    if (!GetConVarBool(g_hCvarEnabled) || !GetConVarBool(g_hCvarDoDisplay)) { return Plugin_Continue; }
     
     if (IsChatTrigger())
     {
@@ -213,6 +218,8 @@ public Action:Command_Say(client, const String:command[], args)
 
 public Event_DoorClose(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if (!GetConVarBool(g_hCvarEnabled)) { return; }
+        
     if (GetEventBool(event, "checkpoint"))
     {
         SetBonus();
@@ -221,6 +228,8 @@ public Event_DoorClose(Handle:event, const String:name[], bool:dontBroadcast)
 
 public Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if (!GetConVarBool(g_hCvarEnabled)) { return; }
+    
     new client = GetClientOfUserId(GetEventInt(event, "userid"));
 
     if (client && IsSurvivor(client))
@@ -235,6 +244,8 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
 
 public Event_FinaleVehicleLeaving(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if (!GetConVarBool(g_hCvarEnabled)) { return; }
+    
     for (new i = 1; i < MaxClients; i++)
     {
         if (IsClientInGame(i) && IsSurvivor(i) && (IsIncapacitated(i) || IsHangingFromLedge(i)))
@@ -260,6 +271,7 @@ public TankKilled()
 
 public Action: Event_WitchKilled(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if (!GetConVarBool(g_hCvarEnabled)) { return Plugin_Continue; }
     if ( GetConVarInt(g_hCvarBonusWitch) == 0 || g_bRoundOver[RoundNum()] ) { return Plugin_Continue; }
     
     g_iBonus[RoundNum()] += GetConVarInt(g_hCvarBonusWitch);
@@ -274,9 +286,17 @@ public Action: Event_WitchKilled(Handle:event, const String:name[], bool:dontBro
 
 public SetBonus()
 {
+    // only change anything if there's a bonus to set at all
+    if (g_iBonus[RoundNum()] == 0) {
+        SetConVarInt( g_hCvarDefibPenalty, g_iOriginalPenalty );
+        return;
+    }
+    
     // set the bonus as though only 1 defib was used: so 1 * CalculateBonus
     new bonus = CalculateBonus();
     SetConVarInt( g_hCvarDefibPenalty, bonus );
+    
+
     
     // only set the amount of defibs used to 1 if there is a bonus to set
     GameRules_SetProp("m_iVersusDefibsUsed", (bonus != 0) ? 1 : 0, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) );     // set to 1 defib used
@@ -303,10 +323,10 @@ stock DisplayBonus(client=-1)
             Format(msgPartHdr, sizeof(msgPartHdr), "Current extra bonus");
         }
         
-        Format(msgPartBon, sizeof(msgPartBon), "\x04%4d\x01", g_iBonus[RoundNum()]);
+        Format(msgPartBon, sizeof(msgPartBon), "\x04%4d\x01", g_iBonus[round]);
 
         if (g_iDefibsUsed[round]) {
-            Format(msgPartBon, sizeof(msgPartBon), "%s (- \x04%d\x01 defib penalty)", msgPartBon, g_iOriginalPenalty * g_iDefibsUsed[RoundNum()] );
+            Format(msgPartBon, sizeof(msgPartBon), "%s (- \x04%d\x01 defib penalty)", msgPartBon, g_iOriginalPenalty * g_iDefibsUsed[round] );
         }
         
         if (client == -1) {
