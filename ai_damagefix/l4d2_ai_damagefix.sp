@@ -17,8 +17,15 @@
 #define POUNCE_TIMER            0.1
 
 
+enum Infl_SIClawCheck
+{
+    INFL_SICLAW
+}
+
 // CVars
 new     bool:           bLateLoad                                               = false;
+new     Handle:         hInflictorTrie                                          = INVALID_HANDLE;
+
 new     Handle:         hCvarPounceInterrupt                                    = INVALID_HANDLE;
 
 new                     iHunterSkeetDamage[MAXPLAYERS+1];                                               // how much damage done in a single hunter leap so far
@@ -37,9 +44,13 @@ new     bool:           bIsPouncing[MAXPLAYERS+1];                              
                 if (abilityEnt > 0) {
                     isLunging = bool:GetEntProp(abilityEnt, Prop_Send, "m_isLunging");
                 }
+        
                 
     Changelog
     ---------
+        
+        1.0.3
+            - Added stumble-negation inflictor check so only SI scratches are affected.
         
         1.0.2
             - Fixed incorrect bracketing that caused error spam. (Re-fixed because drunk)
@@ -61,7 +72,7 @@ public Plugin:myinfo =
     name = "Bot SI skeet/level damage fix",
     author = "Tabun",
     description = "Makes AI SI take (and do) damage like human SI.",
-    version = "1.0.2",
+    version = "1.0.3",
     url = "nope"
 }
 
@@ -82,6 +93,9 @@ public OnPluginStart()
     HookEvent("player_death", Event_PlayerDeath, EventHookMode_Post);
     HookEvent("player_shoved", Event_PlayerShoved, EventHookMode_Post);
     HookEvent("ability_use", Event_AbilityUse, EventHookMode_Post);
+
+    // trie
+    hInflictorTrie = BuildInflictorTrie();
     
     // hook when loading late
     if (bLateLoad) {
@@ -160,9 +174,15 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     }
     
     // AI doing damage
-    if (GetClientTeam(attacker) == TEAM_INFECTED && IsFakeClient(attacker))
+    if (GetClientTeam(attacker) == TEAM_INFECTED && IsFakeClient(attacker) && attacker == inflictor && IsValidEntity(inflictor))
     {
-        // check if AI is stumbling, set to 0.0
+        // check if AI is stumbling, set to 0.0 if it's a scratch/punch
+        
+        new String: classname[64];
+        new Infl_SIClawCheck: inflictorID;
+        
+        GetClientWeapon(inflictor, classname, sizeof(classname));
+        if (!GetTrieValue(hInflictorTrie, classname, inflictorID)) { return Plugin_Continue; }
         
         if (GetEntPropFloat(attacker, Prop_Send, "m_staggerDist") > 0.0)
         {
@@ -252,7 +272,16 @@ bool:IsClientAndInGame(index)
     return false;
 }
 
-
-
+Handle:BuildInflictorTrie()
+{
+    new Handle: trie = CreateTrie();
+    SetTrieValue(trie, "weapon_boomer_claw",    INFL_SICLAW);
+    SetTrieValue(trie, "weapon_charger_claw",   INFL_SICLAW);
+    SetTrieValue(trie, "weapon_hunter_claw",    INFL_SICLAW);
+    SetTrieValue(trie, "weapon_jockey_claw",    INFL_SICLAW);
+    SetTrieValue(trie, "weapon_smoker_claw",    INFL_SICLAW);
+    SetTrieValue(trie, "weapon_spitter_claw",   INFL_SICLAW);
+    return trie;    
+}
 
 
