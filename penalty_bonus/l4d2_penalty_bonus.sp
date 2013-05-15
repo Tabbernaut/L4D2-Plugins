@@ -10,12 +10,14 @@
 
 /*
 
-    To Do
-    =========
-        
-        
     Changelog
     =========
+        0.0.6
+            - where possible, neatly divides total bonus through bonuses/penalties,
+              to improve end-of-round overview. Only works for single-value bonus/penalty
+              setups.
+            - fixed double minus signs appearing on reports for negative changes.
+            
         0.0.5
             - fixed incorrect reporting on round end (twice the 2nd team's score).
             - added enable cvar.
@@ -47,7 +49,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.5",
+    version = "0.0.6",
     url = ""
 }
 
@@ -63,6 +65,8 @@ new     bool:           g_bFirstMapStartDone                                = fa
 
 new     Handle:         g_hCvarDefibPenalty                                 = INVALID_HANDLE;
 new                     g_iOriginalPenalty                                  = 25;                   // original defib penalty
+new     bool:           g_bSetSameChange                                    = true;                 // whether we've already determined that there is a same-change or not (true = it's still 'the same' if not 0)
+new                     g_iSameChange                                       = 0;                    // if all changes to the bonus are by the same amount, this is it (-1 = not set)
 
 new     bool:           g_bRoundOver[2]                                     = {false,...};          // tank/witch deaths don't count after this true
 new                     g_iDefibsUsed[2]                                    = {0,...};              // defibs used this round
@@ -93,11 +97,23 @@ public Native_GetRoundBonus(Handle:plugin, numParams)
 public Native_ResetRoundBonus(Handle:plugin, numParams)
 {
     g_iBonus[RoundNum()] = 0;
+    
+    g_iSameChange = 0;
+    g_bSetSameChange = true;
+    
 }
 
 public Native_SetRoundBonus(Handle:plugin, numParams)
 {
     new bonus = GetNativeCell(1);
+    
+    if (g_bSetSameChange) {
+        g_iSameChange = g_iBonus[RoundNum()] - bonus;
+    } else if (g_iSameChange != g_iBonus[RoundNum()] - bonus) {
+        g_iSameChange = 0;
+        g_bSetSameChange = false;
+    }
+    
     g_iBonus[RoundNum()] = bonus;
     
     if (GetConVarBool(g_hCvarReportChange)) { ReportChange(0, -1, true); }
@@ -107,6 +123,13 @@ public Native_AddRoundBonus(Handle:plugin, numParams)
 {
     new bonus = GetNativeCell(1);
     g_iBonus[RoundNum()] += bonus;
+    
+    if (g_bSetSameChange) {
+        g_iSameChange = bonus;
+    } else if (g_iSameChange != bonus) {
+        g_iSameChange = 0;
+        g_bSetSameChange = false;
+    }
     
     if (GetConVarBool(g_hCvarReportChange)) { ReportChange(bonus); }
 }
@@ -176,6 +199,7 @@ public OnRoundStart()
     SetConVarInt(g_hCvarDefibPenalty, g_iOriginalPenalty);
     
     g_iBonus[RoundNum()] = 0;
+    g_iSameChange = -1;
 }
 
 public OnRoundEnd()
@@ -266,6 +290,14 @@ public TankKilled()
     if ( GetConVarInt(g_hCvarBonusTank) == 0 || g_bRoundOver[RoundNum()] ) { return; }
     
     g_iBonus[RoundNum()] += GetConVarInt(g_hCvarBonusTank);
+    
+    if (g_bSetSameChange) {
+        g_iSameChange = GetConVarInt(g_hCvarBonusTank);
+    } else if (g_iSameChange != GetConVarInt(g_hCvarBonusTank)) {
+        g_iSameChange = 0;
+        g_bSetSameChange = false;
+    }
+    
     ReportChange( GetConVarInt(g_hCvarBonusTank) );
 }
 
@@ -275,6 +307,14 @@ public Action: Event_WitchKilled(Handle:event, const String:name[], bool:dontBro
     if ( GetConVarInt(g_hCvarBonusWitch) == 0 || g_bRoundOver[RoundNum()] ) { return Plugin_Continue; }
     
     g_iBonus[RoundNum()] += GetConVarInt(g_hCvarBonusWitch);
+    
+    if (g_bSetSameChange) {
+        g_iSameChange = GetConVarInt(g_hCvarBonusWitch);
+    } else if (g_iSameChange != GetConVarInt(g_hCvarBonusWitch)) {
+        g_iSameChange = 0;
+        g_bSetSameChange = false;
+    }
+    
     ReportChange( GetConVarInt(g_hCvarBonusWitch) );
     
     return Plugin_Continue;
@@ -294,12 +334,27 @@ public SetBonus()
     
     // set the bonus as though only 1 defib was used: so 1 * CalculateBonus
     new bonus = CalculateBonus();
+    
+    // set the bonus to a neatly divisible value if possible
+    new fakeDefibs = 1;
+    if ( g_bSetSameChange && g_iSameChange != 0 && !g_iDefibsUsed[RoundNum()] )
+    {
+        fakeDefibs = g_iBonus[RoundNum()] / g_iSameChange;
+        bonus = 0 - g_iSameChange;  // flip sign, so bonus = - penalty
+        
+        // only do it this way if fakedefibs stays small enough:
+        if (fakeDefibs > 15)
+        {
+            fakeDefibs = 1;
+            bonus = 0 - g_iBonus[RoundNum()];
+        }
+    }
+    
+    // set bonus(penalty) cvar
     SetConVarInt( g_hCvarDefibPenalty, bonus );
     
-
-    
     // only set the amount of defibs used to 1 if there is a bonus to set
-    GameRules_SetProp("m_iVersusDefibsUsed", (bonus != 0) ? 1 : 0, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) );     // set to 1 defib used
+    GameRules_SetProp("m_iVersusDefibsUsed", (bonus != 0) ? fakeDefibs : 0, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) );     // set to 1 defib used
     
     //PrintDebug("[penbon] set bonus to %i * %i.", (bonus != 0) ? 1 : 0, bonus);
 }
@@ -351,7 +406,7 @@ stock ReportChange(bonusChange, client=-1, absoluteSet=false)
     } else {
         Format(msgPartBon, sizeof(msgPartBon), "Extra bonus change: %s\x04%i\x01",
                 (bonusChange > 0) ? "\x04+\x01" : "\x03-\x01",
-                bonusChange
+                RoundFloat( FloatAbs( float(bonusChange) ) )
             );
     }
     
