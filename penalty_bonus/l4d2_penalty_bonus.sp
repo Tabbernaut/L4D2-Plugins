@@ -12,6 +12,9 @@
 
     Changelog
     =========
+        0.0.7
+            - added native to change defib penalty (since it can vary in Random!)
+            
         0.0.6
             - where possible, neatly divides total bonus through bonuses/penalties,
               to improve end-of-round overview. Only works for single-value bonus/penalty
@@ -49,7 +52,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.6",
+    version = "0.0.7",
     url = ""
 }
 
@@ -85,6 +88,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     CreateNative("PBONUS_SetRoundBonus", Native_SetRoundBonus);
     CreateNative("PBONUS_AddRoundBonus", Native_AddRoundBonus);
     CreateNative("PBONUS_GetDefibsUsed", Native_GetDefibsUsed);
+    CreateNative("PBONUS_SetDefibPenalty", Native_SetDefibPenalty);
     
     return APLRes_Success;
 }
@@ -137,6 +141,13 @@ public Native_AddRoundBonus(Handle:plugin, numParams)
 public Native_GetDefibsUsed(Handle:plugin, numParams)
 {
     return _: g_iDefibsUsed[RoundNum()];
+}
+
+public Native_SetDefibPenalty(Handle:plugin, numParams)
+{
+    new penalty = GetNativeCell(1);
+    
+    g_iOriginalPenalty = penalty;
 }
 
 

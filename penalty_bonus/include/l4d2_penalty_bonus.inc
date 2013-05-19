@@ -19,3 +19,6 @@ native PBONUS_AddRoundBonus(bonus);
 // Get the amount of defibs used in the current round
 //    returns int
 native PBONUS_GetDefibsUsed();
+
+// Set the (current) defib penalty
+native PBONUS_SetDefibPenalty(penalty);
