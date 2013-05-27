@@ -16,21 +16,21 @@
 
 #define POUNCE_TIMER            0.1
 
-#define SKEET_POUNCING_AI        (0x01)
-#define DEBUFF_CHARGING_AI        (0x02)
-#define BLOCK_STUMBLE_SCRATCH    (0x04)
+#define SKEET_POUNCING_AI       (0x01)
+#define DEBUFF_CHARGING_AI      (0x02)
+#define BLOCK_STUMBLE_SCRATCH   (0x04)
 #define ALL_FEATURES            (SKEET_POUNCING_AI | DEBUFF_CHARGING_AI | BLOCK_STUMBLE_SCRATCH)
 
 // CVars
 new     bool:           bLateLoad                                               = false;
 
-new        Handle:            hCvarEnabled                                            = INVALID_HANDLE;
-new                        fEnabled                                                = ALL_FEATURES;            // enables individual features of the plugin
+new     Handle:         hCvarEnabled                                            = INVALID_HANDLE;
+new                     fEnabled                                                = ALL_FEATURES;         // enables individual features of the plugin
 new     Handle:         hCvarPounceInterrupt                                    = INVALID_HANDLE;
-new                        iPounceInterrupt                                        = 150;                    // caches pounce interrupt cvar's value
+new                     iPounceInterrupt                                        = 150;                  // caches pounce interrupt cvar's value
 
-new                     iHunterSkeetDamage[MAXPLAYERS+1]                         = { 0, ... };           // how much damage done in a single hunter leap so far
-new     bool:           bIsPouncing[MAXPLAYERS+1]                                 = { false, ... };       // whether hunter player is currently pouncing/lunging
+new                     iHunterSkeetDamage[MAXPLAYERS+1]                        = { 0, ... };           // how much damage done in a single hunter leap so far
+new     bool:           bIsPouncing[MAXPLAYERS+1]                               = { false, ... };       // whether hunter player is currently pouncing/lunging
 
 
 /*
@@ -94,7 +94,7 @@ public APLRes:AskPluginLoad2( Handle:plugin, bool:late, String:error[], errMax)
 public OnPluginStart()
 {
     // cvars
-       hCvarEnabled = CreateConVar("l4d2_aidmgfix_enable",         "7",     "Bit flag: Enables plugin features (add together): 1=Skeet pouncing AI, 2=Debuff charging AI, 4=Block stumble scratches, 7=all, 0=off", FCVAR_PLUGIN|FCVAR_NOTIFY);
+    hCvarEnabled = CreateConVar("sm_aidmgfix_enable", "7", "Bit flag: Enables plugin features (add together): 1=Skeet pouncing AI, 2=Debuff charging AI, 4=Block stumble scratches, 7=all, 0=off", FCVAR_PLUGIN|FCVAR_NOTIFY);
     hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
 
     HookConVarChange(hCvarEnabled, OnAIDamageFixEnableChanged);
