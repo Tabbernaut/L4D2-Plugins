@@ -16,14 +16,21 @@
 
 #define POUNCE_TIMER            0.1
 
+#define SKEET_POUNCING_AI        (0x01)
+#define DEBUFF_CHARGING_AI        (0x02)
+#define BLOCK_STUMBLE_SCRATCH    (0x04)
+#define ALL_FEATURES            (SKEET_POUNCING_AI | DEBUFF_CHARGING_AI | BLOCK_STUMBLE_SCRATCH)
 
 // CVars
 new     bool:           bLateLoad                                               = false;
 
+new        Handle:            hCvarEnabled                                            = INVALID_HANDLE;
+new                        fEnabled                                                = ALL_FEATURES;            // enables individual features of the plugin
 new     Handle:         hCvarPounceInterrupt                                    = INVALID_HANDLE;
+new                        iPounceInterrupt                                        = 150;                    // caches pounce interrupt cvar's value
 
-new                     iHunterSkeetDamage[MAXPLAYERS+1];                                               // how much damage done in a single hunter leap so far
-new     bool:           bIsPouncing[MAXPLAYERS+1];                                                      // whether hunter player is currently pouncing/lunging
+new                     iHunterSkeetDamage[MAXPLAYERS+1]                         = { 0, ... };           // how much damage done in a single hunter leap so far
+new     bool:           bIsPouncing[MAXPLAYERS+1]                                 = { false, ... };       // whether hunter player is currently pouncing/lunging
 
 
 /*
@@ -42,6 +49,11 @@ new     bool:           bIsPouncing[MAXPLAYERS+1];                              
     Changelog
     ---------
         
+        1.0.5
+            - (dcx2) Added enable cvar
+            - (dcx2) Cached pounce interrupt cvar
+            - (dcx2) fixed charger debuff calculation (for 1pt error)
+            
         1.0.4 
             - Used dcx2's much better IN_ATTACK2 method of blocking stumble-scratching.
             
@@ -66,10 +78,10 @@ new     bool:           bIsPouncing[MAXPLAYERS+1];                              
 public Plugin:myinfo =
 {
     name = "Bot SI skeet/level damage fix",
-    author = "Tabun",
+    author = "Tabun, dcx2",
     description = "Makes AI SI take (and do) damage like human SI.",
-    version = "1.0.4",
-    url = "nope"
+    version = "1.0.5",
+    url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/ai_damagefix"
 }
 
 public APLRes:AskPluginLoad2( Handle:plugin, bool:late, String:error[], errMax)
@@ -82,8 +94,15 @@ public APLRes:AskPluginLoad2( Handle:plugin, bool:late, String:error[], errMax)
 public OnPluginStart()
 {
     // cvars
+       hCvarEnabled = CreateConVar("l4d2_aidmgfix_enable",         "7",     "Bit flag: Enables plugin features (add together): 1=Skeet pouncing AI, 2=Debuff charging AI, 4=Block stumble scratches, 7=all, 0=off", FCVAR_PLUGIN|FCVAR_NOTIFY);
     hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
-    
+
+    HookConVarChange(hCvarEnabled, OnAIDamageFixEnableChanged);
+    HookConVarChange(hCvarPounceInterrupt, OnPounceInterruptChanged);
+
+    fEnabled = GetConVarInt(hCvarEnabled);
+    iPounceInterrupt =  GetConVarInt(hCvarPounceInterrupt);
+
     // events
     HookEvent("round_start", Event_RoundStart, EventHookMode_PostNoCopy);
     HookEvent("player_death", Event_PlayerDeath, EventHookMode_Post);
@@ -101,22 +120,26 @@ public OnPluginStart()
 }
 
 
+public OnAIDamageFixEnableChanged(Handle:cvar, const String:oldVal[], const String:newVal[])
+{
+    fEnabled = StringToInt(newVal);
+}
+
+public OnPounceInterruptChanged(Handle:cvar, const String:oldVal[], const String:newVal[])
+{
+    iPounceInterrupt = StringToInt(newVal);
+}
+
+
 public OnClientPostAdminCheck(client)
 {
     // hook bots spawning
     SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
-public OnClientDisconnect(client)
-{
-    SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-}
-
-
-
 public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype)
 {
-    if (!IsClientAndInGame(victim) || !IsClientAndInGame(attacker) || damage == 0.0) { return Plugin_Continue; }
+    if (!fEnabled || !IsClientAndInGame(victim) || !IsClientAndInGame(attacker) || damage == 0.0) { return Plugin_Continue; }
     
     // AI taking damage
     if (GetClientTeam(victim) == TEAM_INFECTED && IsFakeClient(victim))
@@ -132,10 +155,12 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
                 // skeeting mechanic is completely disabled for AI,
                 // so we have to replicate it.
                 
+                if (!(fEnabled & SKEET_POUNCING_AI)) { return Plugin_Continue; }
+                
                 iHunterSkeetDamage[victim] += RoundToFloor(damage);
                 
                 // have we skeeted it?
-                if (bIsPouncing[victim] && iHunterSkeetDamage[victim] >= GetConVarInt(hCvarPounceInterrupt))
+                if (bIsPouncing[victim] && iHunterSkeetDamage[victim] >= iPounceInterrupt)
                 {
                     bIsPouncing[victim] = false; 
                     iHunterSkeetDamage[victim] = 0;
@@ -150,6 +175,8 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
                 // all damage gets divided by 3 while AI is charging,
                 // so all we have to do is multiply by 3.
                 
+                if (!(fEnabled & DEBUFF_CHARGING_AI)) { return Plugin_Continue; }
+                
                 abilityEnt = GetEntPropEnt(victim, Prop_Send, "m_customAbility");
                 new bool:isCharging = false;
                 if (abilityEnt > 0) {
@@ -158,11 +185,10 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
                 
                 if (isCharging)
                 {
-                    damage = (damage * 3) + 1;
+                    damage = (damage - FloatFraction(damage) + 1.0) * 3.0;            // Engine does Floor(damage) / 3 - 1
                     return Plugin_Changed;
                 }
             }
-            
         }
     }
     
@@ -171,13 +197,13 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 
 public Action:OnPlayerRunCmd(client, &buttons)
 {
-	// If the AI Infected is staggering, block melee so they can't scratch
-	if (IsClientAndInGame(client) && GetClientTeam(client) == TEAM_INFECTED && IsFakeClient(client) && GetEntPropFloat(client, Prop_Send, "m_staggerDist") > 0.0)
-	{
-		buttons &= ~IN_ATTACK2;
-	}
-	
-	return Plugin_Continue;
+    // If the AI Infected is staggering, block melee so they can't scratch
+    if ((fEnabled & BLOCK_STUMBLE_SCRATCH) && IsClientAndInGame(client) && GetClientTeam(client) == TEAM_INFECTED && IsFakeClient(client) && GetEntPropFloat(client, Prop_Send, "m_staggerDist") > 0.0)
+    {
+        buttons &= ~IN_ATTACK2;
+    }
+    
+    return Plugin_Continue;
 }
 
 public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
