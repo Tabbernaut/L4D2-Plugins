@@ -23,3 +23,6 @@ So you don't get tripped up trying to skeet/level AI infected in a versus match.
 
 Discussion and further explanation of plugin:
 http://www.l4dnation.com/confogl-and-other-configs/ai-damage-fix-plugin-and-information-on-fun-damage-shenanigans/
+
+See also:
+http://forums.alliedmods.net/showthread.php?t=214459
