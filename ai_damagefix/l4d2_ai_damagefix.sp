@@ -33,6 +33,9 @@ new                     iHunterSkeetDamage[MAXPLAYERS+1]                        
     Changelog
     ---------
         
+        1.0.7
+            - reset original way of dealing extra skeet damage to reward killer.
+
         1.0.6
             - (dcx2) Removed ground-tracking timer for hunter skeet, switched to m_isAttemptingToPounce
             - (dcx2) Removed handles from global variables, since they are unused after OnPluginStart
@@ -69,7 +72,7 @@ public Plugin:myinfo =
     name = "Bot SI skeet/level damage fix",
     author = "Tabun, dcx2",
     description = "Makes AI SI take (and do) damage like human SI.",
-    version = "1.0.6",
+    version = "1.0.7",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/ai_damagefix"
 }
 
@@ -139,9 +142,10 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
             // have we skeeted it?
             if (iHunterSkeetDamage[victim] >= iPounceInterrupt)
             {
-                // kill the hunter and ensure the attacker gets credit
+                // Skeet the hunter
                 iHunterSkeetDamage[victim] = 0;
-                SetEntityHealth(victim, RoundToFloor(damage));
+                damage = float(GetClientHealth(victim));
+                return Plugin_Changed;
             }
         }
         else if (zombieClass == ZC_CHARGER && (fEnabled & DEBUFF_CHARGING_AI))
