@@ -22,15 +22,8 @@ static const String:MAPINFO_PATH[] = "configs/saferoominfo.txt";
     To Do
     =========
         - make player checks for starting saferooms simply use simple netprop check.
-            
-        - add custom campaigns (popular ones)
-            Dead Before Dawn (DC)
-            Back to School
-            Haunted Forest
-            Detour Ahead
-            Warcelona
-            Carried Off
-            I Hate Mountains
+            unfortunately, this seems impossible -- the obvious candidates don't work
+        - add custom campaign: Dead Before Dawn (DC) (problematic loading...)
         
     Changelog
     =========
@@ -52,7 +45,7 @@ public Plugin:myinfo =
     name = "Precise saferoom detection",
     author = "Tabun",
     description = "Allows checks whether a coordinate/entity/player is in start or end saferoom (uses saferoominfo.txt).",
-    version = "0.0.3",
+    version = "0.0.4",
     url = ""
 }
 
@@ -375,12 +368,12 @@ bool: SI_KV_UpdateSaferoomInfo()
         KvGetVector(g_kSIData, "start_loc_b", g_fStartLocB);
         KvGetVector(g_kSIData, "start_loc_c", g_fStartLocC);
         KvGetVector(g_kSIData, "start_loc_d", g_fStartLocD);
-        KvGetFloat(g_kSIData, "start_rotate", g_fStartRotate);
+        g_fStartRotate = KvGetFloat(g_kSIData, "start_rotate", g_fStartRotate);
         KvGetVector(g_kSIData, "end_loc_a", g_fEndLocA);
         KvGetVector(g_kSIData, "end_loc_b", g_fEndLocB);
         KvGetVector(g_kSIData, "end_loc_c", g_fEndLocC);
         KvGetVector(g_kSIData, "end_loc_d", g_fEndLocD);
-        KvGetFloat(g_kSIData, "end_rotate", g_fEndRotate);
+        g_fEndRotate = KvGetFloat(g_kSIData, "end_rotate", g_fEndRotate);
         
         // check data:
         if (g_fStartLocA[0] != 0.0 && g_fStartLocA[1] != 0.0 && g_fStartLocA[2] != 0.0 && g_fStartLocB[0] != 0.0 && g_fStartLocB[1] != 0.0 && g_fStartLocB[2] != 0.0) { g_bHasStart = true; }
