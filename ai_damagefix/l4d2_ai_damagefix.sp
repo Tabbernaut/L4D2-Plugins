@@ -33,6 +33,9 @@ new                     iHunterSkeetDamage[MAXPLAYERS+1]                        
     Changelog
     ---------
         
+        1.0.8
+            - fixed bug where clients with maxclient index would be ignored
+
         1.0.7
             - reset original way of dealing extra skeet damage to reward killer.
 
@@ -72,7 +75,7 @@ public Plugin:myinfo =
     name = "Bot SI skeet/level damage fix",
     author = "Tabun, dcx2",
     description = "Makes AI SI take (and do) damage like human SI.",
-    version = "1.0.7",
+    version = "1.0.8",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/ai_damagefix"
 }
 
@@ -195,5 +198,5 @@ public Event_AbilityUse(Handle:event, const String:name[], bool:dontBroadcast)
 
 bool:IsClientAndInGame(index)
 {
-    return (index > 0 && index < MaxClients && IsClientInGame(index));
+    return (index > 0 && index <= MaxClients && IsClientInGame(index));
 }
