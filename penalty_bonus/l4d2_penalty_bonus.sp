@@ -12,6 +12,9 @@
 
     Changelog
     =========
+        0.0.8
+            - simplified round-end: L4D2_OnEndVersusRound instead of a bunch of hooked events.
+            
         0.0.7
             - added native to change defib penalty (since it can vary in Random!)
             
@@ -51,8 +54,8 @@ public Plugin:myinfo =
 {
     name = "Penalty bonus system",
     author = "Tabun",
-    description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached. Uses negative defib penalty trick.",
-    version = "0.0.7",
+    description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached.",
+    version = "0.0.8",
     url = ""
 }
 
@@ -168,12 +171,8 @@ public OnPluginStart()
     
     // hook events
     HookEvent("defibrillator_used",         Event_DefibUsed,            EventHookMode_PostNoCopy);
-
     HookEvent("witch_killed",               Event_WitchKilled,          EventHookMode_PostNoCopy);
     HookEvent("player_death",               Event_PlayerDeath,          EventHookMode_Post);
-    
-    HookEvent("door_close",                 Event_DoorClose,            EventHookMode_PostNoCopy);
-    HookEvent("finale_vehicle_leaving",     Event_FinaleVehicleLeaving, EventHookMode_PostNoCopy);
  
     // Chat cleaning
     AddCommandListener(Command_Say, "say");
@@ -248,18 +247,8 @@ public Action:Command_Say(client, const String:command[], args)
 }
 
 
-// Round-end tracking
-// ------------------
-
-public Event_DoorClose(Handle:event, const String:name[], bool:dontBroadcast)
-{
-    if (!GetConVarBool(g_hCvarEnabled)) { return; }
-        
-    if (GetEventBool(event, "checkpoint"))
-    {
-        SetBonus();
-    }
-}
+// Tank and Witch tracking
+// -----------------------
 
 public Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
 {
@@ -267,34 +256,11 @@ public Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
     
     new client = GetClientOfUserId(GetEventInt(event, "userid"));
 
-    if (client && IsSurvivor(client))
-    {
-        SetBonus();
-    }
-    else if (client && IsTank(client))
+    if (client && IsTank(client))
     {
         TankKilled();
     }
 }
-
-public Event_FinaleVehicleLeaving(Handle:event, const String:name[], bool:dontBroadcast)
-{
-    if (!GetConVarBool(g_hCvarEnabled)) { return; }
-    
-    for (new i = 1; i < MaxClients; i++)
-    {
-        if (IsClientInGame(i) && IsSurvivor(i) && (IsIncapacitated(i) || IsHangingFromLedge(i)))
-        {
-            ForcePlayerSuicide(i);
-        }
-    }
-
-    SetBonus();
-}
-
-
-// Tank and Witch tracking
-// -----------------------
 
 public TankKilled()
 {
@@ -332,6 +298,35 @@ public Action: Event_WitchKilled(Handle:event, const String:name[], bool:dontBro
 }
 
 
+// Special Check (test)
+// --------------------
+
+public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
+{
+    SetBonus();
+    
+    /*
+        note: logicalTeam is A/B tracked correctly throughout the game
+                that's not how the gamerules prop index works though: that simply uses 'teams-are-flipped' values for first and second round...
+        also: manipulating the score directly does not work -- the SetBonus() defib penalty works fine.
+    
+    //new logicalTeam = (GameRules_GetProp("m_bAreTeamsFlipped", 4, 0)) ? ((RoundNum()) ? 0 : 1)  : RoundNum();
+    new logicalTeam = GameRules_GetProp("m_bAreTeamsFlipped", 4, 0);
+    
+    LogMessage("[penbonus] OnEndVersusModeRound: round %i / flip: %i: Bonus: %i -- defibs used: %i -- defib penalty: %i -- survscore: %i -- chapter score: %i -- camp.score %i",
+            RoundNum(),
+            GameRules_GetProp("m_bAreTeamsFlipped", 4, 0),
+            g_iBonus[ RoundNum() ],
+            GameRules_GetProp("m_iVersusDefibsUsed", 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) ),
+            GetConVarInt( g_hCvarDefibPenalty ),
+            GameRules_GetProp("m_iSurvivorScore", 4, logicalTeam),
+            GameRules_GetProp("m_iChapterScore", 4, logicalTeam),
+            GameRules_GetProp("m_iCampaignScore", 4, logicalTeam)
+        );
+    */
+}
+
+
 // Bonus
 // -----
 
@@ -365,7 +360,7 @@ public SetBonus()
     SetConVarInt( g_hCvarDefibPenalty, bonus );
     
     // only set the amount of defibs used to 1 if there is a bonus to set
-    GameRules_SetProp("m_iVersusDefibsUsed", (bonus != 0) ? fakeDefibs : 0, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) );     // set to 1 defib used
+    GameRules_SetProp("m_iVersusDefibsUsed", (bonus != 0) ? fakeDefibs : 0, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) );
     
     //PrintDebug("[penbon] set bonus to %i * %i.", (bonus != 0) ? 1 : 0, bonus);
 }
