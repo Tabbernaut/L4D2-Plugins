@@ -3,6 +3,10 @@ Saferoom Item Remove
 
 Removes any items it finds in a saferoom.
 
+This plugin requires l4d2_saferoom_detect. It will work even when l4d2lib's check doesn't,
+though then it won't work for obscure custom campaigns.
+
+
 CVars:
 ------
 <b>sm_safeitemkill_saferooms</b><br />
@@ -17,7 +21,3 @@ Controls which item types are removed:<br />
 2 = weapons<br />
 4 = any other item<br />
 These are flags, add them up to remove various things. Default is 3 (health and weapons).
-
-
-This plugin requires l4d2_saferoom_detect. It will work even when l4d2lib's check doesn't,
-though then it won't work for obscure custom campaigns.
