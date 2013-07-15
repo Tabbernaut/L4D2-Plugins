@@ -4,6 +4,7 @@ Saferoom Item Remove
 Removes any items it finds in a saferoom.
 
 CVars:
+------
 <b>sm_safeitemkill_saferooms</b><br />
 Controls which saferooms are emptied:<br />
 1 = end saferoom<br />
