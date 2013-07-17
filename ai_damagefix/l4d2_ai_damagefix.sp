@@ -4,6 +4,8 @@
 #include <sdktools>
 #include <sdkhooks>
 
+#define GAMEDATA_FILE           "staggersolver"
+
 #define TEAM_SURVIVOR           2
 #define TEAM_INFECTED           3
 
@@ -15,14 +17,17 @@
 #define ZC_CHARGER              6
 
 // Bit flags to enable individual features of the plugin
-#define SKEET_POUNCING_AI        (0x01)
-#define DEBUFF_CHARGING_AI        (0x02)
-#define BLOCK_STUMBLE_SCRATCH    (0x04)
+#define SKEET_POUNCING_AI       (0x01)
+#define DEBUFF_CHARGING_AI      (0x02)
+#define BLOCK_STUMBLE_SCRATCH   (0x04)
 #define ALL_FEATURES            (SKEET_POUNCING_AI | DEBUFF_CHARGING_AI | BLOCK_STUMBLE_SCRATCH)
 
-// CVars
+// Globals
+new     Handle:         hGameConf;
+new     Handle:         hIsStaggering;
 new     bool:           bLateLoad                                               = false;
 
+// CVars
 new                     fEnabled                                                = ALL_FEATURES;         // Enables individual features of the plugin
 new                     iPounceInterrupt                                        = 150;                  // Caches pounce interrupt cvar's value
 new                     iHunterSkeetDamage[MAXPLAYERS+1]                        = { 0, ... };           // How much damage done in a single hunter leap so far
@@ -33,6 +38,9 @@ new                     iHunterSkeetDamage[MAXPLAYERS+1]                        
     Changelog
     ---------
         
+        1.0.9
+            - used CanadaRox's SDK method for detecting staggers (since it's less likely to have false positives).
+
         1.0.8
             - fixed bug where clients with maxclient index would be ignored
 
@@ -75,7 +83,7 @@ public Plugin:myinfo =
     name = "Bot SI skeet/level damage fix",
     author = "Tabun, dcx2",
     description = "Makes AI SI take (and do) damage like human SI.",
-    version = "1.0.8",
+    version = "1.0.9",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/ai_damagefix"
 }
 
@@ -109,6 +117,22 @@ public OnPluginStart()
             }
         }
     }
+    
+    // sdkhook
+    hGameConf = LoadGameConfigFile(GAMEDATA_FILE);
+    if (hGameConf == INVALID_HANDLE)
+    SetFailState("[aidmgfix] Could not load game config file (staggersolver.txt).");
+
+    StartPrepSDKCall(SDKCall_Player);
+
+    if (!PrepSDKCall_SetFromConf(hGameConf, SDKConf_Signature, "IsStaggering"))
+    SetFailState("[aidmgfix] Could not find signature IsStaggering.");
+    PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_Plain);
+    hIsStaggering = EndPrepSDKCall();
+    if (hIsStaggering == INVALID_HANDLE)
+    SetFailState("[aidmgfix] Failed to load signature IsStaggering");
+
+    CloseHandle(hGameConf);
 }
 
 
@@ -170,7 +194,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 public Action:OnPlayerRunCmd(client, &buttons)
 {
     // If the AI Infected is staggering, block melee so they can't scratch
-    if ((fEnabled & BLOCK_STUMBLE_SCRATCH) && IsClientAndInGame(client) && GetClientTeam(client) == TEAM_INFECTED && IsFakeClient(client) && GetEntPropFloat(client, Prop_Send, "m_staggerDist") > 0.0)
+    if ((fEnabled & BLOCK_STUMBLE_SCRATCH) && IsClientAndInGame(client) && GetClientTeam(client) == TEAM_INFECTED && IsFakeClient(client) && SDKCall(hIsStaggering, client))
     {
         buttons &= ~IN_ATTACK2;
     }
