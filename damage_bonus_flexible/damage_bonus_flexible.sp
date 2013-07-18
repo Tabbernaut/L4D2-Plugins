@@ -478,11 +478,11 @@ stock DisplayBonus(client=-1)
     }
     
     if (client == -1) {
-        PrintToChatAll("\x01Map istance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToChatAll("\x01Map Distance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
     } else if (client) {
-        PrintToChat(client, "\x01Map istance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToChat(client, "\x01Map Distance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
     } else {
-        PrintToServer("\x01Map istance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToServer("\x01Map Distance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
     }
 
 }
