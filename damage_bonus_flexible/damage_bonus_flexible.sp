@@ -1,7 +1,10 @@
-#include <sourcemod.inc>
+#include <sourcemod>
 #include <sdkhooks>
 #include <sdktools>
 #include <left4downtown>
+#include <l4d2_direct>
+#undef REQUIRE_PLUGIN
+#include <readyup>
 
 #define MAX(%0,%1) (((%0) > (%1)) ? (%0) : (%1))
 #define MIN(%0,%1) (((%0) < (%1)) ? (%0) : (%1))
@@ -25,6 +28,7 @@
         sm_static_bonus         static survival bonus
         sm_max_damage           absolute damage taken to give 0 bonus
         sm_damage_multi         the standard multiplier for points of damage to count towards total absolute damage taken
+        sm_map_multi            default way of scaling with distance
         
     New settings:
         sm_dmgflx_base              default total bonus value to award (damage calculation is scaled back to 0-<this value> range for bonus) (0 = disable, keep equal to max damage)
@@ -43,15 +47,16 @@
 public Plugin:myinfo =
 {
     name = "Damage Scoring - Flexible Version",
-    author = "CanadaRox, Tabun",
+    author = "CanadaRox, Stabby, Tabun",
     description = "Custom damage scoring based on damage survivors take. With adjustable scoring calculation.",
-    version = "0.9.2",
+    version = "0.9.4",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/damage_bonus_flexible"
 };
 
 
 // plugin internals
 new     bool:       g_bLateLoad;
+new     bool:       g_bReadyUpIsAvailable;
 
 // game cvars
 new     Handle:     g_hCvarTeamSize;
@@ -64,6 +69,7 @@ new                 g_iDefaultTieBreakBonus;
 new     Handle:     g_hCvarStaticBonus;
 new     Handle:     g_hCvarMaxDamage;
 new     Handle:     g_hCvarDamageMulti;
+new     Handle:     g_hCvarMapMulti;
 
 new     Handle:     g_hCvarDisplayOnly;
 new     Handle:     g_hCvarBonusBase;
@@ -89,8 +95,48 @@ new     bool:       bPlayerHasBeenIncapped[MAX_CHARACTERS];     // only true aft
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
     g_bLateLoad = late;
+    
+    CreateNative("DamageBonus_GetCurrentBonus", Native_GetCurrentBonus);
+    CreateNative("DamageBonus_GetRoundBonus",   Native_GetRoundBonus);
+    CreateNative("DamageBonus_GetRoundDamage",  Native_GetRoundDamage);
+    RegPluginLibrary("l4d2_damagebonus");
+
+    MarkNativeAsOptional("IsInReady");
+    
     return APLRes_Success;
 }
+
+public OnAllPluginsLoaded()
+{
+    g_bReadyUpIsAvailable = LibraryExists("readyup");
+}
+
+public OnLibraryRemoved(const String:name[])
+{
+    if (StrEqual(name, "readyup")) g_bReadyUpIsAvailable = false;
+}
+
+public OnLibraryAdded(const String:name[])
+{
+    if (StrEqual(name, "readyup")) g_bReadyUpIsAvailable = true;
+}
+
+
+public Native_GetCurrentBonus(Handle:plugin, numParams)
+{
+    return CalculateSurvivalBonus() * GetAliveSurvivors();
+}
+
+public Native_GetRoundBonus(Handle:plugin, numParams)
+{
+    return iStoreBonus[GetNativeCell(1)];
+}
+
+public Native_GetRoundDamage(Handle:plugin, numParams)
+{
+    return iTotalDamage[GetNativeCell(1)];
+}
+
 
 public OnPluginStart()
 {
@@ -114,10 +160,11 @@ public OnPluginStart()
     g_hCvarStaticBonus = CreateConVar(      "sm_static_bonus",              "0.0",      "Extra static bonus that is awarded per survivor for completing the map", FCVAR_PLUGIN, true, 0.0);
     g_hCvarMaxDamage = CreateConVar(        "sm_max_damage",              "800.0",      "Max damage used for calculation (controls x in [x - damage])", FCVAR_PLUGIN);
     g_hCvarDamageMulti = CreateConVar(      "sm_damage_multi",              "1.0",      "Multiplier to apply to damage before subtracting it from the max damage", FCVAR_PLUGIN, true, 0.0);
+    g_hCvarMapMulti = CreateConVar(         "sm_damage_mapmulti",          "-1",        "Disabled if negative, else sm_max_damage will be ignored and max bonus will be replaced by [map distance]*[this factor]", FCVAR_PLUGIN);
     
     g_hCvarBonusBase = CreateConVar(        "sm_dmgflx_base",               "0.0",      "Base bonus value. Max damage - taken damage is scaled back to 0 - <this value> range for the base bonus.", FCVAR_PLUGIN, true, 0.0);
     g_hCvarSolidFactor = CreateConVar(      "sm_dmgflx_solid_factor",       "1.0",      "The value of damage done to survivors before their first incap -- as a factor of other damage.", FCVAR_PLUGIN, true, 0.0);
-    g_hCvarDistScaling = CreateConVar(      "sm_dmgflx_distance_scaling",   "1",        "Distance scaling mode: 1 = entire bonus is scaled against base distance; 2 = max. damage is decreased for shorter distance.", FCVAR_PLUGIN, true, 0.0);
+    g_hCvarDistScaling = CreateConVar(      "sm_dmgflx_distance_scaling",   "1",        "Distance scaling mode: 1 = entire bonus is scaled against base distance; 2 = max. damage is decreased for shorter distance; 0 = fall back to damage_mapmulti.", FCVAR_PLUGIN, true, 0.0);
     g_hCvarDistBase = CreateConVar(         "sm_dmgflx_distance_base",    "400.0",      "For distance scaling. Base against which map distance is used to scale bonus (a map with this distance has a 1.0 * bonus).", FCVAR_PLUGIN, true, 0.0);
     g_hCvarDistFactor = CreateConVar(       "sm_dmgflx_distance_factor",    "1.0",      "For distance scaling. Factor by which bonus changes for shorter/longer maps (factor of damage change).", FCVAR_PLUGIN, true, 0.0);
     g_hCvarDisplayOnly = CreateConVar(      "sm_dmgflx_display_only",       "0",        "Whether to display the bonus only (for comparison with other scoring systems).", FCVAR_PLUGIN, true, 0.0, true, 1.0);
@@ -213,6 +260,19 @@ public RoundEnd_Event(Handle:event, const String:name[], bool:dontBroadcast)
     if (reason == 5)
     {
         DisplayBonus();
+        if (g_bReadyUpIsAvailable && bRoundOver[0] && !GameRules_GetProp("m_bInSecondHalfOfRound"))
+        {
+            decl String:readyMsgBuff[65];
+            if (bHasWiped[0])
+            {
+                FormatEx(readyMsgBuff, sizeof(readyMsgBuff), "Round 1: Wipe (%d damage)", iTotalDamage[0]);
+            }
+            else
+            {
+                FormatEx(readyMsgBuff, sizeof(readyMsgBuff), "Round 1: %d (%d damage)", iStoreBonus[0], iTotalDamage[0]);
+            }
+        }
+
     }
 }
 
@@ -245,7 +305,7 @@ public PlayerDeath_Event(Handle:event, const String:name[], bool:dontBroadcast)
 
 public FinaleVehicleLeaving_Event(Handle:event, const String:name[], bool:dontBroadcast)
 {
-    for (new i = 1; i < MaxClients; i++)
+    for (new i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i) && IsSurvivor(i) && IsPlayerIncap(i))
         {
@@ -258,16 +318,18 @@ public FinaleVehicleLeaving_Event(Handle:event, const String:name[], bool:dontBr
 
 public OnTakeDamage(victim, attacker, inflictor, Float:damage, damagetype)
 {
+    if (!IsSurvivor(victim)) { return; }
+    
     new srvchr = GetPlayerCharacter(victim);
-    iHealth[srvchr] = (!IsSurvivor(victim) || IsPlayerIncap(victim)) ? 0 : (GetSurvivorPermanentHealth(victim) + GetSurvivorTempHealth(victim));
+    iHealth[srvchr] = (IsPlayerIncap(victim)) ? 0 : (GetSurvivorPermanentHealth(victim) + GetSurvivorTempHealth(victim));
     bTookDamage[srvchr] = true;
 }
 
 public PlayerLedgeGrab_Event(Handle:event, const String:name[], bool:dontBroadcast)
 {
     new client = GetClientOfUserId(GetEventInt(event, "userid"));
-    new health = GetEntData(client, 14804, 4);
-    new temphealth = GetEntData(client, 14808, 4);
+    new health = L4D2Direct_GetPreIncapHealth(client);
+    new temphealth = L4D2Direct_GetPreIncapHealthBuffer(client);
     
     iTotalDamage[GameRules_GetProp("m_bInSecondHalfOfRound")] += health + temphealth;
     
@@ -310,6 +372,7 @@ public Action:L4D2_OnRevived(client)
 
 public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype)
 {
+    if (!IsSurvivor(victim)) { return; }
     new srvchr = GetPlayerCharacter(victim);
     
     if (iHealth[srvchr])
@@ -334,7 +397,7 @@ public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype)
                 }
             }
         }
-        iHealth[srvchr] = (!IsSurvivor(victim) || IsPlayerIncap(victim)) ? 0 : (GetSurvivorPermanentHealth(victim) + GetSurvivorTempHealth(victim));
+        iHealth[srvchr] = (IsPlayerIncap(victim)) ? 0 : (GetSurvivorPermanentHealth(victim) + GetSurvivorTempHealth(victim));
     }
 }
 
@@ -386,15 +449,15 @@ stock DisplayBonus(client=-1)
     for (new round = 0; round <= GameRules_GetProp("m_bInSecondHalfOfRound"); round++)
     {
         if (bRoundOver[round]) {
-            Format(msgPartHdr, sizeof(msgPartHdr), "Round \x05%i\x01 bonus", round+1);
+            FormatEx(msgPartHdr, sizeof(msgPartHdr), "Round \x05%i\x01 Bonus", round+1);
         } else {
-            Format(msgPartHdr, sizeof(msgPartHdr), "Current Bonus");
+            FormatEx(msgPartHdr, sizeof(msgPartHdr), "Current Bonus");
         }
 
         if (bHasWiped[round]) {
-            Format(msgPartDmg, sizeof(msgPartDmg), "\x03wipe\x01 (\x05%4i\x01 damage)", iTotalDamage[round]);
+            FormatEx(msgPartDmg, sizeof(msgPartDmg), "\x03wipe\x01 (\x05%4i\x01 damage)", iTotalDamage[round]);
         } else {
-            Format(msgPartDmg, sizeof(msgPartDmg), "\x04%4i\x01 (\x05%4i\x01 damage)",
+            FormatEx(msgPartDmg, sizeof(msgPartDmg), "\x04%4i\x01 (\x05%4i\x01 damage)",
                     (bRoundOver[round]) ? iStoreBonus[round] : CalculateSurvivalBonus() * GetAliveSurvivors(),
                     iTotalDamage[round]
                   );
@@ -413,6 +476,15 @@ stock DisplayBonus(client=-1)
             PrintToServer("\x01%s: %s", msgPartHdr, msgPartDmg);
         }
     }
+    
+    if (client == -1) {
+        PrintToChatAll("\x01Map istance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+    } else if (client) {
+        PrintToChat(client, "\x01Map istance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+    } else {
+        PrintToServer("\x01Map istance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+    }
+
 }
 
 stock DisplayBonusExplanation(client=-1)
@@ -432,7 +504,6 @@ stock DisplayBonusExplanation(client=-1)
     new Float: fScaleBonusBase = (GetConVarFloat(g_hCvarBonusBase) == 0.0) ? 1.0 : GetConVarFloat(g_hCvarBonusBase) / GetConVarFloat(g_hCvarMaxDamage);
 
     
-    
     // damage taken
     Format(sReport[iLine], STR_REPLINELENGTH, "Total damage taken: \x05%i\x01", iTotalDamage[round]);
     if (GetConVarFloat(g_hCvarSolidFactor) != 1.0) {
@@ -449,7 +520,7 @@ stock DisplayBonusExplanation(client=-1)
     
     if (GetConVarFloat(g_hCvarDamageMulti) != 1.0) {
         // damage scaled 
-        Format(sReport[iLine], STR_REPLINELENGTH, "dmg vs. maximum: (\x05%.f\x01 * %.2f) out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "dmg vs. maximum: (\x05%.f\x01 * %.2f) out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
                 fCalcTakenDamage, GetConVarFloat(g_hCvarDamageMulti), fCalcMaxDamage,
                 fPerc,
                 RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
@@ -458,7 +529,7 @@ stock DisplayBonusExplanation(client=-1)
     }
     else {
         // 1-1
-        Format(sReport[iLine], STR_REPLINELENGTH, "dmg vs. maximum: \x05%.f\x01 out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "dmg vs. maximum: \x05%.f\x01 out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
                 fCalcTakenDamage, fCalcMaxDamage,
                 (fCalcTakenDamage / fCalcMaxDamage) * 100.0,
                 RoundToFloor( fBaseBonus )
@@ -477,7 +548,7 @@ stock DisplayBonusExplanation(client=-1)
         fPerc = ( fCalcTakenDamage / fCalcMaxDamage ) * 100.0;
         if (fBaseBonus < 0.0) { fBaseBonus = 0.0; fPerc = 0.0; }
         
-        Format(sReport[iLine], STR_REPLINELENGTH, "Solid-health fact.: (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) out of (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) [\x04%.1f%%\x01] => \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Solid-health fact.: (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) out of (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) [\x04%.1f%%\x01] => \x03%i\x01",
                 float(iTotalDamage[round] - iSolidHealthDamage[round]) * GetConVarFloat(g_hCvarDamageMulti),
                 float(iSolidHealthDamage[round]) * GetConVarFloat(g_hCvarDamageMulti),
                 GetConVarFloat(g_hCvarSolidFactor),
@@ -502,7 +573,7 @@ stock DisplayBonusExplanation(client=-1)
                 if (GetConVarFloat(g_hCvarDistFactor) == 1.0)
                 {
                     fBaseBonus = fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) );
-                    Format(sReport[iLine], STR_REPLINELENGTH, "Distance (scaling): \x04%i\x01 / \x05%i\x01 [base] = factor \x04%.2f\x01 => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaling): \x04%i\x01 / \x05%i\x01 [base] = factor \x04%.2f\x01 => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore(),
                             GetConVarInt(g_hCvarDistBase),
                             float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase),
@@ -521,7 +592,7 @@ stock DisplayBonusExplanation(client=-1)
                                 + ( fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) ) * GetConVarFloat(g_hCvarDistFactor) )
                                 / (GetConVarFloat(g_hCvarDistFactor) + 1.0);
                     }
-                    Format(sReport[iLine], STR_REPLINELENGTH, "Distance (scaling): \x04%i\x01 / \x05%i\x01 [base] = factor \x04%.2f\x01 => \x05%i\x01, weighted as \x04%.2f\x01x => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaling): \x04%i\x01 / \x05%i\x01 [base] = factor \x04%.2f\x01 => \x05%i\x01, weighted as \x04%.2f\x01x => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore(),
                             GetConVarInt(g_hCvarDistBase),
                             float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase),
@@ -553,7 +624,7 @@ stock DisplayBonusExplanation(client=-1)
                 if (fBaseBonus < 0.0) { fBaseBonus = 0.0; fPerc = 0.0; }
                 
                 if (GetConVarFloat(g_hCvarDistFactor) == 1.0) {
-                    Format(sReport[iLine], STR_REPLINELENGTH, "Distance (max reduction): \x04%i\x01 diff. => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (max reduction): \x04%i\x01 diff. => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore() - GetConVarInt(g_hCvarDistBase),
                             fPerc,
                             (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0) ? (GetConVarFloat(g_hCvarMaxDamage) - float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore())) : GetConVarFloat(g_hCvarDistBase),
@@ -561,7 +632,7 @@ stock DisplayBonusExplanation(client=-1)
                         );
                 }
                 else {
-                    Format(sReport[iLine], STR_REPLINELENGTH, "Distance (max reduction): \x04%i\x01 diff., weighed \x05%.2f\x01x => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (max reduction): \x04%i\x01 diff., weighed \x05%.2f\x01x => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore() - GetConVarInt(g_hCvarDistBase),
                             GetConVarFloat(g_hCvarDistFactor),
                             fPerc,
@@ -580,7 +651,7 @@ stock DisplayBonusExplanation(client=-1)
     if (fScaleBonusBase != 1.0)
     {
         fBaseBonus = fBaseBonus * fScaleBonusBase;
-        Format(sReport[iLine], STR_REPLINELENGTH, "Scaled for bonus base: ([base] \x04%i\x01 / [max dmg] \x05%i\x01) x bonus => \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Scaled for bonus base: ([base] \x04%i\x01 / [max dmg] \x05%i\x01) x bonus => \x03%i\x01",
                     GetConVarInt(g_hCvarBonusBase),
                     GetConVarInt(g_hCvarMaxDamage),
                     RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
@@ -596,7 +667,7 @@ stock DisplayBonusExplanation(client=-1)
     if (living != TEAMSIZE_DEFAULT)
     {
         iTmpBonus = RoundToFloor( fBaseBonus * ( float(living) / TEAMSIZE_DEFAULT ) );
-        Format(sReport[iLine], STR_REPLINELENGTH, "Scaled for survivors: \x05%i\x01 living [\x04%.1f%%\x01] => bonus: \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Scaled for survivors: \x05%i\x01 living [\x04%.1f%%\x01] => bonus: \x03%i\x01",
                     living,
                     (float(living) / TEAMSIZE_DEFAULT) * 100.0,
                     iTmpBonus
@@ -607,7 +678,7 @@ stock DisplayBonusExplanation(client=-1)
     // add static survival bonus
     if (GetConVarInt(g_hCvarStaticBonus) > 0)
     {
-        Format(sReport[iLine], STR_REPLINELENGTH, "Static survival bonus: +\x04%i\x01 x \x05%i\x01 => \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Static survival bonus: +\x04%i\x01 x \x05%i\x01 => \x03%i\x01",
                     GetConVarInt(g_hCvarStaticBonus),
                     living,
                     iTmpBonus + ( GetConVarInt(g_hCvarStaticBonus) * living )
@@ -619,7 +690,7 @@ stock DisplayBonusExplanation(client=-1)
     new iDiff = ( iTmpBonus + ( GetConVarInt(g_hCvarStaticBonus) * living ) ) - ( CalculateSurvivalBonus() * living );
     if (iDiff != 0)
     {
-        Format(sReport[iLine], STR_REPLINELENGTH, "(ignore \x04%i\x01 points diff. from actual bonus (expl. rounding error))", iDiff);
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "(ignore \x04%i\x01 points diff. from actual bonus (expl. rounding error))", iDiff);
         iLine++;
     }
     
@@ -662,6 +733,12 @@ stock CalculateSurvivalBonus()
     new iBonusPart;
     new Float: fBaseMaxDamage = GetConVarFloat(g_hCvarMaxDamage);
     
+    // mapmulti cvar?
+    if (!iDistMode && GetConVarInt(g_hCvarMapMulti) > -1)
+    {
+        fBaseMaxDamage = GetConVarFloat(g_hCvarMapMulti) * L4D_GetVersusMaxCompletionScore();
+    }
+    
     // distance reduction (needs be done before dmg calc)
     if (iDistMode == DST_REDUCTION)
     {
@@ -673,7 +750,7 @@ stock CalculateSurvivalBonus()
     new Float: fMaxDamageSolidPart = MIN( fBaseMaxDamage , TEAMSIZE_DEFAULT * 100.0 );
     new Float: fTakenDamage = ( float( iDmg - iSolidHealthDamage[iRound] ) * GetConVarFloat(g_hCvarDamageMulti) ) + ( float(iSolidHealthDamage[iRound]) * GetConVarFloat(g_hCvarDamageMulti) * GetConVarFloat(g_hCvarSolidFactor) );
     new Float: fMaxDamage = ( fBaseMaxDamage - fMaxDamageSolidPart ) + ( fMaxDamageSolidPart * GetConVarFloat(g_hCvarSolidFactor) );
-
+    
     // calculate bonus
     fBonus = ( fMaxDamage - fTakenDamage ) * ( GetConVarFloat(g_hCvarMaxDamage) / fMaxDamage );
     
@@ -713,7 +790,7 @@ stock GetAliveSurvivors()
     new iAliveCount;
     new iSurvivorCount;
     new maxSurvs = (g_hCvarTeamSize != INVALID_HANDLE) ? GetConVarInt(g_hCvarTeamSize) : 4;
-    for (new i = 1; i < MaxClients && iSurvivorCount < maxSurvs; i++)
+    for (new i = 1; i <= MaxClients && iSurvivorCount < maxSurvs; i++)
     {
         if (IsSurvivor(i))
         {
@@ -729,7 +806,7 @@ stock GetUprightSurvivors()
     new iAliveCount;
     new iSurvivorCount;
     new maxSurvs = (g_hCvarTeamSize != INVALID_HANDLE) ? GetConVarInt(g_hCvarTeamSize) : 4;
-    for (new i=1; i < MaxClients && iSurvivorCount < maxSurvs; i++) {
+    for (new i=1; i <= MaxClients && iSurvivorCount < maxSurvs; i++) {
         if (IsSurvivor(i)) {
             iSurvivorCount++;
             if (IsPlayerAlive(i) && !IsPlayerIncap(i) && !IsPlayerLedgedAtAll(i)) {
@@ -752,7 +829,7 @@ stock GetPlayerCharacter(client)
     new tmpChr = GetEntProp(client, Prop_Send, "m_survivorCharacter");
     
     // use models when incorrect character returned
-    if (tmpChr < 0 || tmpChr > 3)
+    if (tmpChr < 0 || tmpChr >= MAX_CHARACTERS)
     {
         LogMessage("[dmgflx] Incorrect character code: %i (using model instead)", tmpChr);
         
