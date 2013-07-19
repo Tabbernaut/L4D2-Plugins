@@ -49,7 +49,7 @@ public Plugin:myinfo =
     name = "Damage Scoring - Flexible Version",
     author = "CanadaRox, Stabby, Tabun",
     description = "Custom damage scoring based on damage survivors take. With adjustable scoring calculation.",
-    version = "0.9.4",
+    version = "0.9.5",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/damage_bonus_flexible"
 };
 
@@ -478,11 +478,11 @@ stock DisplayBonus(client=-1)
     }
     
     if (client == -1) {
-        PrintToChatAll("\x01Map Distance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToChatAll("\x01Map Distance:   \x05%d\x01", L4D_GetVersusMaxCompletionScore());
     } else if (client) {
-        PrintToChat(client, "\x01Map Distance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToChat(client, "\x01Map Distance:   \x05%d\x01", L4D_GetVersusMaxCompletionScore());
     } else {
-        PrintToServer("\x01Map Distance: \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToServer("\x01Map Distance:   \x05%d\x01", L4D_GetVersusMaxCompletionScore());
     }
 
 }
@@ -496,18 +496,31 @@ stock DisplayBonusExplanation(client=-1)
     
     new round = GameRules_GetProp("m_bInSecondHalfOfRound");
     new living = (bRoundOver[round]) ? iStoreSurvivors[round] : GetAliveSurvivors();
+    new iDistMode = GetConVarInt(g_hCvarDistScaling);
     
-    new Float: fCalcMaxDamage = GetConVarFloat(g_hCvarMaxDamage);
+    new Float: fBaseMaxDamage = GetConVarFloat(g_hCvarMaxDamage);
+    
+    // crox/stab distance scaling
+    if (!iDistMode && GetConVarInt(g_hCvarMapMulti) > -1)
+    {
+        fBaseMaxDamage = GetConVarFloat(g_hCvarMapMulti) * L4D_GetVersusMaxCompletionScore();
+        
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (reduced): max damage reduced from \x05%i\x01 to \x04%i\x01", GetConVarInt(g_hCvarMaxDamage), RoundFloat(fBaseMaxDamage) );
+        iLine++;
+    }
+    
+    new Float: fCalcMaxDamage = fBaseMaxDamage;
     new Float: fCalcTakenDamage = float(iTotalDamage[round]);
     new Float: fBaseBonus = fCalcMaxDamage;
     new Float: fPerc = 0.0;
-    new Float: fScaleBonusBase = (GetConVarFloat(g_hCvarBonusBase) == 0.0) ? 1.0 : GetConVarFloat(g_hCvarBonusBase) / GetConVarFloat(g_hCvarMaxDamage);
+    new Float: fScaleBonusBase = (GetConVarFloat(g_hCvarBonusBase) == 0.0) ? 1.0 : GetConVarFloat(g_hCvarBonusBase) / fBaseMaxDamage;
 
     
+    
     // damage taken
-    Format(sReport[iLine], STR_REPLINELENGTH, "Total damage taken: \x05%i\x01", iTotalDamage[round]);
+    Format(sReport[iLine], STR_REPLINELENGTH, "Damage taken:       \x05%i\x01", iTotalDamage[round]);
     if (GetConVarFloat(g_hCvarSolidFactor) != 1.0) {
-        Format(sReport[iLine], STR_REPLINELENGTH, "%s (\x04%i\x01 of which solid health dmg).", sReport[iLine], iSolidHealthDamage[round]);
+        Format(sReport[iLine], STR_REPLINELENGTH, "%s (\x04%i\x01 of which on solid health).", sReport[iLine], iSolidHealthDamage[round]);
     } else {
         Format(sReport[iLine], STR_REPLINELENGTH, "%s.", sReport[iLine]);
     }
@@ -520,7 +533,7 @@ stock DisplayBonusExplanation(client=-1)
     
     if (GetConVarFloat(g_hCvarDamageMulti) != 1.0) {
         // damage scaled 
-        FormatEx(sReport[iLine], STR_REPLINELENGTH, "dmg vs. maximum: (\x05%.f\x01 * %.2f) out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Dmg taken/maximum:  (\x05%.f\x01 * %.2f) out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
                 fCalcTakenDamage, GetConVarFloat(g_hCvarDamageMulti), fCalcMaxDamage,
                 fPerc,
                 RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
@@ -529,7 +542,7 @@ stock DisplayBonusExplanation(client=-1)
     }
     else {
         // 1-1
-        FormatEx(sReport[iLine], STR_REPLINELENGTH, "dmg vs. maximum: \x05%.f\x01 out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Dmg taken/maximum:  \x05%.f\x01 out of \x05%.f\x01 [\x04%.1f%%\x01] => base bonus: \x03%i\x01",
                 fCalcTakenDamage, fCalcMaxDamage,
                 (fCalcTakenDamage / fCalcMaxDamage) * 100.0,
                 RoundToFloor( fBaseBonus )
@@ -542,18 +555,18 @@ stock DisplayBonusExplanation(client=-1)
     {
         fCalcTakenDamage = ( float( iTotalDamage[round] - iSolidHealthDamage[round] ) * GetConVarFloat(g_hCvarDamageMulti) ) + ( float(iSolidHealthDamage[round]) * GetConVarFloat(g_hCvarDamageMulti) * GetConVarFloat(g_hCvarSolidFactor) );
         new Float: fCalcMaxDamageSolidPart = TEAMSIZE_DEFAULT * 100.0 * GetConVarFloat(g_hCvarDamageMulti);
-        fCalcMaxDamage = (GetConVarFloat(g_hCvarMaxDamage) - fCalcMaxDamageSolidPart ) + ( fCalcMaxDamageSolidPart * GetConVarFloat(g_hCvarSolidFactor) );
+        fCalcMaxDamage = (fBaseMaxDamage - fCalcMaxDamageSolidPart ) + ( fCalcMaxDamageSolidPart * GetConVarFloat(g_hCvarSolidFactor) );
         // scale basebonus back to the maxdamage count
-        fBaseBonus = ( fCalcMaxDamage - fCalcTakenDamage ) * ( GetConVarFloat(g_hCvarMaxDamage) / fCalcMaxDamage );
+        fBaseBonus = ( fCalcMaxDamage - fCalcTakenDamage ) * ( fBaseMaxDamage / fCalcMaxDamage );
         fPerc = ( fCalcTakenDamage / fCalcMaxDamage ) * 100.0;
         if (fBaseBonus < 0.0) { fBaseBonus = 0.0; fPerc = 0.0; }
         
-        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Solid-health fact.: (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) out of (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) [\x04%.1f%%\x01] => \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Solid-health value: (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) out of (\x05%.f\x01+(\x04%.f\x01*\x05%.1f\x01)) [\x04%.1f%%\x01] => \x03%i\x01",
                 float(iTotalDamage[round] - iSolidHealthDamage[round]) * GetConVarFloat(g_hCvarDamageMulti),
                 float(iSolidHealthDamage[round]) * GetConVarFloat(g_hCvarDamageMulti),
                 GetConVarFloat(g_hCvarSolidFactor),
                 
-                GetConVarFloat(g_hCvarMaxDamage) - ( TEAMSIZE_DEFAULT * 100.0 * GetConVarFloat(g_hCvarDamageMulti)),
+                fBaseMaxDamage - ( TEAMSIZE_DEFAULT * 100.0 * GetConVarFloat(g_hCvarDamageMulti)),
                 TEAMSIZE_DEFAULT * 100.0 * GetConVarFloat(g_hCvarDamageMulti),
                 GetConVarFloat(g_hCvarSolidFactor),
                 
@@ -566,14 +579,14 @@ stock DisplayBonusExplanation(client=-1)
     // scale for distance
     if (L4D_GetVersusMaxCompletionScore() != GetConVarInt(g_hCvarDistBase))
     {
-        switch (GetConVarInt(g_hCvarDistScaling))
+        switch (iDistMode)
         {
             case DST_SCALING:
             {
                 if (GetConVarFloat(g_hCvarDistFactor) == 1.0)
                 {
                     fBaseBonus = fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) );
-                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaling): \x04%i\x01 / \x05%i\x01 [base] = factor \x04%.2f\x01 => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaled):  \x04%i\x01 / \x05%i\x01 [base] = \x04%.2f\x01x => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore(),
                             GetConVarInt(g_hCvarDistBase),
                             float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase),
@@ -592,7 +605,7 @@ stock DisplayBonusExplanation(client=-1)
                                 + ( fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) ) * GetConVarFloat(g_hCvarDistFactor) )
                                 / (GetConVarFloat(g_hCvarDistFactor) + 1.0);
                     }
-                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaling): \x04%i\x01 / \x05%i\x01 [base] = factor \x04%.2f\x01 => \x05%i\x01, weighted as \x04%.2f\x01x => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaled):  \x04%i\x01 / \x05%i\x01 [base] = \x04%.2f\x01x => \x05%i\x01, weighted \x04%.2f\x01x => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore(),
                             GetConVarInt(g_hCvarDistBase),
                             float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase),
@@ -609,11 +622,10 @@ stock DisplayBonusExplanation(client=-1)
                 {
                     if (GetConVarFloat(g_hCvarSolidFactor) != 1.0)
                     {
-                        new Float: fBaseMaxDamage = GetConVarFloat(g_hCvarMaxDamage);
                         fBaseMaxDamage -= ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) );
                         new Float: fCalcMaxDamageSolidPart = MIN( fBaseMaxDamage , TEAMSIZE_DEFAULT * 100.0 );
                         fCalcMaxDamage = ( fBaseMaxDamage - fCalcMaxDamageSolidPart ) + ( fCalcMaxDamageSolidPart * GetConVarFloat(g_hCvarSolidFactor) );
-                        fBaseBonus = (fCalcMaxDamage - fCalcTakenDamage ) * ( GetConVarFloat(g_hCvarMaxDamage) / fCalcMaxDamage );
+                        fBaseBonus = (fCalcMaxDamage - fCalcTakenDamage ) * ( fBaseMaxDamage / fCalcMaxDamage );
                     }
                     else {
                         fCalcMaxDamage -= ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) );
@@ -624,20 +636,20 @@ stock DisplayBonusExplanation(client=-1)
                 if (fBaseBonus < 0.0) { fBaseBonus = 0.0; fPerc = 0.0; }
                 
                 if (GetConVarFloat(g_hCvarDistFactor) == 1.0) {
-                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (max reduction): \x04%i\x01 diff. => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (reduced): \x04%i\x01 diff. => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore() - GetConVarInt(g_hCvarDistBase),
                             fPerc,
-                            (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0) ? (GetConVarFloat(g_hCvarMaxDamage) - float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore())) : GetConVarFloat(g_hCvarDistBase),
+                            (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0) ? (fBaseMaxDamage - float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore())) : GetConVarFloat(g_hCvarDistBase),
                             RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
                         );
                 }
                 else {
-                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (max reduction): \x04%i\x01 diff., weighed \x05%.2f\x01x => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
+                    FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (reduced): \x04%i\x01 diff., weighed \x05%.2f\x01x => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
                             L4D_GetVersusMaxCompletionScore() - GetConVarInt(g_hCvarDistBase),
                             GetConVarFloat(g_hCvarDistFactor),
                             fPerc,
                             (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0) ?
-                                (GetConVarFloat(g_hCvarMaxDamage) - ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) ) )
+                                ( fBaseMaxDamage - ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) ) )
                                 : GetConVarFloat(g_hCvarDistBase),
                             RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
                         );
@@ -651,25 +663,25 @@ stock DisplayBonusExplanation(client=-1)
     if (fScaleBonusBase != 1.0)
     {
         fBaseBonus = fBaseBonus * fScaleBonusBase;
-        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Scaled for bonus base: ([base] \x04%i\x01 / [max dmg] \x05%i\x01) x bonus => \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Scaled bonus base:  (\x04%i\x01 [base] / \x05%i\x01 [max]) = \x04%.2f\x01x => \x03%i\x01",
                     GetConVarInt(g_hCvarBonusBase),
-                    GetConVarInt(g_hCvarMaxDamage),
+                    RoundFloat(fBaseMaxDamage),
+                    fScaleBonusBase,
                     RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
                     
                 );
-        fBaseBonus = fBaseBonus * fScaleBonusBase;
         iLine++;
     }
     
     // scale for survivors
     new iTmpBonus;
-    iTmpBonus = RoundToFloor( (fBaseBonus * ( float(living) / TEAMSIZE_DEFAULT )) / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT); 
+    iTmpBonus = RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * living;
     if (living != TEAMSIZE_DEFAULT)
     {
-        iTmpBonus = RoundToFloor( fBaseBonus * ( float(living) / TEAMSIZE_DEFAULT ) );
-        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Scaled for survivors: \x05%i\x01 living [\x04%.1f%%\x01] => bonus: \x03%i\x01",
+        iTmpBonus = RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * living;
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Living survivors:   \x05%i\x01 living: \x04%.2f%\x01x => \x03%i\x01",
                     living,
-                    (float(living) / TEAMSIZE_DEFAULT) * 100.0,
+                    (float(living) / TEAMSIZE_DEFAULT),
                     iTmpBonus
                 );
         iLine++;
@@ -678,7 +690,7 @@ stock DisplayBonusExplanation(client=-1)
     // add static survival bonus
     if (GetConVarInt(g_hCvarStaticBonus) > 0)
     {
-        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Static survival bonus: +\x04%i\x01 x \x05%i\x01 => \x03%i\x01",
+        FormatEx(sReport[iLine], STR_REPLINELENGTH, "Static bonus: +\x04%i\x01 x \x05%i\x01 => \x03%i\x01",
                     GetConVarInt(g_hCvarStaticBonus),
                     living,
                     iTmpBonus + ( GetConVarInt(g_hCvarStaticBonus) * living )
@@ -752,7 +764,7 @@ stock CalculateSurvivalBonus()
     new Float: fMaxDamage = ( fBaseMaxDamage - fMaxDamageSolidPart ) + ( fMaxDamageSolidPart * GetConVarFloat(g_hCvarSolidFactor) );
     
     // calculate bonus
-    fBonus = ( fMaxDamage - fTakenDamage ) * ( GetConVarFloat(g_hCvarMaxDamage) / fMaxDamage );
+    fBonus = ( fMaxDamage - fTakenDamage ) * ( fBaseMaxDamage / fMaxDamage );
     
     // distance scaling (+ factor weighing)
     if (iDistMode == DST_SCALING)
@@ -773,7 +785,7 @@ stock CalculateSurvivalBonus()
     // scale for base
     if (GetConVarFloat(g_hCvarBonusBase) != 0.0)
     {
-        fBonus = fBonus * GetConVarFloat(g_hCvarBonusBase) / GetConVarFloat(g_hCvarMaxDamage);
+        fBonus = fBonus * GetConVarFloat(g_hCvarBonusBase) / fBaseMaxDamage;
     }
     
     // min 0
