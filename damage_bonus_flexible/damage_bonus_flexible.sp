@@ -49,7 +49,7 @@ public Plugin:myinfo =
     name = "Damage Scoring - Flexible Version",
     author = "CanadaRox, Stabby, Tabun",
     description = "Custom damage scoring based on damage survivors take. With adjustable scoring calculation.",
-    version = "0.9.5",
+    version = "0.9.6",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/damage_bonus_flexible"
 };
 
@@ -412,6 +412,8 @@ public Action:Command_Say(client, const String:command[], args)
         else if (StrEqual (sMessage, "!sm_damage")) return Plugin_Handled;
         else if (StrEqual (sMessage, "!health")) return Plugin_Handled;
         else if (StrEqual (sMessage, "!sm_health")) return Plugin_Handled;
+        else if (StrEqual (sMessage, "!damage_explain")) return Plugin_Handled;
+        else if (StrEqual (sMessage, "!sm_damage_explain")) return Plugin_Handled;
     }
 
     return Plugin_Continue;
@@ -438,7 +440,7 @@ stock StoreBonus(iBonus)
     new aliveSurvs = GetAliveSurvivors();
 
     iStoreBonus[round] = iBonus * aliveSurvs;
-    iStoreSurvivors[round] = GetAliveSurvivors();
+    iStoreSurvivors[round] = aliveSurvs;
 }
 
 stock DisplayBonus(client=-1)
@@ -818,7 +820,8 @@ stock GetUprightSurvivors()
     new iAliveCount;
     new iSurvivorCount;
     new maxSurvs = (g_hCvarTeamSize != INVALID_HANDLE) ? GetConVarInt(g_hCvarTeamSize) : 4;
-    for (new i=1; i <= MaxClients && iSurvivorCount < maxSurvs; i++) {
+    for (new i=1; i <= MaxClients && iSurvivorCount < maxSurvs; i++)
+    {
         if (IsSurvivor(i)) {
             iSurvivorCount++;
             if (IsPlayerAlive(i) && !IsPlayerIncap(i) && !IsPlayerLedgedAtAll(i)) {
