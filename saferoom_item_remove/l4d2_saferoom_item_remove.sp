@@ -2,6 +2,7 @@
 
 #include <sourcemod>
 #include <sdktools>
+#include <l4d2util>
 #include <l4d2_saferoom_detect>
 
 #define DELAY_ROUNDSTART    1.0
@@ -15,7 +16,7 @@ public Plugin:myinfo =
     name = "Saferoom Item Remover",
     author = "Tabun",
     description = "Removes any saferoom item (start or end).",
-    version = "0.0.3",
+    version = "0.0.5",
     url = ""
 }
 
@@ -29,9 +30,9 @@ new     Handle:         g_hTrieItems                                        = IN
 enum _:eTrieItemKillable
 {
     ITEM_KILLABLE           = 0,
-    ITEM_KILLABLE_HEALTH    = 1,
-    ITEM_KILLABLE_WEAPON    = 2,
-    ITEM_KILLABLE_OTHER     = 4
+    ITEM_KILLABLE_HEALTH    = (1 << 0),
+    ITEM_KILLABLE_WEAPON    = (1 << 1),
+    ITEM_KILLABLE_OTHER     = (1 << 2)
 }
 
 
