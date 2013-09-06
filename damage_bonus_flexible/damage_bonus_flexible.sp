@@ -50,7 +50,7 @@ public Plugin:myinfo =
     name = "Damage Scoring - Flexible Version",
     author = "CanadaRox, Stabby, Tabun",
     description = "Custom damage scoring based on damage survivors take. With adjustable scoring calculation.",
-    version = "0.9.7",
+    version = "0.9.8",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/damage_bonus_flexible"
 };
 
@@ -58,6 +58,7 @@ public Plugin:myinfo =
 // plugin internals
 new     bool:       g_bLateLoad;
 new     bool:       g_bReadyUpIsAvailable;
+new     bool:       g_bInRound;
 
 // game cvars
 new     Handle:     g_hCvarTeamSize;
@@ -238,12 +239,21 @@ public Action:Explain_Cmd(client, args)
     return Plugin_Handled;
 }
 
+public OnRoundIsLive()
+{
+    g_bInRound = true;
+}
+
 public RoundStart_Event(Handle:event, const String:name[], bool:dontBroadcast)
 {
     for (new i=0; i < MAX_CHARACTERS; i++)
     {
         iPlayerDamage[i] = 0;
         bPlayerHasBeenIncapped[i] = false;
+    }
+    
+    if ( !g_bReadyUpIsAvailable ) {
+        g_bInRound = true;
     }
 }
 
@@ -254,7 +264,8 @@ public RoundEnd_Event(Handle:event, const String:name[], bool:dontBroadcast)
         bHasWiped[GameRules_GetProp("m_bInSecondHalfOfRound")] = true;
     }
 
-    // when round is over, 
+    // when round is over,
+    g_bInRound = false;
     bRoundOver[GameRules_GetProp("m_bInSecondHalfOfRound")] = true;
 
     new reason = GetEventInt(event, "reason");
@@ -293,6 +304,8 @@ public PlayerDeath_Event(Handle:event, const String:name[], bool:dontBroadcast)
     {
         SetBonus(CalculateSurvivalBonus());
         
+        if (!g_bInRound) { return; }
+        
         // check solid health
         new srvchr = GetPlayerCharacter(client);
         if (iPlayerDamage[srvchr] < 100)
@@ -319,6 +332,7 @@ public FinaleVehicleLeaving_Event(Handle:event, const String:name[], bool:dontBr
 
 public OnTakeDamage(victim, attacker, inflictor, Float:damage, damagetype)
 {
+    if (!g_bInRound) { return; }
     if (!IsSurvivor(victim)) { return; }
     
     new srvchr = GetPlayerCharacter(victim);
@@ -328,6 +342,8 @@ public OnTakeDamage(victim, attacker, inflictor, Float:damage, damagetype)
 
 public PlayerLedgeGrab_Event(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if (!g_bInRound) { return; }
+    
     new client = GetClientOfUserId(GetEventInt(event, "userid"));
     new health = L4D2Direct_GetPreIncapHealth(client);
     new temphealth = L4D2Direct_GetPreIncapHealthBuffer(client);
@@ -344,7 +360,11 @@ public PlayerLedgeGrab_Event(Handle:event, const String:name[], bool:dontBroadca
 
 public PlayerIncap_Event(Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if (!g_bInRound) { return; }
+    
     new client = GetClientOfUserId(GetEventInt(event, "userid"));
+    if ( !IsSurvivor(client) ) { return; }
+    
     new srvchr = GetPlayerCharacter(client);
     
     bPlayerHasBeenIncapped[srvchr] = true;
@@ -359,6 +379,8 @@ public PlayerIncap_Event(Handle:event, const String:name[], bool:dontBroadcast)
 
 public Action:L4D2_OnRevived(client)
 {
+    if (!g_bInRound) { return; }
+    
     new health = GetSurvivorPermanentHealth(client);
     new temphealth = GetSurvivorTempHealth(client);
 
@@ -373,6 +395,7 @@ public Action:L4D2_OnRevived(client)
 
 public OnTakeDamagePost(victim, attacker, inflictor, Float:damage, damagetype)
 {
+    if (!g_bInRound) { return; }
     if (!IsSurvivor(victim)) { return; }
     new srvchr = GetPlayerCharacter(victim);
     
