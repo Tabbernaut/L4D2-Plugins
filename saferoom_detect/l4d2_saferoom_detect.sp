@@ -2,14 +2,15 @@
 
 #include <sourcemod>
 #include <sdktools>
-#include <l4d2lib>
+#undef REQUIRE_PLUGIN
+#include <lgofnoc>
 
 #define SR_DEBUG_MODE       0               // outputs some coordinate data
 
-#define DETMODE_LIB         0               // use l4d2lib functions
+#define DETMODE_LGO         0               // use mapinfo.txt (through lgofnoc)
 #define DETMODE_EXACT       1               // use exact list (coordinate-in-box)
 
-#define SR_RADIUS           200.0           // the radius used from saferoom-coordinate fr. l4d2lib
+#define SR_RADIUS           200.0           // the radius used to check distance from saferoom-coordinate (LGO mapinfo default)
 
 #define STRMAX_MAPNAME      64
 
@@ -21,13 +22,18 @@ static const String:MAPINFO_PATH[] = "configs/saferoominfo.txt";
 
     To Do
     =========
-        - make player checks for starting saferooms simply use simple netprop check.
-            unfortunately, this seems impossible -- the obvious candidates don't work
         - add custom campaign: Dead Before Dawn (DC) (problematic loading...)
         
     Changelog
     =========
     
+        0.0.5
+            - Got rid of dependency on l4d2lib. Now falls back on lgofnoc, if loaded.
+            - Now regged as 'saferoom_detect'
+            
+        0.0.4
+            - Fixed swapped start/end saferoom problem.
+            
         0.0.3
             - Better saferoom detection for weird saferooms (Death Toll church, Dead Air greenhouse), two-part saferoom checks.
             - Uses KeyValues file now: saferoominfo.txt in sourcemod/configs/
@@ -45,13 +51,14 @@ public Plugin:myinfo =
     name = "Precise saferoom detection",
     author = "Tabun",
     description = "Allows checks whether a coordinate/entity/player is in start or end saferoom (uses saferoominfo.txt).",
-    version = "0.0.4",
+    version = "0.0.5",
     url = ""
 }
 
+new     bool:           g_bLGOIsAvailable                                   = false;                // whether lgofnoc is loaded
 
 new     Handle:         g_kSIData                                           = INVALID_HANDLE;       // keyvalues handle for SaferoomInfo.txt
-new                     g_iMode                                             = DETMODE_LIB;          // detection mode for this map (LIB = l4d2lib 'vague radius' mode)
+new                     g_iMode                                             = DETMODE_LGO;          // detection mode for this map (LGO = mapinfo.txt 'vague radius' mode)
 new     String:         g_sMapname[STRMAX_MAPNAME];
 
 new     bool:           g_bHasStart;                                                                // if DETMODE_EXACT, whether start saferoom is known
@@ -80,7 +87,19 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     CreateNative("SAFEDETECT_IsPlayerInStartSaferoom", Native_IsPlayerInStartSaferoom);
     CreateNative("SAFEDETECT_IsEntityInEndSaferoom", Native_IsEntityInEndSaferoom);
     CreateNative("SAFEDETECT_IsPlayerInEndSaferoom", Native_IsPlayerInEndSaferoom);    
+    
+    RegPluginLibrary("saferoom_detect");
+    
+    MarkNativeAsOptional("LGO_IsMapDataAvailable");
+    MarkNativeAsOptional("LGO_GetMapValueVector");
+    MarkNativeAsOptional("LGO_GetMapValueFloat");
+    
     return APLRes_Success;
+}
+
+public OnAllPluginsLoaded()
+{
+    g_bLGOIsAvailable = LibraryExists("lgofnoc");
 }
 
 public Native_IsEntityInStartSaferoom(Handle:plugin, numParams)
@@ -126,7 +145,7 @@ public OnMapStart()
     // get and store map data for this round
     GetCurrentMap(g_sMapname, sizeof(g_sMapname));
     
-    g_iMode = ( SI_KV_UpdateSaferoomInfo() ) ? DETMODE_EXACT : DETMODE_LIB;
+    g_iMode = ( SI_KV_UpdateSaferoomInfo() ) ? DETMODE_EXACT : DETMODE_LGO;
 }
 
 public OnMapEnd()
@@ -237,25 +256,25 @@ IsPointInStartSaferoom(Float:location[3], entity=-1)
         
         return inSaferoom;
     }
-    else
+    else if (g_bLGOIsAvailable)
     {
-        // trust l4d2lib report
+        // trust lgofnoc / mapinfo
         
-        if (entity == -1)
-        {
-            // can't relay simple entity check
+        new Float:saferoom_distance = LGO_GetMapValueFloat("start_dist", SR_RADIUS);
+        new Float:saferoom_distance_extra = LGO_GetMapValueFloat("start_extra_dist", 0.0);
+        new Float:saferoom[3];
+        LGO_GetMapValueVector("start_point", saferoom, NULL_VECTOR);
         
-            new Float:saferoom[3];
-            L4D2_GetMapStartOrigin(saferoom);
-            
-            return bool: (GetVectorDistance(location, saferoom) <= SR_RADIUS);
-        }
-        else
+        if ( entity != -1 && IsValidEntity(entity) )
         {
-            // simple relay
-            return bool: (L4D2_IsEntityInSaferoom(entity) && Saferoom_Start);
+            GetEntPropVector(entity, Prop_Send, "m_vecOrigin", location);
         }
+        
+        // distance to entity
+        return bool: ( GetVectorDistance(location, saferoom) <= ((saferoom_distance_extra > saferoom_distance) ? saferoom_distance_extra : saferoom_distance) );
     }
+    
+    return false;
     
 }
 
@@ -305,25 +324,24 @@ IsPointInEndSaferoom(Float:location[3], entity = -1)
         
         return inSaferoom;
     }
-    else
+    else if (g_bLGOIsAvailable)
     {
-        // trust l4d2lib report
+        // trust lgofnoc / mapinfo
         
-        if (entity == -1)
-        {
-            // can't relay simple entity check
+        new Float:saferoom_distance = LGO_GetMapValueFloat("end_dist", SR_RADIUS);
+        new Float:saferoom[3];
+        LGO_GetMapValueVector("end_point", saferoom, NULL_VECTOR);
         
-            new Float:saferoom[3];
-            L4D2_GetMapEndOrigin(saferoom);
-            
-            return bool: (GetVectorDistance(location, saferoom) <= SR_RADIUS);
-        }
-        else
+        if ( entity != -1 && IsValidEntity(entity) )
         {
-            // simple relay
-            return bool: (L4D2_IsEntityInSaferoom(entity) && Saferoom_End);
+            GetEntPropVector(entity, Prop_Send, "m_vecOrigin", location);
         }
+        
+        // distance to entity
+        return bool: ( GetVectorDistance(location, saferoom) <= saferoom_distance );
     }
+    
+    return false;
 }
 
 
