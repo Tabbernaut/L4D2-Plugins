@@ -3,6 +3,7 @@
 #include <sdktools>
 #include <left4downtown>
 #include <l4d2_direct>
+#include <l4d2lib>
 #undef REQUIRE_PLUGIN
 #include <readyup>
 
@@ -50,7 +51,7 @@ public Plugin:myinfo =
     name = "Damage Scoring - Flexible Version",
     author = "CanadaRox, Stabby, Tabun",
     description = "Custom damage scoring based on damage survivors take. With adjustable scoring calculation.",
-    version = "0.9.8",
+    version = "0.9.9",
     url = "https://github.com/Tabbernaut/L4D2-Plugins/tree/master/damage_bonus_flexible"
 };
 
@@ -58,6 +59,7 @@ public Plugin:myinfo =
 // plugin internals
 new     bool:       g_bLateLoad;
 new     bool:       g_bReadyUpIsAvailable;
+new     bool:       g_bLibIsAvailable;
 new     bool:       g_bInRound;
 
 // game cvars
@@ -80,6 +82,9 @@ new     Handle:     g_hCvarDistScaling;
 new     Handle:     g_hCvarDistBase;
 new     Handle:     g_hCvarDistFactor;
 
+// custom distance
+new                 g_iMaxDistance;
+
 // tracking damage
 new                 iHealth[MAX_CHARACTERS];
 new                 bTookDamage[MAX_CHARACTERS];
@@ -92,6 +97,7 @@ new                 iStoreSurvivors[2];                     // how many survived
 
 new                 iPlayerDamage[MAX_CHARACTERS];              // the damage a player has taken individually (for finding solid health damage)
 new     bool:       bPlayerHasBeenIncapped[MAX_CHARACTERS];     // only true after the survivor has been incapped at least once
+
 
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
@@ -111,6 +117,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 public OnAllPluginsLoaded()
 {
     g_bReadyUpIsAvailable = LibraryExists("readyup");
+    g_bLibIsAvailable = LibraryExists("l4d2lib");
 }
 
 public OnLibraryRemoved(const String:name[])
@@ -212,6 +219,15 @@ public OnMapStart()
         iStoreSurvivors[i] = 0;
         bRoundOver[i] = false;
         bHasWiped[i] = false;
+    }
+    
+    // custom distance
+    new iTmpDistance = L4D2_GetMapValueInt("max_distance", -1);
+    
+    if ( g_bLibIsAvailable && iTmpDistance != -1) {
+        g_iMaxDistance = iTmpDistance;
+    } else {
+        g_iMaxDistance = L4D_GetVersusMaxCompletionScore();
     }
 }
 
@@ -504,11 +520,11 @@ stock DisplayBonus(client=-1)
     }
     
     if (client == -1) {
-        PrintToChatAll("\x01Map Distance:   \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToChatAll("\x01Map Distance:   \x05%d\x01", g_iMaxDistance);
     } else if (client) {
-        PrintToChat(client, "\x01Map Distance:   \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToChat(client, "\x01Map Distance:   \x05%d\x01", g_iMaxDistance);
     } else {
-        PrintToServer("\x01Map Distance:   \x05%d\x01", L4D_GetVersusMaxCompletionScore());
+        PrintToServer("\x01Map Distance:   \x05%d\x01", g_iMaxDistance);
     }
 
 }
@@ -529,7 +545,7 @@ stock DisplayBonusExplanation(client=-1)
     // crox/stab distance scaling
     if (!iDistMode && GetConVarInt(g_hCvarMapMulti) > -1)
     {
-        fBaseMaxDamage = GetConVarFloat(g_hCvarMapMulti) * L4D_GetVersusMaxCompletionScore();
+        fBaseMaxDamage = GetConVarFloat(g_hCvarMapMulti) * g_iMaxDistance;
         
         FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (reduced): max damage reduced from \x05%i\x01 to \x04%i\x01", GetConVarInt(g_hCvarMaxDamage), RoundFloat(fBaseMaxDamage) );
         iLine++;
@@ -603,10 +619,10 @@ stock DisplayBonusExplanation(client=-1)
     iLine++;
     
     // scale for distance
-    if (L4D_GetVersusMaxCompletionScore() != GetConVarInt(g_hCvarDistBase))
+    if (g_iMaxDistance != GetConVarInt(g_hCvarDistBase))
     {
         // scale upward if mapdistance greater than bonus base
-        if (iDistMode == DST_REDUCTION && GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() < 0) {
+        if (iDistMode == DST_REDUCTION && GetConVarInt(g_hCvarDistBase) - g_iMaxDistance < 0) {
             iDistMode = DST_SCALING;
         }
         
@@ -614,30 +630,30 @@ stock DisplayBonusExplanation(client=-1)
         {
             if (GetConVarFloat(g_hCvarDistFactor) == 1.0)
             {
-                fBaseBonus = fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) );
+                fBaseBonus = fBaseBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) );
                 FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaled):  \x04%i\x01 / \x05%i\x01 [base] = \x04%.2f\x01x => \x03%i\x01",
-                        L4D_GetVersusMaxCompletionScore(),
+                        g_iMaxDistance,
                         GetConVarInt(g_hCvarDistBase),
-                        float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase),
+                        float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase),
                         RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
                     );
             }
             else
             {
-                new iOldBonus = RoundFloat( fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) );
+                new iOldBonus = RoundFloat( fBaseBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) ) );
                 if (GetConVarFloat(g_hCvarDistFactor) < 1.0) {
                     fBaseBonus = fBaseBonus * (1.0 - GetConVarFloat(g_hCvarDistFactor))
-                            + ( fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) ) * GetConVarFloat(g_hCvarDistFactor);
+                            + ( fBaseBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) ) ) * GetConVarFloat(g_hCvarDistFactor);
                 }
                 else {
                     fBaseBonus = ( fBaseBonus
-                            + ( fBaseBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) ) * GetConVarFloat(g_hCvarDistFactor) )
+                            + ( fBaseBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) ) ) * GetConVarFloat(g_hCvarDistFactor) )
                             / (GetConVarFloat(g_hCvarDistFactor) + 1.0);
                 }
                 FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (scaled):  \x04%i\x01 / \x05%i\x01 [base] = \x04%.2f\x01x => \x05%i\x01, weighted \x04%.2f\x01x => \x03%i\x01",
-                        L4D_GetVersusMaxCompletionScore(),
+                        g_iMaxDistance,
                         GetConVarInt(g_hCvarDistBase),
-                        float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase),
+                        float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase),
                         iOldBonus,
                         GetConVarFloat(g_hCvarDistFactor),
                         RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
@@ -646,17 +662,17 @@ stock DisplayBonusExplanation(client=-1)
         }
         else if (iDistMode == DST_REDUCTION || iDistMode == DST_REDUCTION_ONLY)
         {
-            if (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0)
+            if (GetConVarInt(g_hCvarDistBase) - g_iMaxDistance > 0)
             {
                 if (GetConVarFloat(g_hCvarSolidFactor) != 1.0)
                 {
-                    fBaseMaxDamage -= ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) );
+                    fBaseMaxDamage -= ( float(GetConVarInt(g_hCvarDistBase) - g_iMaxDistance) * GetConVarFloat(g_hCvarDistFactor) );
                     new Float: fCalcMaxDamageSolidPart = MIN( fBaseMaxDamage , TEAMSIZE_DEFAULT * 100.0 );
                     fCalcMaxDamage = ( fBaseMaxDamage - fCalcMaxDamageSolidPart ) + ( fCalcMaxDamageSolidPart * GetConVarFloat(g_hCvarSolidFactor) );
                     fBaseBonus = (fCalcMaxDamage - fCalcTakenDamage ) * ( fBaseMaxDamage / fCalcMaxDamage );
                 }
                 else {
-                    fCalcMaxDamage -= ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) );
+                    fCalcMaxDamage -= ( float(GetConVarInt(g_hCvarDistBase) - g_iMaxDistance) * GetConVarFloat(g_hCvarDistFactor) );
                     fBaseBonus = fCalcMaxDamage - fCalcTakenDamage;
                 }
             }
@@ -665,19 +681,19 @@ stock DisplayBonusExplanation(client=-1)
             
             if (GetConVarFloat(g_hCvarDistFactor) == 1.0) {
                 FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (reduced): \x04%i\x01 diff. => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
-                        L4D_GetVersusMaxCompletionScore() - GetConVarInt(g_hCvarDistBase),
+                        g_iMaxDistance - GetConVarInt(g_hCvarDistBase),
                         fPerc,
-                        (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0) ? (fBaseMaxDamage - float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore())) : GetConVarFloat(g_hCvarDistBase),
+                        (GetConVarInt(g_hCvarDistBase) - g_iMaxDistance > 0) ? (fBaseMaxDamage - float(GetConVarInt(g_hCvarDistBase) - g_iMaxDistance)) : GetConVarFloat(g_hCvarDistBase),
                         RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
                     );
             }
             else {
                 FormatEx(sReport[iLine], STR_REPLINELENGTH, "Distance (reduced): \x04%i\x01 diff., weighed \x05%.2f\x01x => new dmg: [\x04%.1f%%\x01] out of \x05%.f\x01 max => \x03%i\x01",
-                        L4D_GetVersusMaxCompletionScore() - GetConVarInt(g_hCvarDistBase),
+                        g_iMaxDistance - GetConVarInt(g_hCvarDistBase),
                         GetConVarFloat(g_hCvarDistFactor),
                         fPerc,
-                        (GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore() > 0) ?
-                            ( fBaseMaxDamage - ( float(GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore()) * GetConVarFloat(g_hCvarDistFactor) ) )
+                        (GetConVarInt(g_hCvarDistBase) - g_iMaxDistance > 0) ?
+                            ( fBaseMaxDamage - ( float(GetConVarInt(g_hCvarDistBase) - g_iMaxDistance) * GetConVarFloat(g_hCvarDistFactor) ) )
                             : GetConVarFloat(g_hCvarDistBase),
                         RoundToFloor( fBaseBonus / TEAMSIZE_DEFAULT ) * RoundFloat(TEAMSIZE_DEFAULT)
                     );
@@ -775,13 +791,13 @@ stock CalculateSurvivalBonus()
     // mapmulti cvar?
     if (!iDistMode && GetConVarInt(g_hCvarMapMulti) > -1)
     {
-        fBaseMaxDamage = GetConVarFloat(g_hCvarMapMulti) * L4D_GetVersusMaxCompletionScore();
+        fBaseMaxDamage = GetConVarFloat(g_hCvarMapMulti) * g_iMaxDistance;
     }
     
     // distance reduction (needs be done before dmg calc)
     if (iDistMode == DST_REDUCTION || iDistMode == DST_REDUCTION_ONLY)
     {
-        new iDiff = GetConVarInt(g_hCvarDistBase) - L4D_GetVersusMaxCompletionScore();
+        new iDiff = GetConVarInt(g_hCvarDistBase) - g_iMaxDistance;
         if (iDiff > 0) {
             fBaseMaxDamage -= float( MAX( iDiff , 0 ) ) * GetConVarFloat(g_hCvarDistFactor);
         }
@@ -805,14 +821,14 @@ stock CalculateSurvivalBonus()
     {
         if (fDistFactor < 1.0)
         {
-            fBonus = fBonus * (1.0 - fDistFactor) + ( fBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) * fDistFactor );
+            fBonus = fBonus * (1.0 - fDistFactor) + ( fBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) ) * fDistFactor );
         }
         else if (fDistFactor > 1.0)
         {
-            fBonus = ( fBonus + ( fBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) ) ) * fDistFactor ) / (fDistFactor + 1.0);
+            fBonus = ( fBonus + ( fBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) ) ) * fDistFactor ) / (fDistFactor + 1.0);
         }
         else {  // factor 1.0
-            fBonus = fBonus * ( float(L4D_GetVersusMaxCompletionScore()) / GetConVarFloat(g_hCvarDistBase) );
+            fBonus = fBonus * ( float(g_iMaxDistance) / GetConVarFloat(g_hCvarDistBase) );
         }
     }
     
