@@ -77,6 +77,9 @@ new                     g_iDamage       [MAXTRACKED][MAXTRACKED][MAXTYPES];     
 new     String:         g_sPlayerName   [MAXTRACKED][MAXNAME];
 new                     g_iPlayers                                          = 0;
 
+new     String:         g_sTmpString    [MAXNAME];                                                  // why is this a global? kinda silly, but the global can be used for printing
+                                                                                                    // after the stripUnicode() method is called.. oh well.
+
 /*
     To Do
     -----
@@ -560,11 +563,14 @@ public BuildConsoleBuffer ()
             Format( strPrint[TYPE_SELF],        s_len, "       " );
         }
         
+        // prepare non-unicode string
+        stripUnicode( g_sPlayerName[i] );
+        
         // Format the basic stats
         Format(g_sConsoleBufGiven, CONBUFSIZE,
             "%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |\n",
             g_sConsoleBufGiven,
-            g_sPlayerName[i],
+            g_sTmpString,
             strPrint[TYPE_TOTAL],
             strPrint[TYPE_PELLET], strPrint[TYPE_BULLET], strPrint[TYPE_MELEE],
             strPrint[TYPE_FIRE], strPrint[TYPE_INCAPPED], strPrint[TYPE_OTHER],
@@ -641,11 +647,14 @@ public BuildConsoleBuffer ()
             Format( strPrint[TYPE_SELF],        s_len, "       " );
         }
         
+        // prepare non-unicode string
+        stripUnicode( g_sPlayerName[j] );
+        
         // Format the basic stats
         Format(g_sConsoleBufTaken, CONBUFSIZE,
             "%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |\n",
             g_sConsoleBufTaken,
-            g_sPlayerName[j],
+            g_sTmpString,
             strPrint[TYPE_TOTAL],
             strPrint[TYPE_PELLET], strPrint[TYPE_BULLET], strPrint[TYPE_MELEE],
             strPrint[TYPE_FIRE], strPrint[TYPE_INCAPPED], strPrint[TYPE_OTHER],
@@ -700,6 +709,60 @@ stock GetPlayerCharacter ( client )
     
     return tmpChr;
 }
+
+public stripUnicode ( String:testString[MAXNAME] )
+{
+    new const maxlength = MAX_NAME_LENGTH;
+    //strcopy(testString, maxlength, sTmpString);
+    g_sTmpString = testString;
+    
+    new uni=0;
+    new currentChar;
+    new tmpCharLength = 0;
+    //new iReplace[MAX_NAME_LENGTH];      // replace these chars
+    
+    for (new i=0; i < maxlength - 3 && g_sTmpString[i] != 0; i++)
+    {
+        // estimate current character value
+        if ((g_sTmpString[i]&0x80) == 0) // single byte character?
+        {
+            currentChar=g_sTmpString[i]; tmpCharLength = 0;
+        } else if (((g_sTmpString[i]&0xE0) == 0xC0) && ((g_sTmpString[i+1]&0xC0) == 0x80)) // two byte character?
+        {
+            currentChar=(g_sTmpString[i++] & 0x1f); currentChar=currentChar<<6;
+            currentChar+=(g_sTmpString[i] & 0x3f); 
+            tmpCharLength = 1;
+        } else if (((g_sTmpString[i]&0xF0) == 0xE0) && ((g_sTmpString[i+1]&0xC0) == 0x80) && ((g_sTmpString[i+2]&0xC0) == 0x80)) // three byte character?
+        {
+            currentChar=(g_sTmpString[i++] & 0x0f); currentChar=currentChar<<6;
+            currentChar+=(g_sTmpString[i++] & 0x3f); currentChar=currentChar<<6;
+            currentChar+=(g_sTmpString[i] & 0x3f);
+            tmpCharLength = 2;
+        } else if (((g_sTmpString[i]&0xF8) == 0xF0) && ((g_sTmpString[i+1]&0xC0) == 0x80) && ((g_sTmpString[i+2]&0xC0) == 0x80) && ((g_sTmpString[i+3]&0xC0) == 0x80)) // four byte character?
+        {
+            currentChar=(g_sTmpString[i++] & 0x07); currentChar=currentChar<<6;
+            currentChar+=(g_sTmpString[i++] & 0x3f); currentChar=currentChar<<6;
+            currentChar+=(g_sTmpString[i++] & 0x3f); currentChar=currentChar<<6;
+            currentChar+=(g_sTmpString[i] & 0x3f);
+            tmpCharLength = 3;
+        } else 
+        {
+            currentChar=CHARTHRESHOLD + 1; // reaching this may be caused by bug in sourcemod or some kind of bug using by the user - for unicode users I do assume last ...
+            tmpCharLength = 0;
+        }
+        
+        // decide if character is allowed
+        if (currentChar > CHARTHRESHOLD)
+        {
+            uni++;
+            // replace this character // 95 = _, 32 = space
+            for (new j=tmpCharLength; j >= 0; j--) {
+                g_sTmpString[i - j] = 95; 
+            }
+        }
+    }
+}
+
 
 /*
 enum _:WeaponId
