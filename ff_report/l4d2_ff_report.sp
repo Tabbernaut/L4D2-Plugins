@@ -134,15 +134,24 @@ public OnPluginStart()
     
     if ( g_bLateLoad )
     {
+        new index = -1;
         for ( new i = 1; i <= MaxClients; i++ )
         {
             if ( IsClientInGame(i) && !IsFakeClient(i) )
             {
                 GetClientAuthString( i, sSteamId, sizeof(sSteamId) );
-                SetTrieValue( g_hTriePlayers, sSteamId, g_iPlayers );
-                GetClientName( i, g_sPlayerName[g_iPlayers], MAXNAME );
-                //PrintToChatAll("client: %i %N %s", i, i, g_sPlayerName[g_iPlayers] );
-                g_iPlayers++;
+                
+                index = GetPlayerIndexForSteamId( sSteamId );
+                
+                if ( index == -1 )
+                {
+                    SetTrieValue( g_hTriePlayers, sSteamId, g_iPlayers );
+                    GetClientName( i, g_sPlayerName[g_iPlayers], MAXNAME );
+                    //PrintToChatAll("client: %i %N %s", i, i, g_sPlayerName[g_iPlayers] );
+                    g_iPlayers++;
+                
+                    if ( g_iPlayers >= MAXTRACKED ) { g_iPlayers = MAXTRACKED - 1; }    // safeguard
+                }
             }
         }
     }
@@ -163,6 +172,8 @@ public OnClientPostAdminCheck( client )
         GetClientName( client, g_sPlayerName[g_iPlayers], MAXNAME );
         //PrintToChatAll("client: %i %N %s", client, client, g_sPlayerName[g_iPlayers] );
         g_iPlayers++;
+        
+        if ( g_iPlayers >= MAXTRACKED ) { g_iPlayers = MAXTRACKED - 1; }    // safeguard
     }
 }
 
@@ -216,7 +227,10 @@ public Event_RoundEnd (Handle:event, const String:name[], bool:dontBroadcast)
     {
         if ( g_bInRound )
         {
-            CreateTimer( DELAY_PRINT_SCAV, Timer_FriendlyFireDisplay );
+            if ( GetConVarBool( g_hCvarAutoReport ) )
+            {
+                CreateTimer( DELAY_PRINT_SCAV, Timer_FriendlyFireDisplay );
+            }
             g_bInRound = false;
         }
     }
