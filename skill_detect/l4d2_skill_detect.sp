@@ -24,13 +24,16 @@
  *      OnBoomerPop( survivor, boomer )
  *      OnChargerLevel( survivor, charger )
  *      OnChargerLevelHurt( survivor, charger, damage )
- 
  *      OnWitchCrown( survivor, damage )
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
+ *      OnTongueCut( survivor, smoker )
+ *      OnSmokerSelfClear( survivor, smoker )
+ 
  *      OnHighPounce( hunter, victim, damage )
  *      OnDeathCharge( charger, victim )
- *      OnRockSkeeted( survivor )
- *      OnTongueCut( survivor, victim )
+ *      OnRockSkeeted( survivor, tank )
+ *      OnRockHit( tank, survivor )
+ 
  *
  *  Where survivor == -2 if it was a team skeet, -1 or 0 if unknown or invalid client.
  *  damage is the amount of damage done (that didn't add up to skeeting damage),
@@ -61,6 +64,7 @@
 #define POUNCE_CHECK_TIME   0.1
 #define SHOVE_TIME          0.1
 
+#define ZC_SMOKER       1
 #define ZC_BOOMER       2
 #define ZC_HUNTER       3
 #define ZC_CHARGER      6
@@ -73,6 +77,9 @@
 #define DMG_BUCKSHOT            (1 << 29)       // not quite a bullet. Little, rounder, different. 
 
 #define DMGARRAYEXT     6                       // MAXPLAYERS+# -- extra indices in witch_dmg_array + 1
+
+#define CUT_KILL        3                       // reason for tongue break
+#define CUT_SLASH       4
 
 // trie values: weapon type
 enum _:strWeaponType
@@ -110,7 +117,8 @@ new     Handle:         g_hForwardLevel                                     = IN
 new     Handle:         g_hForwardLevelHurt                                 = INVALID_HANDLE;
 new     Handle:         g_hForwardCrown                                     = INVALID_HANDLE;
 new     Handle:         g_hForwardDrawCrown                                 = INVALID_HANDLE;
-
+new     Handle:         g_hForwardTongueCut                                 = INVALID_HANDLE;
+new     Handle:         g_hForwardSmokerSelfClear                           = INVALID_HANDLE;
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
@@ -139,6 +147,11 @@ new     bool:           g_bChargerCharging      [MAXPLAYERS + 1];               
 // crowns
 new     Float:          g_fWitchShotStart       [MAXPLAYERS + 1];                               // when the last shotgun blast from a survivor started (on any witch)
 
+// smoker clears
+new     bool:           g_bSmokerClearCheck     [MAXPLAYERS + 1];                               // smoker dies and this is set, it's a self-clear if g_iSmokerVictim is the killer
+new                     g_iSmokerVictim         [MAXPLAYERS + 1];                               // the one that's being pulled
+new                     g_iSmokerVictimDamage   [MAXPLAYERS + 1];                               // amount of damage done to a smoker by the one he pulled
+
 new     Handle:         g_hCvarReportSkeets                                 = INVALID_HANDLE;   // cvar whether to report skeets
 new     Handle:         g_hCvarReportNonSkeets                              = INVALID_HANDLE;   // cvar whether to report non-/hurt skeets
 new     Handle:         g_hCvarReportLevels                                 = INVALID_HANDLE;
@@ -146,10 +159,13 @@ new     Handle:         g_hCvarReportLevelsHurt                             = IN
 new     Handle:         g_hCvarReportDeadstops                              = INVALID_HANDLE;
 new     Handle:         g_hCvarReportCrowns                                 = INVALID_HANDLE;
 new     Handle:         g_hCvarReportDrawCrowns                             = INVALID_HANDLE;
+new     Handle:         g_hCvarReportSmokerTongueCuts                       = INVALID_HANDLE;
+new     Handle:         g_hCvarReportSmokerSelfClears                       = INVALID_HANDLE;
 
 new     Handle:         g_hCvarAllowMelee                                   = INVALID_HANDLE;   // cvar whether to count melee skeets
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
 new     Handle:         g_hCvarDrawCrownThresh                              = INVALID_HANDLE;   // cvar damage in final shot for drawcrown-req.
+new     Handle:         g_hCvarSelfClearThresh                              = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
@@ -160,14 +176,10 @@ new     Handle:         g_hCvarWitchHealth                                  = IN
     To do
     -----
     
-    - witch crown detection
-    - witch drawcrown/hurtcrown detection (how precisely?)
-            - shot by surv X, then final damage done in blast > 700 by X
-    
     - highpounce detection
-    - tongue cuts
-    
-    - timeout handling for m2s / deadstops: only count it once per 0.1 sec for surv-hunt combo
+    - deathcharge detection
+    - rockskeet detection
+    - rockhit detection
 
 */
 
@@ -198,6 +210,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardLevelHurt =       CreateGlobalForward("OnChargerLevelHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardCrown =           CreateGlobalForward("OnWitchCrown", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardDrawCrown =       CreateGlobalForward("OnWitchDrawCrown", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
+    g_hForwardTongueCut =       CreateGlobalForward("OnTongueCut", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell );
     
     g_bLateLoad = late;
     
@@ -225,21 +239,27 @@ public OnPluginStart()
     HookEvent("witch_killed",               Event_WitchKilled,              EventHookMode_Post);
     HookEvent("witch_harasser_set",         Event_WitchHarasserSet,         EventHookMode_Post);
     
+    HookEvent("tongue_grab",                Event_TongueGrab,               EventHookMode_Post);
+    HookEvent("tongue_pull_stopped",        Event_TonguePullStopped,        EventHookMode_Post);
+    
     // version cvar
     CreateConVar( "sm_skill_detect_version", PLUGIN_VERSION, "Skill detect plugin version.", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_REPLICATED|FCVAR_DONTRECORD );
     
-    g_hCvarReportSkeets = CreateConVar(     "sm_skill_report_skeet" ,       "0", "Whether to report skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportNonSkeets = CreateConVar(  "sm_skill_report_hurtskeet",    "0", "Whether to report hurt/failed skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportLevels = CreateConVar(     "sm_skill_report_level" ,       "0", "Whether to report charger levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportLevelsHurt = CreateConVar( "sm_skill_report_hurtlevel",    "0", "Whether to report chipped levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportDeadstops = CreateConVar(  "sm_skill_report_deadstop" ,    "0", "Whether to report deadstops in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportCrowns = CreateConVar(     "sm_skill_report_crown" ,       "0", "Whether to report full crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportDrawCrowns = CreateConVar( "sm_skill_report_drawcrown",    "0", "Whether to report draw-crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportSkeets = CreateConVar(             "sm_skill_report_skeet" ,       "0", "Whether to report skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportNonSkeets = CreateConVar(          "sm_skill_report_hurtskeet",    "0", "Whether to report hurt/failed skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportLevels = CreateConVar(             "sm_skill_report_level" ,       "0", "Whether to report charger levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportLevelsHurt = CreateConVar(         "sm_skill_report_hurtlevel",    "0", "Whether to report chipped levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportDeadstops = CreateConVar(          "sm_skill_report_deadstop" ,    "0", "Whether to report deadstops in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportCrowns = CreateConVar(             "sm_skill_report_crown" ,       "0", "Whether to report full crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportDrawCrowns = CreateConVar(         "sm_skill_report_drawcrown",    "0", "Whether to report draw-crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportSmokerTongueCuts = CreateConVar(   "sm_skill_report_tonguecut",    "0", "Whether to report smoker tongue cuts in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportSmokerSelfClears = CreateConVar(   "sm_skill_report_selfclear",    "0", "Whether to report self-clears from smokers in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
-    g_hCvarAllowMelee = CreateConVar(       "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarAllowSniper = CreateConVar(      "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowMelee = CreateConVar(               "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowSniper = CreateConVar(              "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
-    g_hCvarDrawCrownThresh = CreateConVar(  "sm_skill_drawcrown_damage",  "750", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarDrawCrownThresh = CreateConVar(          "sm_skill_drawcrown_damage",  "750", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarSelfClearThresh = CreateConVar(          "sm_skill_selfclear_damage",  "200", "How much damage a survivor must at least do to a smoker for him to count as self-clearing.", FCVAR_PLUGIN, true, 0.0, false );
     
     
     // cvars
@@ -452,6 +472,11 @@ public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
                     }
                 }
             }
+            
+            case ZC_SMOKER:
+            {
+                g_iSmokerVictimDamage[victim] += damage;
+            }
         }
     }
 }
@@ -463,13 +488,22 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
     
     new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
     
-    if ( zClass == ZC_BOOMER )
+    switch ( zClass )
     {
-        g_bBoomerHitSomebody[client] = false;
-    }
-    else if ( zClass == ZC_CHARGER )
-    {
-        g_bChargerCharging[client] = false;
+        case ZC_BOOMER:
+        {
+            g_bBoomerHitSomebody[client] = false;
+        }
+        case ZC_CHARGER:
+        {
+            g_bChargerCharging[client] = false;
+        }
+        case ZC_SMOKER:
+        {
+            g_bSmokerClearCheck[client] = false;
+            g_iSmokerVictim[client] = 0;
+            g_iSmokerVictimDamage[client] = 0;
+        }
     }
 }
 
@@ -482,37 +516,57 @@ public Action: Event_PlayerDeath(Handle:hEvent, const String:name[], bool:dontBr
     
     new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
     
-    if ( zClass == ZC_HUNTER && IS_VALID_SURVIVOR(attacker) )
+    if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
+    
+    switch ( zClass )
     {
-        if ( g_iHunterShotDmgTeam[victim] > 0 && g_bHunterKilledPouncing[victim] )
+        case ZC_HUNTER:
         {
-            // skeet?
-            if (    g_iHunterShotDmgTeam[victim] > g_iHunterShotDmg[victim][attacker] &&
-                    g_iHunterShotDmgTeam[victim] >= g_iPounceInterrupt
-            ) {
-                // team skeet
-                HandleSkeet( -2, victim );
-            }
-            else if ( g_iHunterShotDmg[victim][attacker] >= g_iPounceInterrupt )
+            if ( g_iHunterShotDmgTeam[victim] > 0 && g_bHunterKilledPouncing[victim] )
             {
-                // single player skeet
-                HandleSkeet( attacker, victim );
+                // skeet?
+                if (    g_iHunterShotDmgTeam[victim] > g_iHunterShotDmg[victim][attacker] &&
+                        g_iHunterShotDmgTeam[victim] >= g_iPounceInterrupt
+                ) {
+                    // team skeet
+                    HandleSkeet( -2, victim );
+                }
+                else if ( g_iHunterShotDmg[victim][attacker] >= g_iPounceInterrupt )
+                {
+                    // single player skeet
+                    HandleSkeet( attacker, victim );
+                }
+                else if ( g_iHunterOverkill[victim] > 0 )
+                {
+                    // overkill? might've been a skeet, if it wasn't on a hurt hunter (only for shotguns)
+                    HandleNonSkeet( attacker, victim, g_iHunterShotDmgTeam[victim], ( g_iHunterOverkill[victim] + g_iHunterShotDmgTeam[victim] > g_iPounceInterrupt ) );
+                }
+                else
+                {
+                    // not a skeet at all
+                    HandleNonSkeet( attacker, victim, g_iHunterShotDmg[victim][attacker] );
+                }
             }
-            else if ( g_iHunterOverkill[victim] > 0 )
+            
+            ResetHunter(victim);
+        }
+        
+        case ZC_SMOKER:
+        {
+            if ( g_bSmokerClearCheck[victim] )
             {
-                // overkill? might've been a skeet, if it wasn't on a hurt hunter (only for shotguns)
-                HandleNonSkeet( attacker, victim, g_iHunterShotDmgTeam[victim], ( g_iHunterOverkill[victim] + g_iHunterShotDmgTeam[victim] > g_iPounceInterrupt ) );
+                if ( g_iSmokerVictim[victim] == attacker && g_iSmokerVictimDamage[victim] >= GetConVarInt(g_hCvarSelfClearThresh) )
+                {
+                    HandleSmokerSelfClear( attacker, victim );
+                }
             }
             else
             {
-                // not a skeet at all
-                HandleNonSkeet( attacker, victim, g_iHunterShotDmg[victim][attacker] );
+                g_bSmokerClearCheck[victim] = false;
+                g_iSmokerVictim[victim] = 0;
             }
         }
-        
-        ResetHunter(victim);
     }
-    
     return Plugin_Continue;
 }
 
@@ -865,6 +919,44 @@ public Event_ChargeEnd (Handle:event, const String:name[], bool:dontBroadcast)
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     g_bChargerCharging[client] = false;
 }
+
+// smoker tongue cutting & self clears
+public Event_TonguePullStopped (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
+    new victim = GetClientOfUserId( GetEventInt(event, "victim") );
+    new smoker = GetClientOfUserId( GetEventInt(event, "smoker") );
+    new reason = GetEventInt(event, "release_type");
+    
+    //PrintToChatAll( "reason for tongue break: %i", reason );
+    PrintDebug("smoker %i tongue broke (victim %i): reason: %i", attacker, victim, reason );
+    
+    if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return; }
+    
+    if ( reason == CUT_KILL && attacker == victim )
+    {
+        g_bSmokerClearCheck[smoker] = true;
+    }
+    else if ( reason == CUT_SLASH )
+    {
+        HandleTongueCut( attacker, smoker );
+    }
+}
+
+public Event_TongueGrab (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
+    new victim = GetClientOfUserId( GetEventInt(event, "victim") );
+    
+    if ( IS_VALID_INFECTED(attacker) && IS_VALID_SURVIVOR(victim) )
+    {
+        // new pull, clean damage
+        g_bSmokerClearCheck[victim] = false;
+        g_iSmokerVictim[attacker] = victim;
+        g_iSmokerVictimDamage[attacker] = 0;
+    }
+}
+
 // boomer pop
 stock HandlePop( attacker, victim )
 {
@@ -904,7 +996,7 @@ stock HandleLevel( attacker, victim )
     // report?
     if ( GetConVarBool(g_hCvarReportLevels) )
     {
-        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) )
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
             PrintToChatAll( "\x04%N\x01 leveled \x05%N\x01.", attacker, victim );
         }
@@ -929,7 +1021,7 @@ stock HandleLevelHurt( attacker, victim, damage )
     // report?
     if ( GetConVarBool(g_hCvarReportLevelsHurt) )
     {
-        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) )
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
             PrintToChatAll( "\x04%N\x01 chip-leveled \x05%N\x01 (\x03%i\x01 damage).", attacker, victim, damage );
         }
@@ -956,7 +1048,7 @@ stock HandleDeadstop( attacker, victim )
     // report?
     if ( GetConVarBool(g_hCvarReportDeadstops) )
     {
-        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) )
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
             PrintToChatAll( "\x04%N\x01 deadstopped \x05%N\x01.", attacker, victim );
         }
@@ -991,13 +1083,13 @@ stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false )
         if ( attacker == -2 )
         {
             // team skeet sets to -2
-            if ( IS_VALID_INGAME(victim) ) {
+            if ( IS_VALID_INGAME(victim) && !IsFakeClient(victim) ) {
                 PrintToChatAll( "\x05%N\x01 was team-skeeted.", victim );
             } else {
                 PrintToChatAll( "\x01A hunter was team-skeeted." );
             }
         }
-        else if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) )
+        else if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
             PrintToChatAll( "\x04%N\x01 %sskeeted \x05%N\x01.", attacker, (bMelee) ? "melee-": ((bSniper) ? "headshot-" : ""), victim );
         }
@@ -1123,9 +1215,65 @@ HandleDrawCrown( attacker, damage, chipdamage )
     Call_Finish();
 }
 
+// smoker clears
+HandleTongueCut( attacker, victim )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportSmokerTongueCuts) )
+    {
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
+        {
+            PrintToChatAll( "\x04%N\x01 cut \x05%N\x01's tongue.", attacker, victim );
+        }
+        else if ( IS_VALID_INGAME(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 cut smoker tongue.", attacker );
+        }
+        else {
+            PrintToChatAll( "A smoker tongue was cut." );
+        }
+    }
+    
+    // call forward
+    Call_StartForward(g_hForwardTongueCut);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_Finish();
+}
+
+HandleSmokerSelfClear( attacker, victim )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportSmokerSelfClears) )
+    {
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
+        {
+            PrintToChatAll( "\x04%N\x01 cleared himself from \x05%N\x01's tongue.", attacker, victim );
+        }
+        else if ( IS_VALID_INGAME(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 cleared himself from a smoker tongue.", attacker );
+        }
+    }
+    
+    // call forward
+    Call_StartForward(g_hForwardSmokerSelfClear);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_Finish();
+}
+
 // support
 // -------
 
+stock PrintDebug( const String:Message[], any:... )
+{
+    decl String:DebugBuff[256];
+    VFormat(DebugBuff, sizeof(DebugBuff), Message, 3);
+    LogMessage(DebugBuff);
+    //PrintToServer(DebugBuff);
+    //PrintToChatAll(DebugBuff);
+}
 stock bool: IsWitch(entity)
 {
     if ( !IsValidEntity(entity) ) { return false; }
