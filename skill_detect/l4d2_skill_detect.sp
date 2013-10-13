@@ -44,6 +44,7 @@
 #pragma semicolon 1
 
 #include <sourcemod>
+#include <sdkhooks>
 
 #define PLUGIN_VERSION "0.9.1"
 
@@ -71,6 +72,8 @@
 #define DMG_CLUB                (1 << 7)        // crowbar, punch, headbutt
 #define DMG_BUCKSHOT            (1 << 29)       // not quite a bullet. Little, rounder, different. 
 
+#define DMGARRAYEXT     6                       // MAXPLAYERS+# -- extra indices in witch_dmg_array + 1
+
 // trie values: weapon type
 enum _:strWeaponType
 {
@@ -82,8 +85,17 @@ enum _:strWeaponType
 enum strOEC
 {
     OEC_TONGUE,
+    OEC_WITCH,
     OEC_TANKROCK
 };
+
+enum strWitchDamage
+{
+    WD_client,
+    WD_damage
+};
+
+new     bool:           g_bLateLoad                                         = false;
 
 new     Handle:         g_hForwardSkeet                                     = INVALID_HANDLE;
 new     Handle:         g_hForwardSkeetHurt                                 = INVALID_HANDLE;
@@ -96,10 +108,13 @@ new     Handle:         g_hForwardSIShove                                   = IN
 new     Handle:         g_hForwardBoomerPop                                 = INVALID_HANDLE;
 new     Handle:         g_hForwardLevel                                     = INVALID_HANDLE;
 new     Handle:         g_hForwardLevelHurt                                 = INVALID_HANDLE;
+new     Handle:         g_hForwardCrown                                     = INVALID_HANDLE;
+new     Handle:         g_hForwardDrawCrown                                 = INVALID_HANDLE;
 
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
+new     Handle:         g_hWitchTrie                                        = INVALID_HANDLE;   // witch tracking (Crox)
 
 // skeets
 new                     g_iHunterShotDmgTeam    [MAXPLAYERS + 1];                               // counting shotgun blast damage for hunter, counting entire survivor team's damage
@@ -121,18 +136,25 @@ new                     g_bBoomerHitSomebody    [MAXPLAYERS + 1];               
 // levels
 new     bool:           g_bChargerCharging      [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
 
+// crowns
+new     Float:          g_fWitchShotStart       [MAXPLAYERS + 1];                               // when the last shotgun blast from a survivor started (on any witch)
+
 new     Handle:         g_hCvarReportSkeets                                 = INVALID_HANDLE;   // cvar whether to report skeets
 new     Handle:         g_hCvarReportNonSkeets                              = INVALID_HANDLE;   // cvar whether to report non-/hurt skeets
 new     Handle:         g_hCvarReportLevels                                 = INVALID_HANDLE;
 new     Handle:         g_hCvarReportLevelsHurt                             = INVALID_HANDLE;
 new     Handle:         g_hCvarReportDeadstops                              = INVALID_HANDLE;
+new     Handle:         g_hCvarReportCrowns                                 = INVALID_HANDLE;
+new     Handle:         g_hCvarReportDrawCrowns                             = INVALID_HANDLE;
 
 new     Handle:         g_hCvarAllowMelee                                   = INVALID_HANDLE;   // cvar whether to count melee skeets
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
+new     Handle:         g_hCvarDrawCrownThresh                              = INVALID_HANDLE;   // cvar damage in final shot for drawcrown-req.
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
 new     Handle:         g_hCvarChargerHealth                                = INVALID_HANDLE;   // z_charger_health
+new     Handle:         g_hCvarWitchHealth                                  = INVALID_HANDLE;   // z_witch_health
 
 /*
     To do
@@ -158,6 +180,7 @@ public Plugin:myinfo =
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 }
 
+
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
     RegPluginLibrary("skill_detect");
@@ -168,14 +191,15 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSkeetMeleeHurt =  CreateGlobalForward("OnSkeetMeleeHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardSkeetSniper =     CreateGlobalForward("OnSkeetSniperHeadshot", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSkeetSniperHurt = CreateGlobalForward("OnSkeetSniperHeadshotHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
-    
     g_hForwardSIShove =         CreateGlobalForward("OnSpecialShoved", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardHunterDeadstop =  CreateGlobalForward("OnHunterDeadstop", ET_Ignore, Param_Cell, Param_Cell );
-    
     g_hForwardBoomerPop =       CreateGlobalForward("OnBoomerPop", ET_Ignore, Param_Cell, Param_Cell );
-    
     g_hForwardLevel =           CreateGlobalForward("OnChargerLevel", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardLevelHurt =       CreateGlobalForward("OnChargerLevelHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
+    g_hForwardCrown =           CreateGlobalForward("OnWitchCrown", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardDrawCrown =       CreateGlobalForward("OnWitchDrawCrown", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
+    
+    g_bLateLoad = late;
     
     return APLRes_Success;
 }
@@ -196,19 +220,26 @@ public OnPluginStart()
     HookEvent("charger_charge_start",       Event_ChargeStart,              EventHookMode_Post);
     HookEvent("charger_charge_end",         Event_ChargeEnd,                EventHookMode_Post);
     
+    //HookEvent("infected_hurt",              Event_InfectedHurt,             EventHookMode_Post);
+    HookEvent("witch_spawn",                Event_WitchSpawned,             EventHookMode_Post);
+    HookEvent("witch_killed",               Event_WitchKilled,              EventHookMode_Post);
+    HookEvent("witch_harasser_set",         Event_WitchHarasserSet,         EventHookMode_Post);
     
     // version cvar
-    CreateConVar( "skill_detect_version", PLUGIN_VERSION, "Skill detect plugin version.", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_REPLICATED|FCVAR_DONTRECORD );
+    CreateConVar( "sm_skill_detect_version", PLUGIN_VERSION, "Skill detect plugin version.", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_REPLICATED|FCVAR_DONTRECORD );
     
-    g_hCvarReportSkeets = CreateConVar(     "skill_report_skeet" ,      "0", "Whether to report skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportNonSkeets = CreateConVar(  "skill_report_hurtskeet",   "0", "Whether to report hurt/failed skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportLevels = CreateConVar(     "skill_report_level" ,      "0", "Whether to report charger levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportLevelsHurt = CreateConVar( "skill_report_hurtlevel",   "0", "Whether to report chipped levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportSkeets = CreateConVar(     "sm_skill_report_skeet" ,       "0", "Whether to report skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportNonSkeets = CreateConVar(  "sm_skill_report_hurtskeet",    "0", "Whether to report hurt/failed skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportLevels = CreateConVar(     "sm_skill_report_level" ,       "0", "Whether to report charger levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportLevelsHurt = CreateConVar( "sm_skill_report_hurtlevel",    "0", "Whether to report chipped levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportDeadstops = CreateConVar(  "sm_skill_report_deadstop" ,    "0", "Whether to report deadstops in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportCrowns = CreateConVar(     "sm_skill_report_crown" ,       "0", "Whether to report full crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportDrawCrowns = CreateConVar( "sm_skill_report_drawcrown",    "0", "Whether to report draw-crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
-    g_hCvarReportDeadstops = CreateConVar(  "skill_report_deadstop" ,   "0", "Whether to report deadstops in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowMelee = CreateConVar(       "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowSniper = CreateConVar(      "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
-    g_hCvarAllowMelee = CreateConVar(       "skill_skeet_allowmelee",   "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarAllowSniper = CreateConVar(      "skill_skeet_allowsniper",  "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarDrawCrownThresh = CreateConVar(  "sm_skill_drawcrown_damage",  "750", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
     
     
     // cvars
@@ -217,6 +248,7 @@ public OnPluginStart()
     g_iPounceInterrupt = GetConVarInt(g_hCvarPounceInterrupt);
     
     g_hCvarChargerHealth = FindConVar("z_charger_health");
+    g_hCvarWitchHealth = FindConVar("z_witch_health");
     
     // tries
     g_hTrieWeapons = CreateTrie();
@@ -229,12 +261,37 @@ public OnPluginStart()
     g_hTrieEntityCreated = CreateTrie();
     SetTrieValue(g_hTrieEntityCreated, "ability_tongue",    OEC_TONGUE);
     SetTrieValue(g_hTrieEntityCreated, "tank_rock",         OEC_TANKROCK);
+    SetTrieValue(g_hTrieEntityCreated, "witch",             OEC_WITCH);
+    
+    g_hWitchTrie = CreateTrie();
+    
+    if (g_bLateLoad)
+    {
+        for ( new client = 1; client <= MaxClients; client++ )
+        {
+            if ( IS_VALID_INGAME(client) )
+            {
+                SDKHook( client, SDKHook_OnTakeDamage, OnTakeDamageByWitch );
+            }
+        }
+    }
 }
 
 public CvarChange_PounceInterrupt( Handle:convar, const String:oldValue[], const String:newValue[] )
 {
-	g_iPounceInterrupt = GetConVarInt(convar);
+    g_iPounceInterrupt = GetConVarInt(convar);
 }
+
+public OnClientPostAdminCheck(client)
+{
+    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamageByWitch);
+}
+
+public OnClientDisconnect(client)
+{
+    SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamageByWitch);
+}
+
 
 
 public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
@@ -570,6 +627,16 @@ public OnEntityCreated ( entity, const String:classname[] )
     }
 }
 
+// entity destruction
+public OnEntityDestroyed(entity)
+{
+    decl String:witch_key[10];
+    FormatEx(witch_key, sizeof(witch_key), "%x", entity);
+    if ( RemoveFromTrie(g_hWitchTrie, witch_key) )
+    {
+        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
+    }
+}
 // boomer got somebody
 public Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast)
 {
@@ -594,6 +661,196 @@ public Event_BoomerExploded (Handle:event, const String:name[], bool:dontBroadca
         {
             HandlePop( attacker, client );
         }
+    }
+}
+
+// crown tracking
+public Event_WitchSpawned ( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new witch = GetEventInt(event, "witchid");
+    
+    SDKHook(witch, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
+    
+    /*
+        maxplayers+1 = starting health of witch
+        "         +2 = 0 as long as the witch didn't get a slash
+        "         +3 = 0 as long as the witch didn't startle
+        "         +4 = the last survivor that shot the witch
+        +         +5 = the damage done in the last shot alone
+    */
+    new witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
+    decl String:witch_key[10];
+    FormatEx(witch_key, sizeof(witch_key), "%x", witch);
+    witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
+    SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
+}
+
+public Event_WitchKilled ( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new witch = GetEventInt(event, "witchid");
+    new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
+    SDKUnhook(witch, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
+    
+    if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
+    
+    // is it a crown / drawcrown?
+    CheckWitchCrown( witch, attacker );
+}
+public Event_WitchHarasserSet ( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new witch = GetEventInt(event, "witchid");
+    
+    decl String:witch_key[10];
+    FormatEx(witch_key, sizeof(witch_key), "%x", witch);
+    decl witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
+    
+    if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) )
+    {
+        for ( new i = 0; i <= MAXPLAYERS; i++ )
+        {
+            witch_dmg_array[i] = 0;
+        }
+        witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
+        witch_dmg_array[MAXPLAYERS+3] = 1;  // harasser set
+        SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
+    }
+    else
+    {
+        witch_dmg_array[MAXPLAYERS+3] = 1;  // harasser set
+        SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
+    }
+}
+
+/* public Event_InfectedHurt ( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    // catch damage done to witch
+    new entity = GetEventInt(event, "entityid");
+    
+    if ( IsWitch(entity) )
+    {
+        new damage = GetEventInt(event, "amount");
+        
+
+    }
+} */
+
+public Action:OnTakeDamageByWitch(victim, &attacker, &inflictor, &Float:damage, &damagetype)
+{
+    // if a survivor is hit by a witch, note it in the witch damage array (maxplayers+2 = 1)
+    if ( IS_VALID_SURVIVOR(victim) && damage > 0.0 )
+    {
+        
+        // not a crown if witch hit anyone for > 0 damage
+        if ( IsWitch(attacker) )
+        {
+            decl String:witch_key[10];
+            FormatEx(witch_key, sizeof(witch_key), "%x", attacker);
+            decl witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
+            
+            if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) )
+            {
+                for ( new i = 0; i <= MAXPLAYERS; i++ )
+                {
+                    witch_dmg_array[i] = 0;
+                }
+                witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
+                witch_dmg_array[MAXPLAYERS+2] = 1;  // failed
+                SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
+            }
+            else
+            {
+                witch_dmg_array[MAXPLAYERS+2] = 1;  // failed
+                SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
+            }
+        }
+    }
+}
+
+public OnTakeDamagePost_Witch(victim, attacker, inflictor, Float:damage, damagetype)
+{
+    // only called for witches, so no check required
+    
+    decl String:witch_key[10];
+    FormatEx(witch_key, sizeof(witch_key), "%x", victim);
+    decl witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
+    
+    if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) )
+    {
+        for ( new i = 0; i <= MAXPLAYERS; i++ )
+        {
+            witch_dmg_array[i] = 0;
+        }
+        witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
+        SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
+    }
+    
+    // store damage done to witch
+    if ( IS_VALID_SURVIVOR(attacker) )
+    {
+        witch_dmg_array[attacker] += RoundToFloor(damage);
+        witch_dmg_array[MAXPLAYERS+1] -= RoundToFloor(damage);
+        
+        // remember last shot
+        if ( g_fWitchShotStart[attacker] == 0.0 || FloatSub(GetGameTime(), g_fWitchShotStart[attacker]) > SHOTGUN_BLAST_TIME )
+        {
+            // reset last shot damage count and attacker
+            g_fWitchShotStart[attacker] = GetGameTime();
+            witch_dmg_array[MAXPLAYERS+4] = attacker;
+            witch_dmg_array[MAXPLAYERS+5] = 0;
+        }
+        
+        // continued blast, add up
+        witch_dmg_array[MAXPLAYERS+5] += RoundToFloor(damage);
+        
+        SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
+    }
+    else
+    {
+        // store all chip from other sources than survivor in [0]
+        witch_dmg_array[0] += RoundToFloor(damage);
+        //witch_dmg_array[MAXPLAYERS+1] -= RoundToFloor(damage);
+        SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
+    }
+}
+
+stock CheckWitchCrown( witch, attacker )
+{
+    decl String:witch_key[10];
+    FormatEx(witch_key, sizeof(witch_key), "%x", witch);
+    decl witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
+    
+    if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) ) { return; }
+    
+    /*
+        the attacker is the last one that did damage to witch
+            if their damage is full damage on an unharrassed witch, it's a full crown
+            if their damage is full or > drawcrown_threshhold, it's a drawcrown
+    */
+    
+    // not a crown at all if anyone was hit
+    if ( witch_dmg_array[MAXPLAYERS+2] ) { return; }
+    
+    // full crown? unharrassed
+    if ( !witch_dmg_array[MAXPLAYERS+3] && witch_dmg_array[attacker] >= GetConVarInt(g_hCvarWitchHealth) )
+    {
+        HandleCrown( attacker, witch_dmg_array[attacker] );
+    }
+    else if ( witch_dmg_array[attacker] > GetConVarInt(g_hCvarDrawCrownThresh) )
+    {
+        // draw crown: harassed + over X damage done by one survivor -- in ONE shot
+        new chipDamage = 0;
+        for ( new i = 0; i <= MAXPLAYERS; i++ )
+        {
+            if ( i == attacker ) {
+                // count any damage done before final shot as chip
+                chipDamage += witch_dmg_array[i] - witch_dmg_array[MAXPLAYERS+5];
+            } else {
+                chipDamage += witch_dmg_array[i];
+            }
+        }
+        
+        // plus, set final shot as 'damage', and the rest as chip
+        HandleDrawCrown( attacker, witch_dmg_array[MAXPLAYERS+5], chipDamage );
     }
 }
 
@@ -819,4 +1076,64 @@ stock HandleNonSkeet( attacker, victim, damage, bool:bOverKill = false, bool:bMe
         Call_PushCell(bOverKill);
         Call_Finish();
     }
+}
+
+
+// crown
+HandleCrown( attacker, damage )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportCrowns) )
+    {
+        if ( IS_VALID_INGAME(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 crowned a witch (\x03%i\x01 damage).", attacker, damage );
+        }
+        else {
+            PrintToChatAll( "A witch was crowned." );
+        }
+    }
+    
+    // call forward
+    Call_StartForward(g_hForwardCrown);
+    Call_PushCell(attacker);
+    Call_PushCell(damage);
+    Call_Finish();
+}
+// drawcrown
+HandleDrawCrown( attacker, damage, chipdamage )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportDrawCrowns) )
+    {
+        if ( IS_VALID_INGAME(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 draw-crowned a witch (\x03%i\x01 damage, \x05%i\x01 chip).", attacker, damage, chipdamage );
+        }
+        else {
+            PrintToChatAll( "A witch was draw-crowned (\x03%i\x01 damage, \x05%i\x01 chip).", damage, chipdamage );
+        }
+    }
+    
+    // call forward
+    Call_StartForward(g_hForwardDrawCrown);
+    Call_PushCell(attacker);
+    Call_PushCell(damage);
+    Call_PushCell(chipdamage);
+    Call_Finish();
+}
+
+// support
+// -------
+
+stock bool: IsWitch(entity)
+{
+    if ( !IsValidEntity(entity) ) { return false; }
+    
+    decl String: classname[24];
+    new strOEC: classnameOEC;
+    GetEdictClassname(entity, classname, sizeof(classname));
+    if ( !GetTrieValue(g_hTrieEntityCreated, classname, classnameOEC) || classnameOEC != OEC_WITCH ) { return false; }
+    
+    return true;
 }
