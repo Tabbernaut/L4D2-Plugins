@@ -20,10 +20,12 @@ Forwards this:
  *      OnChargerLevelHurt( survivor, charger, damage )
  *      OnWitchCrown( survivor, damage )
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
+ *      OnTongueCut( survivor, victim )
+ *      OnSmokerSelfClear( survivor, smoker )
+ 
  *      OnHighPounce( hunter, victim, damage )
  *      OnDeathCharge( charger, victim )
  *      OnRockSkeeted( survivor )
- *      OnTongueCut( survivor, victim )
 
 
 CVars:
@@ -35,10 +37,15 @@ CVars:
 <b>sm_skill_reportdeadstop</b><br />
 <b>sm_skill_reportcrown</b><br />
 <b>sm_skill_reportdrawcrown</b><br />
+<b>sm_skill_reporttonguecut</b><br />
+<b>sm_skill_reportselfclear</b><br />
 0/1, whether to report these actions in chat.<br />
 
 <b>sm_skill_drawcrown_damage</b><br />
 How much damage a survivor must at least do in the final shot for it to count as a drawcrown.<br />
+
+<b>sm_skill_selfclear_damage</b><br />
+How much damage a survivor must at least do while pulled for it to count as a self-clear from a smoker tongue.<br />
 
 <b>sm_skill_skeet_allowmelee</b><br />
 <b>sm_skill_skeet_allowsniper</b><br />
