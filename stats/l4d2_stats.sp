@@ -97,7 +97,7 @@
 #define MAXFFTYPES              8
 
 #define MAXRNDSTATS             11
-#define MAXPLYSTATS             50
+#define MAXPLYSTATS             51
 
 #define LTEAM_A                 0
 #define LTEAM_B                 1
@@ -186,6 +186,7 @@ enum _:strPlayerData
             plyShoves,              // count every shove
             plyDeadStops,
             plyTongueCuts,          // 40 only real cuts
+            plySelfClears,
             plyFallDamage,
             plyDmgTaken,
             plyFFGiven,
@@ -1290,6 +1291,7 @@ public OnBoomerPop ( attacker, victim )
 }
 
 
+// levels
 public OnChargerLevel ( attacker, victim )
 {
     new index = GetPlayerIndexForClient( attacker );
@@ -1305,6 +1307,23 @@ public OnChargerLevelHurt ( attacker, victim, damage )
     
     g_strPlayerData[index][plyLevelsHurt]++;
     g_strRoundPlayerData[index][plyLevelsHurt]++;
+}
+// smoker clears
+public OnTongueCut ( attacker, victim )
+{
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
+    
+    g_strPlayerData[index][plyTongueCuts]++;
+    g_strRoundPlayerData[index][plyTongueCuts]++;
+}
+public OnSmokerSelfClear ( attacker, victim )
+{
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
+    
+    g_strPlayerData[index][plySelfClears]++;
+    g_strRoundPlayerData[index][plySelfClears]++;
 }
 
 // crowns
@@ -1797,20 +1816,20 @@ stock DisplayStatsSpecial( client, bool:round = false )
     
     Format(bufBasicHeader, CONBUFSIZE, "\n");
     if ( round ) {
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Special Stats -- This Round    skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw);     |\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Special Stats -- This Round    skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw);            |\n", bufBasicHeader);
     } else {
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Special Stats                  skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw)      |\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Special Stats                  skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw);            |\n", bufBasicHeader);
     }
     
     if ( !g_bSkillDetectLoaded ) {
-        Format(bufBasicHeader, CONBUFSIZE, "%s| ( skill_detect library not loaded: most of these stats will not be tracked )               |\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s| ( skill_detect library not loaded: most of these stats won't be tracked )                         |\n", bufBasicHeader);
     }
-    //                                                             #### / ### / ###   ### / ###    ### / ###   ### / ###   ####   ####
-    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|------------------|------------|-----------|-----------|------|------|\n", bufBasicHeader);
-    Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Skeets  fl/ht/ml | DSs / M2s  | Levels    | Crowns    | Pops | Cuts |\n", bufBasicHeader);
-    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|------------------|------------|-----------|-----------|------|------|", bufBasicHeader);
+    //                                                             #### / ### / ###   ### / ###    ### / ###   ### / ###   ####   #### / ####
+    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|------------------|------------|-----------|-----------|------|-------------|\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Skeets  fl/ht/ml | DSs / M2s  | Levels    | Crowns    | Pops | Cuts / Self |\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|------------------|------------|-----------|-----------|------|-------------|", bufBasicHeader);
     Format(bufBasic, CONBUFSIZELARGE,  "%s", g_sConsoleBufGen);
-    Format(bufBasic, CONBUFSIZELARGE,  "%s|----------------------|------------------|------------|-----------|-----------|------|------|\n", bufBasic);
+    Format(bufBasic, CONBUFSIZELARGE,  "%s|----------------------|------------------|------------|-----------|-----------|------|-------------|\n", bufBasic);
     
     if ( !client )
     {
@@ -1973,9 +1992,11 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false )
         }
         
         // cuts
-        if (    bRound && g_strRoundPlayerData[i][plyTongueCuts] || !bRound && g_strPlayerData[i][plyTongueCuts] ) {
-            Format( strTmp[5], s_len, "%4d",
-                    ( (bRound) ? g_strRoundPlayerData[i][plyTongueCuts] : g_strPlayerData[i][plyTongueCuts] )
+        if (    bRound && (g_strRoundPlayerData[i][plyTongueCuts] || g_strRoundPlayerData[i][plySelfClears] ) ||
+                !bRound && (g_strPlayerData[i][plyTongueCuts] || g_strPlayerData[i][plySelfClears] ) ) {
+            Format( strTmp[5], s_len, "%4d / %4d",
+                    ( (bRound) ? g_strRoundPlayerData[i][plyTongueCuts] : g_strPlayerData[i][plyTongueCuts] ),
+                    ( (bRound) ? g_strRoundPlayerData[i][plySelfClears] : g_strPlayerData[i][plySelfClears] )
                 );
         } else {
             Format( strTmp[5], s_len, "    " );
@@ -1986,7 +2007,7 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false )
         
         // Format the basic stats
         Format(g_sConsoleBufGen, CONBUFSIZE,
-                "%s| %20s | %16s | %10s | %9s | %9s | %4s | %4s |\n",
+                "%s| %20s | %16s | %10s | %9s | %9s | %4s | %7s |\n",
                 g_sConsoleBufGen,
                 g_sTmpString,
                 strTmp[0], strTmp[1], strTmp[2],
