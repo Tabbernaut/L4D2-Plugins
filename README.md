@@ -16,4 +16,6 @@ Plugins:
 <b>survivor_mvp</b>: MVP tracking and reporting (who did the most damage to SI, killed most common, etc).<br />
 <b>vanilla_cvars</b>: allows server admins to set cvars for their vanilla game without it conflicting with confogl configs.<br />
 
+<b>skill_detect</b>: WIP: detecting and global forwards for skeets, levels, crowns, tongue cuts, etc.<br />
+<b>stats</b>: WIP: replacement and vast improvement of survivor_mvp; uses skill_detect.<br />
 <b>holdout_bonus</b>: WIP/idea: replacing part of distance scoring to a duration-based holdout bonus for camping-events.<br />
