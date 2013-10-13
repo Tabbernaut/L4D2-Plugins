@@ -261,10 +261,10 @@ new     String: g_sTmpString            [MAXNAME];
 
 public Plugin: myinfo =
 {
-    name = "Campaign Statistics",
+    name = "Player Statistics",
     author = "Tabun",
-    description = "Tracks campaign statistics, even when clients disconnect",
-    version = "0.9.5",
+    description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
+    version = "0.9.6",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -1307,6 +1307,23 @@ public OnChargerLevelHurt ( attacker, victim, damage )
     g_strRoundPlayerData[index][plyLevelsHurt]++;
 }
 
+// crowns
+public OnWitchCrown ( attacker, damage )
+{
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
+    
+    g_strPlayerData[index][plyCrowns]++;
+    g_strRoundPlayerData[index][plyCrowns]++;
+}
+public OnWitchDrawCrown ( attacker, damage, chipdamage )
+{
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
+    
+    g_strPlayerData[index][plyCrownsHurt]++;
+    g_strRoundPlayerData[index][plyCrownsHurt]++;
+}
 /*
     Stats cleanup
     -------------
