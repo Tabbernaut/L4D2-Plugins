@@ -22,7 +22,6 @@ Forwards this:
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
  *      OnTongueCut( survivor, victim )
  *      OnSmokerSelfClear( survivor, smoker )
- 
  *      OnHighPounce( hunter, victim, damage )
  *      OnDeathCharge( charger, victim )
  *      OnRockSkeeted( survivor )
