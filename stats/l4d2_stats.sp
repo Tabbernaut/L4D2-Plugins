@@ -315,22 +315,18 @@ public Plugin: myinfo =
     todo
     ----
         - automatic reports
-            - mvp chat print / console separately selectable
-            - do it with flags
             - add client-side override
 
         - make infected skills table
                 dps, dc's, damage done
-        - make mvp tank skills table work:
-                rocks eaten, rocks skeeted
         
         - count bhops too (skill_detect)
-        
+        - hide 0 and 0.0% values from tables
         - only show FF tables if anyone did FF
+        - clean up FF tracking (only given/taken, in strPlayerData table)
+        - count time active (live round, per team) [show in mvp?]
 
         - write CSV files per round -- db-ready
-
-        - make reset command admin only
         
         - make confogl loading not cause round 1 to count...
             - if there were no stats, or the round was never started,
@@ -1429,6 +1425,14 @@ public OnTankRockEaten ( attacker, victim )
     g_strRoundPlayerData[index][plyRockEats]++;
 }
 
+public OnTankRockSkeeted ( attacker, victim )
+{
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
+    
+    g_strPlayerData[index][plyRockSkeets]++;
+    g_strRoundPlayerData[index][plyRockSkeets]++;
+}
 /*
     Stats cleanup
     -------------
