@@ -28,11 +28,13 @@
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
  *      OnTongueCut( survivor, smoker )
  *      OnSmokerSelfClear( survivor, smoker )
+ *      OnTankRockSkeeted( survivor, tank )
+ *      OnTankRockEaten( tank, survivor )
  
  *      OnHighPounce( hunter, victim, damage )
- *      OnDeathCharge( charger, victim )
- *      OnRockSkeeted( survivor, tank )
- *      OnRockHit( tank, survivor )
+ *      OnJockeyHighPounce( jockey, victim )                ?
+ *      OnDeathCharge( charger, victim )                    ?
+ *      OnBHop( player, isInfected, speed, streak )         ?
  
  *
  *  Where survivor == -2 if it was a team skeet, -1 or 0 if unknown or invalid client.
@@ -49,7 +51,7 @@
 #include <sourcemod>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "0.9.1"
+#define PLUGIN_VERSION "0.9.2"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -96,10 +98,24 @@ enum strOEC
     OEC_TANKROCK
 };
 
+// trie values: special abilities
+enum strAbility
+{
+    ABL_HUNTERLUNGE,
+    ABL_ROCKTHROW
+};
+
 enum strWitchDamage
 {
     WD_client,
     WD_damage
+};
+
+enum _:strRockData
+{
+    rckDamage,
+    rckTank,
+    rckSkeeter
 };
 
 new     bool:           g_bLateLoad                                         = false;
@@ -119,11 +135,13 @@ new     Handle:         g_hForwardCrown                                     = IN
 new     Handle:         g_hForwardDrawCrown                                 = INVALID_HANDLE;
 new     Handle:         g_hForwardTongueCut                                 = INVALID_HANDLE;
 new     Handle:         g_hForwardSmokerSelfClear                           = INVALID_HANDLE;
+new     Handle:         g_hForwardRockSkeeted                               = INVALID_HANDLE;
 new     Handle:         g_hForwardRockEaten                                 = INVALID_HANDLE;
 
 
-new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;
-new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
+new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
+new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // getting classname of entity created
+new     Handle:         g_hTrieAbility                                      = INVALID_HANDLE;   // ability check
 new     Handle:         g_hWitchTrie                                        = INVALID_HANDLE;   // witch tracking (Crox)
 new     Handle:         g_hRockTrie                                         = INVALID_HANDLE;   // tank rock tracking
 
@@ -156,7 +174,9 @@ new                     g_iSmokerVictim         [MAXPLAYERS + 1];               
 new                     g_iSmokerVictimDamage   [MAXPLAYERS + 1];                               // amount of damage done to a smoker by the one he pulled
 
 // rocks
-new                     g_iRockFlying                                       = -1;               // entity tank_rock
+new                     g_iTankRock             [MAXPLAYERS + 1];                               // rock entity per tank
+new                     g_iRocksBeingThrown     [10];                                           // 10 tanks max simultanously throwing rocks should be ok (this stores the tank client)
+new                     g_iRocksBeingThrownCount                            = 0;                // so we can do a push/pop type check for who is throwing a created rock
 
 new     Handle:         g_hCvarReportSkeets                                 = INVALID_HANDLE;   // cvar whether to report skeets
 new     Handle:         g_hCvarReportNonSkeets                              = INVALID_HANDLE;   // cvar whether to report non-/hurt skeets
@@ -167,6 +187,7 @@ new     Handle:         g_hCvarReportCrowns                                 = IN
 new     Handle:         g_hCvarReportDrawCrowns                             = INVALID_HANDLE;
 new     Handle:         g_hCvarReportSmokerTongueCuts                       = INVALID_HANDLE;
 new     Handle:         g_hCvarReportSmokerSelfClears                       = INVALID_HANDLE;
+new     Handle:         g_hCvarReportRockSkeeted                            = INVALID_HANDLE;
 
 new     Handle:         g_hCvarAllowMelee                                   = INVALID_HANDLE;   // cvar whether to count melee skeets
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
@@ -177,7 +198,6 @@ new     Handle:         g_hCvarPounceInterrupt                              = IN
 new                     g_iPounceInterrupt                                  = 150;
 new     Handle:         g_hCvarChargerHealth                                = INVALID_HANDLE;   // z_charger_health
 new     Handle:         g_hCvarWitchHealth                                  = INVALID_HANDLE;   // z_witch_health
-new     Handle:         g_hCvarRockHealth                                   = INVALID_HANDLE;   // z_tank_throw_health
 
 /*
     To do
@@ -220,6 +240,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardDrawCrown =       CreateGlobalForward("OnWitchDrawCrown", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardTongueCut =       CreateGlobalForward("OnTongueCut", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardRockSkeeted =     CreateGlobalForward("OnTankRockSkeeted", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
     
     g_bLateLoad = late;
@@ -263,6 +284,7 @@ public OnPluginStart()
     g_hCvarReportDrawCrowns = CreateConVar(         "sm_skill_report_drawcrown",    "0", "Whether to report draw-crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportSmokerTongueCuts = CreateConVar(   "sm_skill_report_tonguecut",    "0", "Whether to report smoker tongue cuts in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportSmokerSelfClears = CreateConVar(   "sm_skill_report_selfclear",    "0", "Whether to report self-clears from smokers in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportRockSkeeted = CreateConVar(        "sm_skill_report_rockskeet",    "0", "Whether to report rocks getting skeeted in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
     g_hCvarAllowMelee = CreateConVar(               "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarAllowSniper = CreateConVar(              "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
@@ -278,7 +300,6 @@ public OnPluginStart()
     
     g_hCvarChargerHealth = FindConVar("z_charger_health");
     g_hCvarWitchHealth = FindConVar("z_witch_health");
-    g_hCvarRockHealth = FindConVar("z_tank_throw_health");
     
     
     // tries
@@ -292,6 +313,11 @@ public OnPluginStart()
     g_hTrieEntityCreated = CreateTrie();
     SetTrieValue(g_hTrieEntityCreated, "tank_rock",         OEC_TANKROCK);
     SetTrieValue(g_hTrieEntityCreated, "witch",             OEC_WITCH);
+    
+    g_hTrieAbility = CreateTrie();
+    SetTrieValue(g_hTrieAbility, "ability_lunge",       ABL_HUNTERLUNGE);
+    SetTrieValue(g_hTrieAbility, "ability_throw",       ABL_ROCKTHROW);
+    
     
     g_hWitchTrie = CreateTrie();
     g_hRockTrie = CreateTrie();
@@ -325,7 +351,12 @@ public OnClientDisconnect(client)
 
 
 
-public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
+public Action: Event_RoundStart( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    g_iRocksBeingThrownCount = 0;
+}
+
+public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new victim = GetClientOfUserId(GetEventInt(event, "userid"));
     new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
@@ -496,7 +527,7 @@ public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
             
         }
     }
-    else if ( IS_VALID_SURVIVOR(victim) && IS_VALID_INFECTED(attacker) )
+    else if ( IS_VALID_INFECTED(attacker) )
     {
         zClass = GetEntProp(attacker, Prop_Send, "m_zombieClass");
         
@@ -509,7 +540,21 @@ public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
                 
                 if ( StrEqual(weapon, "tank_rock") )
                 {
-                    HandleRockEaten( attacker, victim );
+                    // find rock entity through tank
+                    if ( g_iTankRock[attacker] )
+                    {
+                        // remember that the rock wasn't shot
+                        decl String:rock_key[10];
+                        FormatEx(rock_key, sizeof(rock_key), "%x", g_iTankRock[attacker]);
+                        new rock_array[3];
+                        rock_array[rckDamage] = -1;
+                        SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
+                    }
+                    
+                    if ( IS_VALID_SURVIVOR(victim) )
+                    {
+                        HandleRockEaten( attacker, victim );
+                    }
                 }
             }
         }
@@ -605,7 +650,7 @@ public Action: Event_PlayerDeath(Handle:hEvent, const String:name[], bool:dontBr
     return Plugin_Continue;
 }
 
-public Event_PlayerShoved(Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_PlayerShoved(Handle:event, const String:name[], bool:dontBroadcast)
 {
     new victim = GetClientOfUserId(GetEventInt(event, "userid"));
     new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
@@ -625,7 +670,7 @@ public Event_PlayerShoved(Handle:event, const String:name[], bool:dontBroadcast)
     g_fVictimLastShove[victim] = GetGameTime();
 }
 
-public Event_LungePounce(Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_LungePounce(Handle:event, const String:name[], bool:dontBroadcast)
 {
     new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
 
@@ -633,19 +678,36 @@ public Event_LungePounce(Handle:event, const String:name[], bool:dontBroadcast)
     ResetHunter(attacker);
 }
 
-public Event_AbilityUse( Handle:event, const String:name[], bool:dontBroadcast )
+public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBroadcast )
 {
     // track hunters pouncing
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     new String: abilityName[64];
     GetEventString( event, "ability", abilityName, sizeof(abilityName) );
     
-    if ( IS_VALID_INGAME(client) && strcmp(abilityName, "ability_lunge", false) == 0 )
+    if ( !IS_VALID_INGAME(client) ) { return; }
+    
+    new strAbility: ability;
+    if ( !GetTrieValue(g_hTrieAbility, abilityName, ability) ) { return; }
+    
+    switch ( ability )
     {
-        // hunter started a pounce
-        ResetHunter(client);
-        g_bHunterPouncing[client] = true;
-        CreateTimer( POUNCE_CHECK_TIME, Timer_HunterGroundTouch, client, TIMER_REPEAT );
+        case ABL_HUNTERLUNGE:
+        {
+            // hunter started a pounce
+            ResetHunter(client);
+            g_bHunterPouncing[client] = true;
+            CreateTimer( POUNCE_CHECK_TIME, Timer_HunterGroundTouch, client, TIMER_REPEAT );
+        }
+    
+        case ABL_ROCKTHROW:
+        {
+            // tank throws rock
+            g_iRocksBeingThrown[g_iRocksBeingThrownCount] = client;
+            
+            // safeguard
+            if ( g_iRocksBeingThrownCount < 9 ) { g_iRocksBeingThrownCount++; }
+        }
     }
 }
 
@@ -711,14 +773,22 @@ public OnEntityCreated ( entity, const String:classname[] )
     {
         case OEC_TANKROCK:
         {
-            //SDKHook(entity, SDKHook_TraceAttack, TraceAttack_Infected);
             decl String:rock_key[10];
             FormatEx(rock_key, sizeof(rock_key), "%x", entity);
-            SetTrieValue(g_hRockTrie, rock_key, 0);
+            new rock_array[3];
+            
+            // store which tank is throwing what rock
+            new tank = ShiftTankThrower();
+            
+            if ( IS_VALID_INGAME(tank) )
+            {
+                g_iTankRock[tank] = entity;
+                rock_array[rckTank] = tank;
+            }
+            SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
             
             SDKHook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
-            
-            g_iRockFlying = entity;
+            SDKHook(entity, SDKHook_Touch, OnTouch_Rock);
         }
     }
 }
@@ -733,17 +803,30 @@ public OnEntityDestroyed ( entity )
     {
         // witch
         SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
-    }
-    else if ( RemoveFromTrie(g_hRockTrie, witch_key) )
-    {
-        // tank rock
-        g_iRockFlying = -1;
-        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
+        return;
     }
     
+    decl rock_array[3];
+    
+    if ( GetTrieArray(g_hRockTrie, witch_key, rock_array, sizeof(rock_array)) )
+    {
+        // tank rock
+        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
+        
+        RemoveFromTrie(g_hRockTrie, witch_key);
+        
+        // if rock didn't hit anyone / didn't touch anything, it was shot
+        if ( rock_array[rckDamage] > 0 )
+        {
+            HandleRockSkeeted( rock_array[rckSkeeter], rock_array[rckTank] );
+        }
+    }
 }
+
+
+
 // boomer got somebody
-public Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast)
 {
     new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
     new bool: byBoom = GetEventBool(event, "by_boomer");
@@ -755,7 +838,7 @@ public Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast
 }
 
 // boomers that didn't bile anyone
-public Event_BoomerExploded (Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_BoomerExploded (Handle:event, const String:name[], bool:dontBroadcast)
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     new bool: biled = GetEventBool(event, "splashedbile");
@@ -770,7 +853,7 @@ public Event_BoomerExploded (Handle:event, const String:name[], bool:dontBroadca
 }
 
 // crown tracking
-public Event_WitchSpawned ( Handle:event, const String:name[], bool:dontBroadcast )
+public Action: Event_WitchSpawned ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new witch = GetEventInt(event, "witchid");
     
@@ -790,7 +873,7 @@ public Event_WitchSpawned ( Handle:event, const String:name[], bool:dontBroadcas
     SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
 }
 
-public Event_WitchKilled ( Handle:event, const String:name[], bool:dontBroadcast )
+public Action: Event_WitchKilled ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new witch = GetEventInt(event, "witchid");
     new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
@@ -801,7 +884,7 @@ public Event_WitchKilled ( Handle:event, const String:name[], bool:dontBroadcast
     // is it a crown / drawcrown?
     CheckWitchCrown( witch, attacker );
 }
-public Event_WitchHarasserSet ( Handle:event, const String:name[], bool:dontBroadcast )
+public Action: Event_WitchHarasserSet ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new witch = GetEventInt(event, "witchid");
     
@@ -839,7 +922,7 @@ public Event_WitchHarasserSet ( Handle:event, const String:name[], bool:dontBroa
     }
 } */
 
-public Action:OnTakeDamageByWitch(victim, &attacker, &inflictor, &Float:damage, &damagetype)
+public Action:OnTakeDamageByWitch ( victim, &attacker, &inflictor, &Float:damage, &damagetype )
 {
     // if a survivor is hit by a witch, note it in the witch damage array (maxplayers+2 = 1)
     if ( IS_VALID_SURVIVOR(victim) && damage > 0.0 )
@@ -871,7 +954,7 @@ public Action:OnTakeDamageByWitch(victim, &attacker, &inflictor, &Float:damage, 
     }
 }
 
-public OnTakeDamagePost_Witch(victim, attacker, inflictor, Float:damage, damagetype)
+public OnTakeDamagePost_Witch ( victim, attacker, inflictor, Float:damage, damagetype )
 {
     // only called for witches, so no check required
     
@@ -918,7 +1001,7 @@ public OnTakeDamagePost_Witch(victim, attacker, inflictor, Float:damage, damaget
     }
 }
 
-stock CheckWitchCrown( witch, attacker )
+stock CheckWitchCrown ( witch, attacker )
 {
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", witch);
@@ -960,7 +1043,7 @@ stock CheckWitchCrown( witch, attacker )
 }
 
 // tank rock
-public OnTakeDamagePost_Rock(victim, attacker, inflictor, Float:damage, damagetype)
+public OnTakeDamagePost_Rock ( victim, attacker, inflictor, Float:damage, damagetype )
 {
     // only called for tank rocks, so no check required
     
@@ -968,29 +1051,43 @@ public OnTakeDamagePost_Rock(victim, attacker, inflictor, Float:damage, damagety
     if ( IS_VALID_SURVIVOR(attacker) )
     {
         decl String:rock_key[10];
+        decl rock_array[3];
         FormatEx(rock_key, sizeof(rock_key), "%x", victim);
-        new rockdmg = 0;
-        GetTrieValue(g_hRockTrie, rock_key, rockdmg);
-        rockdmg += RoundToFloor(damage);
-        SetTrieValue(g_hRockTrie, rock_key, rockdmg);
-        
-        PrintToChatAll("rock took damage: %i", rockdmg);
+        GetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array));
+        rock_array[rckDamage] += RoundToFloor(damage);
+        rock_array[rckSkeeter] = attacker;
+        SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
     }
 }
+public OnTouch_Rock ( entity )
+{
+    // remember that the rock wasn't shot
+    decl String:rock_key[10];
+    FormatEx(rock_key, sizeof(rock_key), "%x", entity);
+    new rock_array[3];
+    rock_array[rckDamage] = -1;
+    SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
+    
+    // test
+    //PrintToChatAll("rock owner: %i", GetEntProp(entity, Prop_Send, "m_owner") );
+    
+    SDKUnhook(entity, SDKHook_Touch, OnTouch_Rock);
+}
+
 // charge tracking
-public Event_ChargeStart (Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_ChargeStart (Handle:event, const String:name[], bool:dontBroadcast)
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     g_bChargerCharging[client] = true;
 }
-public Event_ChargeEnd (Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_ChargeEnd (Handle:event, const String:name[], bool:dontBroadcast)
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     g_bChargerCharging[client] = false;
 }
 
 // smoker tongue cutting & self clears
-public Event_TonguePullStopped (Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:dontBroadcast)
 {
     new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
     new victim = GetClientOfUserId( GetEventInt(event, "victim") );
@@ -1012,7 +1109,7 @@ public Event_TonguePullStopped (Handle:event, const String:name[], bool:dontBroa
     }
 }
 
-public Event_TongueGrab (Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBroadcast)
 {
     new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
     new victim = GetClientOfUserId( GetEventInt(event, "victim") );
@@ -1340,10 +1437,50 @@ HandleRockEaten( attacker, victim )
     Call_PushCell(victim);
     Call_Finish();
 }
+HandleRockSkeeted( attacker, victim )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportRockSkeeted) )
+    {
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
+        {
+            PrintToChatAll( "\x04%N\x01 skeeted \x05%N\x01's rock.", attacker, victim );
+        }
+        else if ( IS_VALID_INGAME(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 skeeted a tank rock.", attacker );
+        }
+    }
+    
+    Call_StartForward(g_hForwardRockSkeeted);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_Finish();
+}
 
 // support
 // -------
-
+stock ShiftTankThrower()
+{
+    new tank = -1;
+    
+    if ( !g_iRocksBeingThrownCount ) { return -1; }
+    
+    tank = g_iRocksBeingThrown[0];
+    
+    // shift the tank array downwards, if there are more than 1 throwers
+    if ( g_iRocksBeingThrownCount > 1 )
+    {
+        for ( new x = 1; x <= g_iRocksBeingThrownCount; x++ )
+        {
+            g_iRocksBeingThrown[x-1] = g_iRocksBeingThrown[x];
+        }
+    }
+    
+    g_iRocksBeingThrownCount--;
+    
+    return tank;
+}
 stock PrintDebug(debuglevel, const String:Message[], any:... )
 {
     decl String:DebugBuff[256];
