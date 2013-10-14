@@ -68,6 +68,7 @@
 #define ZC_BOOMER       2
 #define ZC_HUNTER       3
 #define ZC_CHARGER      6
+#define ZC_TANK         8
 #define HITGROUP_HEAD   1
 
 #define DMG_CRUSH               (1 << 0)        // crushed by falling or moving object. 
@@ -78,7 +79,7 @@
 
 #define DMGARRAYEXT     6                       // MAXPLAYERS+# -- extra indices in witch_dmg_array + 1
 
-#define CUT_KILL        3                       // reason for tongue break
+#define CUT_KILL        3                       // reason for tongue break (release_type)
 #define CUT_SLASH       4
 
 // trie values: weapon type
@@ -91,7 +92,6 @@ enum _:strWeaponType
 // trie values: OnEntityCreated classname
 enum strOEC
 {
-    OEC_TONGUE,
     OEC_WITCH,
     OEC_TANKROCK
 };
@@ -119,10 +119,13 @@ new     Handle:         g_hForwardCrown                                     = IN
 new     Handle:         g_hForwardDrawCrown                                 = INVALID_HANDLE;
 new     Handle:         g_hForwardTongueCut                                 = INVALID_HANDLE;
 new     Handle:         g_hForwardSmokerSelfClear                           = INVALID_HANDLE;
+new     Handle:         g_hForwardRockEaten                                 = INVALID_HANDLE;
+
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
 new     Handle:         g_hWitchTrie                                        = INVALID_HANDLE;   // witch tracking (Crox)
+new     Handle:         g_hRockTrie                                         = INVALID_HANDLE;   // tank rock tracking
 
 // skeets
 new                     g_iHunterShotDmgTeam    [MAXPLAYERS + 1];                               // counting shotgun blast damage for hunter, counting entire survivor team's damage
@@ -152,6 +155,9 @@ new     bool:           g_bSmokerClearCheck     [MAXPLAYERS + 1];               
 new                     g_iSmokerVictim         [MAXPLAYERS + 1];                               // the one that's being pulled
 new                     g_iSmokerVictimDamage   [MAXPLAYERS + 1];                               // amount of damage done to a smoker by the one he pulled
 
+// rocks
+new                     g_iRockFlying                                       = -1;               // entity tank_rock
+
 new     Handle:         g_hCvarReportSkeets                                 = INVALID_HANDLE;   // cvar whether to report skeets
 new     Handle:         g_hCvarReportNonSkeets                              = INVALID_HANDLE;   // cvar whether to report non-/hurt skeets
 new     Handle:         g_hCvarReportLevels                                 = INVALID_HANDLE;
@@ -171,6 +177,7 @@ new     Handle:         g_hCvarPounceInterrupt                              = IN
 new                     g_iPounceInterrupt                                  = 150;
 new     Handle:         g_hCvarChargerHealth                                = INVALID_HANDLE;   // z_charger_health
 new     Handle:         g_hCvarWitchHealth                                  = INVALID_HANDLE;   // z_witch_health
+new     Handle:         g_hCvarRockHealth                                   = INVALID_HANDLE;   // z_tank_throw_health
 
 /*
     To do
@@ -181,6 +188,7 @@ new     Handle:         g_hCvarWitchHealth                                  = IN
     - rockskeet detection
     - rockhit detection
 
+    - make it compatible with multiple tanks at the same time (detail)
 */
 
 public Plugin:myinfo = 
@@ -212,6 +220,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardDrawCrown =       CreateGlobalForward("OnWitchDrawCrown", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardTongueCut =       CreateGlobalForward("OnTongueCut", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
     
     g_bLateLoad = late;
     
@@ -269,6 +278,8 @@ public OnPluginStart()
     
     g_hCvarChargerHealth = FindConVar("z_charger_health");
     g_hCvarWitchHealth = FindConVar("z_witch_health");
+    g_hCvarRockHealth = FindConVar("z_tank_throw_health");
+    
     
     // tries
     g_hTrieWeapons = CreateTrie();
@@ -279,11 +290,11 @@ public OnPluginStart()
     SetTrieValue(g_hTrieWeapons, "pistol_magnum",       WPTYPE_MAGNUM);
     
     g_hTrieEntityCreated = CreateTrie();
-    SetTrieValue(g_hTrieEntityCreated, "ability_tongue",    OEC_TONGUE);
     SetTrieValue(g_hTrieEntityCreated, "tank_rock",         OEC_TANKROCK);
     SetTrieValue(g_hTrieEntityCreated, "witch",             OEC_WITCH);
     
     g_hWitchTrie = CreateTrie();
+    g_hRockTrie = CreateTrie();
     
     if (g_bLateLoad)
     {
@@ -318,10 +329,11 @@ public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new victim = GetClientOfUserId(GetEventInt(event, "userid"));
     new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+    new zClass;
     
     if ( IS_VALID_INFECTED(victim) )
     {
-        new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+        zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
         new health = GetEventInt(event, "health");
         new damage = GetEventInt(event, "dmg_health");
         new damagetype = GetEventInt(event, "type");
@@ -460,6 +472,8 @@ public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
             
             case ZC_CHARGER:
             {
+                if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
+                
                 // check for levels
                 if ( g_bChargerCharging[victim] && health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
                 {
@@ -475,7 +489,28 @@ public Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
             
             case ZC_SMOKER:
             {
+                if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
+                
                 g_iSmokerVictimDamage[victim] += damage;
+            }
+            
+        }
+    }
+    else if ( IS_VALID_SURVIVOR(victim) && IS_VALID_INFECTED(attacker) )
+    {
+        zClass = GetEntProp(attacker, Prop_Send, "m_zombieClass");
+        
+        switch ( zClass )
+        {
+            case ZC_TANK:
+            {
+                new String: weapon[10];
+                GetEventString(event, "weapon", weapon, sizeof(weapon));
+                
+                if ( StrEqual(weapon, "tank_rock") )
+                {
+                    HandleRockEaten( attacker, victim );
+                }
             }
         }
     }
@@ -674,22 +709,38 @@ public OnEntityCreated ( entity, const String:classname[] )
     
     switch ( classnameOEC )
     {
-        case OEC_TONGUE:
+        case OEC_TANKROCK:
         {
             //SDKHook(entity, SDKHook_TraceAttack, TraceAttack_Infected);
+            decl String:rock_key[10];
+            FormatEx(rock_key, sizeof(rock_key), "%x", entity);
+            SetTrieValue(g_hRockTrie, rock_key, 0);
+            
+            SDKHook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
+            
+            g_iRockFlying = entity;
         }
     }
 }
 
 // entity destruction
-public OnEntityDestroyed(entity)
+public OnEntityDestroyed ( entity )
 {
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", entity);
+    
     if ( RemoveFromTrie(g_hWitchTrie, witch_key) )
     {
+        // witch
         SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
     }
+    else if ( RemoveFromTrie(g_hRockTrie, witch_key) )
+    {
+        // tank rock
+        g_iRockFlying = -1;
+        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
+    }
+    
 }
 // boomer got somebody
 public Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast)
@@ -908,6 +959,24 @@ stock CheckWitchCrown( witch, attacker )
     }
 }
 
+// tank rock
+public OnTakeDamagePost_Rock(victim, attacker, inflictor, Float:damage, damagetype)
+{
+    // only called for tank rocks, so no check required
+    
+    // store damage done to witch
+    if ( IS_VALID_SURVIVOR(attacker) )
+    {
+        decl String:rock_key[10];
+        FormatEx(rock_key, sizeof(rock_key), "%x", victim);
+        new rockdmg = 0;
+        GetTrieValue(g_hRockTrie, rock_key, rockdmg);
+        rockdmg += RoundToFloor(damage);
+        SetTrieValue(g_hRockTrie, rock_key, rockdmg);
+        
+        PrintToChatAll("rock took damage: %i", rockdmg);
+    }
+}
 // charge tracking
 public Event_ChargeStart (Handle:event, const String:name[], bool:dontBroadcast)
 {
@@ -929,7 +998,7 @@ public Event_TonguePullStopped (Handle:event, const String:name[], bool:dontBroa
     new reason = GetEventInt(event, "release_type");
     
     //PrintToChatAll( "reason for tongue break: %i", reason );
-    PrintDebug("smoker %i tongue broke (victim %i): reason: %i", attacker, victim, reason );
+    PrintDebug(0, "smoker %i tongue broke (victim %i): reason: %i", attacker, victim, reason );
     
     if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return; }
     
@@ -1263,16 +1332,23 @@ HandleSmokerSelfClear( attacker, victim )
     Call_Finish();
 }
 
+// rocks
+HandleRockEaten( attacker, victim )
+{
+    Call_StartForward(g_hForwardRockEaten);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_Finish();
+}
+
 // support
 // -------
 
-stock PrintDebug( const String:Message[], any:... )
+stock PrintDebug(debuglevel, const String:Message[], any:... )
 {
     decl String:DebugBuff[256];
     VFormat(DebugBuff, sizeof(DebugBuff), Message, 3);
     LogMessage(DebugBuff);
-    //PrintToServer(DebugBuff);
-    //PrintToChatAll(DebugBuff);
 }
 stock bool: IsWitch(entity)
 {
