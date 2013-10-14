@@ -118,15 +118,17 @@
 #define BREV_ABSOLUTE           (1 << 6)
 
 #define AUTO_MVPCHAT            (1 << 0)        // flags for what to print automatically at round end
-#define AUTO_MVPCON_ROUND       (1 << 1)
-#define AUTO_MVPCON_ALL         (1 << 2)
-#define AUTO_MVPCON_TANK        (1 << 3)
-#define AUTO_FFCON              (1 << 4)
-#define AUTO_SKILL_ROUND        (1 << 5)
-#define AUTO_SKILL_ALL          (1 << 6)
-#define AUTO_ACCCON_ROUND       (1 << 7)
-#define AUTO_ACCCON_MORE        (1 << 8)
-#define AUTO_ACCCON_MORE_ROUND  (1 << 9)
+#define AUTO_MVPCHAT_ALL        (1 << 1)
+#define AUTO_MVPCON_ROUND       (1 << 2)
+#define AUTO_MVPCON_ALL         (1 << 3)
+#define AUTO_MVPCON_TANK        (1 << 4)
+#define AUTO_FFCON              (1 << 5)
+#define AUTO_SKILLCON_ROUND     (1 << 6)
+#define AUTO_SKILLCON_ALL       (1 << 7)
+#define AUTO_ACCCON_ROUND       (1 << 8)
+#define AUTO_ACCCON_ALL         (1 << 9)
+#define AUTO_ACCCON_MORE_ROUND  (1 << 10)
+#define AUTO_ACCCON_MORE_ALL    (1 << 11)
 
 
 
@@ -252,7 +254,8 @@ new     bool:   g_bModeScavenge         = false;
 
 new     Handle: g_hCvarDebug            = INVALID_HANDLE;
 new     Handle: g_hCvarMVPBrevityFlags  = INVALID_HANDLE;
-new     Handle: g_hCvarAutoPrintFlags   = INVALID_HANDLE;
+new     Handle: g_hCvarAutoPrintVs      = INVALID_HANDLE;
+new     Handle: g_hCvarAutoPrintCoop    = INVALID_HANDLE;
 
 
 new     bool:   g_bGameStarted          = false;
@@ -302,7 +305,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.7",
+    version = "0.9.8",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -321,13 +324,18 @@ public Plugin: myinfo =
         - make mvp tank skills table work:
                 rocks eaten, rocks skeeted
         
+        - count bhops too (skill_detect)
         
+        - only show FF tables if anyone did FF
 
         - write CSV files per round -- db-ready
 
         - make reset command admin only
         
         - make confogl loading not cause round 1 to count...
+            - if there were no stats, or the round was never started,
+                survivors never left, or time was too short, reset it
+            - listen to !forcematch / !match command and map restart after?
         
     ideas
     -----
@@ -394,9 +402,11 @@ public OnPluginStart()
     
     // cvars
     g_hCvarDebug = CreateConVar( "cstat_debug", "2", "Debug mode", FCVAR_PLUGIN, true, -1.0, false);
-    g_hCvarMVPBrevityFlags = CreateConVar( "sm_survivor_mvp_brevity",   "4", "Flags for setting brevity of MVP chat report (hide 1:SI, 2:CI, 4:FF, 8:rank, 32:perc, 64:abs).", FCVAR_PLUGIN, true, 0.0);
-    g_hCvarAutoPrintFlags = CreateConVar(  "sm_stats_autoprint_round", "35", "Flags for automatic print (show 1:MVP-chat, 2,4,8:MVP-console, 16:FF, 32,64:special, 128,256,512:accuracy).", FCVAR_PLUGIN, true, 0.0);
-    //  default = 1 (mvpchat) + 2 (mvpcon-round) + 32 (special round) = 35
+    g_hCvarMVPBrevityFlags = CreateConVar( "sm_survivor_mvp_brevity", "4", "Flags for setting brevity of MVP chat report (hide 1:SI, 2:CI, 4:FF, 8:rank, 32:perc, 64:abs).", FCVAR_PLUGIN, true, 0.0);
+    g_hCvarAutoPrintVs = CreateConVar(   "sm_stats_autoprint_vs_round",    "69", "Flags for automatic print [versus round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32:FF, 64,128:special, 256,512,1024,2048:accuracy).", FCVAR_PLUGIN, true, 0.0);
+    //  default = 1 (mvpchat) + 4 (mvpcon-round) + 64 (special round) = 69
+    g_hCvarAutoPrintCoop = CreateConVar( "sm_stats_autoprint_coop_round", "649", "Flags for automatic print [campaign round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32:FF, 64,128:special, 256,512,1024,2048:accuracy).", FCVAR_PLUGIN, true, 0.0);
+    //  default = 1 (mvpchat) + 8 (mvpcon-all) + 128 (special all) + 512 (acc all) = 649
     
     g_iTeamSize = 4;
     
@@ -511,7 +521,7 @@ public Event_MapTransition (Handle:hEvent, const String:name[], bool:dontBroadca
 {
     // campaign (ignore in versus)
     if ( g_bModeCampaign ) {
-        AutomaticRoundEndPrint();
+        AutomaticRoundEndPrint(false);  // no delay for this one
     }
 }
 public Event_FinaleWin (Handle:hEvent, const String:name[], bool:dontBroadcast)
@@ -1425,7 +1435,7 @@ public OnTankRockEaten ( attacker, victim )
 */
 stock ResetStats( bool:bCurrentRoundOnly = false )
 {
-    new i, j;
+    new i, j, k;
     
     if ( !bCurrentRoundOnly )
     {
@@ -1485,6 +1495,21 @@ stock ResetStats( bool:bCurrentRoundOnly = false )
         for ( j = 0; j < MAXPLYSTATS; j++ )
         {
             g_strRoundPlayerData[i][j] = 0;
+        }
+    }
+    
+    // ff data
+    for ( i = 0; i < g_iPlayers; i++ )
+    {
+        g_iFFDamageTotal[i][TOTAL_FFGIVEN] = 0;
+        g_iFFDamageTotal[i][TOTAL_FFTAKEN] = 0;
+        
+        for ( j = 0; j < g_iPlayers; j++ )
+        {
+            for ( k = 0; k < MAXFFTYPES; k++ )
+            {
+                g_iFFDamage[i][j][k] = 0;
+            }
         }
     }
 }
@@ -2125,8 +2150,14 @@ stock DisplayStatsMVP( client, bool:tank = false, bool:round = true )
 }
 
 // display player accuracy stats: details => tank/si/etc
-stock DisplayStatsAccuracy( client, bool:details = false, bool:round = false )
+stock DisplayStatsAccuracy( client, bool:details = false, bool:round = false, bool:bSorted = true )
 {
+    // sorting
+    if ( !bSorted )
+    {
+        SortPlayersMVP( round, SORT_SI );
+    }
+    
     // prepare buffer(s) for printing
     BuildConsoleBufferAccuracy( details, round );
     
@@ -2184,8 +2215,14 @@ stock DisplayStatsAccuracy( client, bool:details = false, bool:round = false )
 }
 
 // display special skill stats
-stock DisplayStatsSpecial( client, bool:round = false )
+stock DisplayStatsSpecial( client, bool:round = false, bool:bSorted = false )
 {
+    // sorting
+    if ( !bSorted )
+    {
+        SortPlayersMVP( round, SORT_SI );
+    }
+    
     // prepare buffer(s) for printing
     BuildConsoleBufferSpecial( round );
     
@@ -2231,8 +2268,14 @@ stock DisplayStatsSpecial( client, bool:round = false )
 }
 
 // display tables of survivor friendly fire given/taken
-stock DisplayStatsFriendlyFire ( client )
+stock DisplayStatsFriendlyFire ( client, bool:bSorted = false )
 {
+    // sorting
+    if ( !bSorted )
+    {
+        SortPlayersMVP( true, SORT_FF );
+    }
+    
     // prepare buffer(s) for printing
     BuildConsoleBufferFriendlyFire();
     
@@ -2298,16 +2341,18 @@ stock DisplayStatsFriendlyFire ( client )
     }
 }
 
-stock BuildConsoleBufferSpecial ( bool:bRound = false )
+stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bSorted = false )
 {
     g_sConsoleBufGen = "";
     new const s_len = 24;
     new String: strTmp[6][s_len];
-    new i;
+    new i, x;
     
     // Special skill stats
-    for ( i = 0; i < g_iPlayers; i++ )
+    for ( x = 0; x < g_iPlayers; x++ )
     {
+        i = g_iPlayerIndexSorted[SORT_SI][x];
+        
         // also skip bots for this list
         if ( i < FIRST_NON_BOT ) { continue; }
         
@@ -2612,7 +2657,6 @@ stock BuildConsoleBufferMVP ( bool: tank = false, bool:bRound = true )
     new String: strTmp[6][s_len], String: strTmpA[s_len];
     new i, x;
     
-    
     // current logical survivor team?
     new team = GetCurrentTeamSurvivor();
     
@@ -2754,18 +2798,17 @@ stock BuildConsoleBufferFriendlyFire ()
     g_sConsoleBufFFTaken = "";
     
     new const s_len = 15;
-    
     decl String:strPrint[MAXFFTYPES+1][s_len];    // types + type_self
     new dmgCount[MAXFFTYPES];
     new dmgSelf, dmgWorld;
+    new i, j, x, z;
     
-    /*
-        Sorting is not really important, but might consider it later
-    */
     
     // GIVEN
-    for ( new i = 0; i <= g_iPlayers; i++ )
+    for ( x = 0; x < g_iPlayers; x++ )
     {
+        i = g_iPlayerIndexSorted[SORT_FF][x];
+        
         // skip any row where total of given and taken is 0
         if ( !g_iFFDamageTotal[i][TOTAL_FFGIVEN] && !g_iFFDamageTotal[i][TOTAL_FFTAKEN] ) { continue; }
         
@@ -2773,12 +2816,12 @@ stock BuildConsoleBufferFriendlyFire ()
         if ( i < FIRST_NON_BOT ) { continue; }
         
         dmgSelf = 0;
-        for ( new z = 0; z < MAXFFTYPES; z++ )
+        for ( z = 0; z < MAXFFTYPES; z++ )
         {
             dmgCount[z] = 0;
         }
         
-        for ( new j = 0; j <= g_iPlayers; j++ )
+        for ( j = 0; j < g_iPlayers; j++ )
         {
             dmgCount[FFTYPE_TOTAL] += g_iFFDamage[i][j][FFTYPE_TOTAL];
             
@@ -2832,18 +2875,20 @@ stock BuildConsoleBufferFriendlyFire ()
     }
     
     // TAKEN
-    for ( new j = 0; j <= g_iPlayers; j++ )
+    for ( x = 0; x < g_iPlayers; x++ )
     {
+        j = g_iPlayerIndexSorted[SORT_FF][x];
+        
         // skip any row where total of given and taken is 0
         if ( !g_iFFDamageTotal[j][TOTAL_FFGIVEN] && !g_iFFDamageTotal[j][TOTAL_FFTAKEN] ) { continue; }
         
         dmgWorld = g_strRoundPlayerData[j][plyFallDamage];
-        for ( new z = 0; z < MAXFFTYPES; z++ )
+        for ( z = 0; z < MAXFFTYPES; z++ )
         {
             dmgCount[z] = 0;
         }
         
-        for ( new i = 0; i <= g_iPlayers; i++ )
+        for ( i = 0; i < g_iPlayers; i++ )
         {
             dmgCount[FFTYPE_TOTAL] += g_iFFDamage[i][j][FFTYPE_TOTAL];
             
@@ -2966,12 +3011,17 @@ stock SortPlayersMVP( bool:round = true, sortCol = SORT_SI )
     -----------------
 */
 
-stock AutomaticRoundEndPrint()
+stock AutomaticRoundEndPrint( bool:doDelay = true )
 {
     new Float:fDelay = ROUNDEND_DELAY;
     if ( g_bModeScavenge ) { fDelay = ROUNDEND_DELAY_SCAV; }
     
-    CreateTimer( fDelay, Timer_AutomaticRoundEndPrint, _, TIMER_FLAG_NO_MAPCHANGE );
+    if ( doDelay ) {
+        CreateTimer( fDelay, Timer_AutomaticRoundEndPrint, _, TIMER_FLAG_NO_MAPCHANGE );
+    }
+    else {
+        Timer_AutomaticRoundEndPrint(INVALID_HANDLE);
+    }
 }
 
 public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
@@ -2981,6 +3031,67 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
     // check cvar flags
     // mvp print?
     // current round stats only .. which tables?
+    
+    new iFlags = GetConVarInt( ( g_bModeCampaign ) ? g_hCvarAutoPrintCoop : g_hCvarAutoPrintVs );
+    
+    new bool: bSorted = (iFlags & AUTO_MVPCON_ROUND) || (iFlags & AUTO_MVPCON_ALL) || (iFlags & AUTO_MVPCON_TANK);
+    
+    // mvp
+    if ( iFlags & AUTO_MVPCON_ROUND ) {
+        DisplayStatsMVP(0, false, true);
+    }
+    if ( iFlags & AUTO_MVPCON_ALL ) {
+        DisplayStatsMVP(0, false, false);
+    }
+    if ( iFlags & AUTO_MVPCON_TANK ) {
+        DisplayStatsMVP(0, true);
+    }
+    
+    if ( iFlags & AUTO_MVPCHAT ) {
+        if ( !bSorted ) {
+            // not sorted yet, sort for SI [round]
+            SortPlayersMVP( true, SORT_SI );
+            bSorted = true;
+        }
+        DisplayStatsMVPChat(0, true);
+    }
+    
+    if ( iFlags & AUTO_MVPCHAT_ALL ) {
+        if ( !bSorted ) {
+            // not sorted yet, sort for SI
+            SortPlayersMVP( false, SORT_SI );
+            bSorted = true;
+        }
+        DisplayStatsMVPChat(0, false);
+    }
+    
+    // special / skill
+    if ( iFlags & AUTO_SKILLCON_ROUND ) {
+        DisplayStatsSpecial(0, true, bSorted);
+    }
+    if ( iFlags & AUTO_SKILLCON_ALL ) {
+        DisplayStatsSpecial(0, false, bSorted);
+    }
+    
+    // ff
+    if ( iFlags & AUTO_FFCON ) {
+        DisplayStatsFriendlyFire(0, bSorted);
+    }
+    
+    // accuracy
+    if ( iFlags & AUTO_ACCCON_ROUND ) {
+        DisplayStatsAccuracy(0, false, true, bSorted);
+    }
+    if ( iFlags & AUTO_ACCCON_ALL ) {
+        DisplayStatsAccuracy(0, false, false, bSorted);
+    }
+    if ( iFlags & AUTO_ACCCON_MORE_ROUND ) {
+        DisplayStatsAccuracy(0, true, true, bSorted);
+    }
+    if ( iFlags & AUTO_ACCCON_MORE_ALL ) {
+        DisplayStatsAccuracy(0, true, false, bSorted);
+    }
+    
 }
 
 
