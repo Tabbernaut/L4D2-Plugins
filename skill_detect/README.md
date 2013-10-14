@@ -24,7 +24,8 @@ Forwards this:
  *      OnSmokerSelfClear( survivor, smoker )
  *      OnHighPounce( hunter, victim, damage )
  *      OnDeathCharge( charger, victim )
- *      OnRockSkeeted( survivor )
+ *      OnTankRockSkeeted( survivor, tank )
+ *      OnTankRockEaten( tank, survivor )
 
 
 CVars:
