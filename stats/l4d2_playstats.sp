@@ -180,7 +180,7 @@ enum _:strRoundData
             rndStartTime,   // GetTime() value when starting    
             rndEndTime      // GetTime() value when done
 };
-#define MAXRNDSTATS                 11
+#define MAXRNDSTATS                 12
 
 // information per player
 enum _:strPlayerData
@@ -253,10 +253,12 @@ enum _:strPlayerData
             plyFFTakenIncap,
             plyFFTakenOther,
             plyFFGivenTotal,
-            plyFFTakenTotal
+            plyFFTakenTotal,
+            plyHunterDPs,
+            plyJockeyDPs            // 70
             
 };
-#define MAXPLYSTATS                 68
+#define MAXPLYSTATS                 71
 
 // trie values: weapon type (per accuracy-class)
 enum strWeaponType
@@ -293,13 +295,14 @@ new     bool:   g_bTeamChanged          = false;                                
 new     bool:   g_bTankInGame           = false;
 new     bool:   g_bPlayersLeftStart     = false;
 new             g_iRound                = 0;
+new             g_iCurTeam              = LTEAM_A;                                      // current logical team
 new             g_iTeamSize             = 4;
 
 new             g_iPlayerIndexSorted    [MAXSORTS][MAXTRACKED];                         // used to create a sorted list
 new             g_iPlayerCurrentTeam    [MAXTRACKED]                = {-1,...};         // which team is the player NOW on 0 = A, 1 = B, -1 = no team
 
 new             g_strGameData           [strGameData];
-new             g_strRoundData          [MAXROUNDS][strRoundData];
+new             g_strRoundData          [MAXROUNDS][2][strRoundData];                   // rounddata per game round, per team
 new             g_strPlayerData         [MAXTRACKED][strPlayerData];
 new             g_strRoundPlayerData    [MAXTRACKED][strPlayerData];
 
@@ -374,6 +377,9 @@ public Plugin: myinfo =
             - most skeets (if any)
             - most levels (if any)
             - etc
+            
+        - fix: mvp prints to everyone, not just command-spamming client
+        - fix: ff still will never display, even when using 'game'
         
     ideas
     -----
@@ -518,12 +524,15 @@ public Event_MissionLostCampaign (Handle:hEvent, const String:name[], bool:dontB
     g_bPlayersLeftStart = false;
     
     g_strGameData[gmFailed]++;
-    g_strRoundData[g_iRound][rndRestarts]++;
+    g_strRoundData[g_iRound][g_iCurTeam][rndRestarts]++;
 }
 
 public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
     if ( !g_bInRound ) { g_bInRound = true; }
+    
+    // easier to handle: store current survivor team
+    g_iCurTeam = ( g_bModeCampaign ) ? 0 : GetCurrentTeamSurvivor();
     
     // reset stats for this round
     CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
@@ -593,9 +602,9 @@ stock RoundReallyStarting()
         g_strGameData[gmStartTime] = GetTime();
     }
     
-    if ( g_strRoundData[g_iRound][rndRestarts] == 0 )
+    if ( g_strRoundData[g_iRound][g_iCurTeam][rndRestarts] == 0 )
     {
-        g_strRoundData[g_iRound][rndStartTime] = GetTime();
+        g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] = GetTime();
     }
     
     // make sure the teams are still what we think they are
@@ -1041,7 +1050,7 @@ public Action: Event_PlayerFallDamage ( Handle:event, const String:name[], bool:
 
 public Action: Event_WitchKilled ( Handle:event, const String:name[], bool:dontBroadcast )
 {
-    g_strRoundData[g_iRound][rndWitchKilled]++;
+    g_strRoundData[g_iRound][g_iCurTeam][rndWitchKilled]++;
 }
 
 public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontBroadcast )
@@ -1055,7 +1064,7 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
     {
         // survivor died
         
-        g_strRoundData[g_iRound][rndDeaths]++;
+        g_strRoundData[g_iRound][g_iCurTeam][rndDeaths]++;
         
         index = GetPlayerIndexForClient( client );
         if ( index == -1 ) { return; }
@@ -1076,7 +1085,7 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         {
             team = GetCurrentTeamSurvivor();
             
-            g_strRoundData[g_iRound][rndSIKilled]++;
+            g_strRoundData[g_iRound][g_iCurTeam][rndSIKilled]++;
             //g_iMVPCommonTotal[team]++;
             //g_iMVPRoundCommonTotal[team]++;
             
@@ -1111,7 +1120,7 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         {
             team = GetCurrentTeamSurvivor();
             
-            g_strRoundData[g_iRound][rndCommon]++;
+            g_strRoundData[g_iRound][g_iCurTeam][rndCommon]++;
             g_iMVPCommonTotal[team]++;
             g_iMVPRoundCommonTotal[team]++;
             
@@ -1136,7 +1145,7 @@ public Action: Timer_CheckTankDeath ( Handle:hTimer, any:client_oldTank )
     if ( !IsTankInGame() )
     {
         // tank died
-        g_strRoundData[g_iRound][rndTankKilled]++;
+        g_strRoundData[g_iRound][g_iCurTeam][rndTankKilled]++;
         g_bTankInGame = false;
     }
 }
@@ -1154,7 +1163,7 @@ public Action: Event_PlayerIncapped (Handle:event, const String:name[], bool:don
     
     if ( IS_VALID_SURVIVOR(client) )
     {
-        g_strRoundData[g_iRound][rndIncaps]++;
+        g_strRoundData[g_iRound][g_iCurTeam][rndIncaps]++;
         
         new index = GetPlayerIndexForClient( client );
         if ( index == -1 ) { return; }
@@ -1167,19 +1176,19 @@ public Action: Event_PlayerIncapped (Handle:event, const String:name[], bool:don
 
 public Action: Event_DefibUsed (Handle:event, const String:name[], bool:dontBroadcast)
 {
-    g_strRoundData[g_iRound][rndDefibsUsed]++;
+    g_strRoundData[g_iRound][g_iCurTeam][rndDefibsUsed]++;
 }
 public Action: Event_HealSuccess (Handle:event, const String:name[], bool:dontBroadcast)
 {
-    g_strRoundData[g_iRound][rndKitsUsed]++;
+    g_strRoundData[g_iRound][g_iCurTeam][rndKitsUsed]++;
 }
 public Action: Event_PillsUsed (Handle:event, const String:name[], bool:dontBroadcast)
 {
-    g_strRoundData[g_iRound][rndPillsUsed]++;
+    g_strRoundData[g_iRound][g_iCurTeam][rndPillsUsed]++;
 }
 public Action: Event_AdrenUsed (Handle:event, const String:name[], bool:dontBroadcast)
 {
-    g_strRoundData[g_iRound][rndPillsUsed]++;
+    g_strRoundData[g_iRound][g_iCurTeam][rndPillsUsed]++;
 }
 
 // keep track of shots fired
@@ -1572,12 +1581,13 @@ public OnJockeyHighPounce ( attacker, victim, Float:height )
 */
 public Action: Timer_ResetStats (Handle:timer, any:roundOnly)
 {
-    ResetStats( bool:(roundOnly) );
+    // reset stats (for current team)
+    ResetStats( bool:(roundOnly), g_iCurTeam );
 }
 
-stock ResetStats( bool:bCurrentRoundOnly = false )
+stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
 {
-    new i, j;
+    new i, j, k;
     
     if ( !bCurrentRoundOnly )
     {
@@ -1597,9 +1607,12 @@ stock ResetStats( bool:bCurrentRoundOnly = false )
         for ( i = 0; i < MAXROUNDS; i++ )
         {
             g_sMapName[i] = "";
-            for ( j = 0; j < MAXRNDSTATS; j++ )
+            for ( j = 0; j < 2; j++ )
             {
-                g_strRoundData[i][j] = 0;
+                for ( k = 0; k < MAXRNDSTATS; k++ )
+                {
+                    g_strRoundData[i][j][k] = 0;
+                }
             }
         }
         
@@ -1616,15 +1629,15 @@ stock ResetStats( bool:bCurrentRoundOnly = false )
     }
     else
     {
-        g_strRoundData[g_iRound][rndPillsUsed] = 0;
-        g_strRoundData[g_iRound][rndKitsUsed] = 0;
-        g_strRoundData[g_iRound][rndDefibsUsed] = 0;
-        g_strRoundData[g_iRound][rndSIKilled] = 0;
-        g_strRoundData[g_iRound][rndCommon] = 0;
-        g_strRoundData[g_iRound][rndTankKilled] = 0;
-        g_strRoundData[g_iRound][rndWitchKilled] = 0;
-        g_strRoundData[g_iRound][rndIncaps] = 0;
-        g_strRoundData[g_iRound][rndDeaths] = 0;
+        g_strRoundData[g_iRound][iTeam][rndPillsUsed] = 0;
+        g_strRoundData[g_iRound][iTeam][rndKitsUsed] = 0;
+        g_strRoundData[g_iRound][iTeam][rndDefibsUsed] = 0;
+        g_strRoundData[g_iRound][iTeam][rndSIKilled] = 0;
+        g_strRoundData[g_iRound][iTeam][rndCommon] = 0;
+        g_strRoundData[g_iRound][iTeam][rndTankKilled] = 0;
+        g_strRoundData[g_iRound][iTeam][rndWitchKilled] = 0;
+        g_strRoundData[g_iRound][iTeam][rndIncaps] = 0;
+        g_strRoundData[g_iRound][iTeam][rndDeaths] = 0;
     }
     
     // other round data
@@ -1732,12 +1745,12 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1 )
         
         for ( i = 0; i <= g_iRound; i++ )
         {
-            tmpSpecial += g_strRoundData[i][rndSIKilled];
-            tmpCommon += g_strRoundData[i][rndCommon];
-            tmpWitches += g_strRoundData[i][rndWitchKilled];
-            tmpTanks += g_strRoundData[i][rndTankKilled];
-            tmpIncap += g_strRoundData[i][rndIncaps];
-            tmpDeath += g_strRoundData[i][rndDeaths];
+            tmpSpecial += g_strRoundData[i][g_iCurTeam][rndSIKilled];
+            tmpCommon += g_strRoundData[i][g_iCurTeam][rndCommon];
+            tmpWitches += g_strRoundData[i][g_iCurTeam][rndWitchKilled];
+            tmpTanks += g_strRoundData[i][g_iCurTeam][rndTankKilled];
+            tmpIncap += g_strRoundData[i][g_iCurTeam][rndIncaps];
+            tmpDeath += g_strRoundData[i][g_iCurTeam][rndDeaths];
         }
         
         Format(bufBasicHeader, CONBUFSIZE, "\n");
@@ -1776,13 +1789,13 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1 )
         for ( i = 0; i <= g_iRound; i++ )
         {
             // game info
-            if ( g_strRoundData[i][rndStartTime] )
+            if ( g_strRoundData[i][g_iCurTeam][rndStartTime] )
             {
                 new tmpInt = 0;
-                if ( g_strRoundData[i][rndEndTime] ) {
-                    tmpInt = g_strRoundData[i][rndEndTime];
+                if ( g_strRoundData[i][g_iCurTeam][rndEndTime] ) {
+                    tmpInt = g_strRoundData[i][g_iCurTeam][rndEndTime];
                 } else {
-                    tmpInt = GetTime() - g_strRoundData[i][rndStartTime];
+                    tmpInt = GetTime() - g_strRoundData[i][g_iCurTeam][rndStartTime];
                 }
                 strTmp = "";
                 
@@ -1815,8 +1828,14 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1 )
             Format(bufBasicHeader, CONBUFSIZE, "|--------------------------------------------------|\n");
             Format(bufBasicHeader, CONBUFSIZE, "%s| Round %3i.:     %32s |\n", bufBasicHeader, (i + 1), strTmpA );
             Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Time spent, attemps: | %17s / %5s |\n", bufBasicHeader, strTmp, g_strRoundData[i][rndRestarts]);
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Kills SI, CI, Witch: |     %5i / %5i / %5i |\n", bufBasicHeader, g_strRoundData[i][rndSIKilled], g_strRoundData[i][rndCommon], g_strRoundData[i][rndWitchKilled] );
+            Format(bufBasicHeader, CONBUFSIZE, "%s| Time spent, attemps: | %17s / %5s |\n", bufBasicHeader, strTmp,
+                    g_strRoundData[i][g_iCurTeam][rndRestarts]
+                );
+            Format(bufBasicHeader, CONBUFSIZE, "%s| Kills SI, CI, Witch: |     %5i / %5i / %5i |\n", bufBasicHeader,
+                    g_strRoundData[i][g_iCurTeam][rndSIKilled],
+                    g_strRoundData[i][g_iCurTeam][rndCommon],
+                    g_strRoundData[i][g_iCurTeam][rndWitchKilled]
+                );
             Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|", bufBasicHeader);
             
             if ( !client )
@@ -1853,13 +1872,13 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1 )
         // display round stats
         i = round;
         
-        if ( g_strRoundData[i][rndStartTime] )
+        if ( g_strRoundData[i][g_iCurTeam][rndStartTime] )
         {
             new tmpInt = 0;
-            if ( g_strRoundData[i][rndEndTime] ) {
-                tmpInt = g_strRoundData[i][rndEndTime];
+            if ( g_strRoundData[i][g_iCurTeam][rndEndTime] ) {
+                tmpInt = g_strRoundData[i][g_iCurTeam][rndEndTime];
             } else {
-                tmpInt = GetTime() - g_strRoundData[i][rndStartTime];
+                tmpInt = GetTime() - g_strRoundData[i][g_iCurTeam][rndStartTime];
             }
             strTmp = "";
             
@@ -1892,8 +1911,15 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1 )
         Format(bufBasicHeader, CONBUFSIZE, "|--------------------------------------------------|\n");
         Format(bufBasicHeader, CONBUFSIZE, "%s| Round %3i.:     %32s |\n", bufBasicHeader, (i + 1), strTmpA );
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Time spent, attemps: | %15s / %5s |\n", bufBasicHeader, strTmp, g_strRoundData[i][rndRestarts]);
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Kills SI, CI, Witch: |     %5i / %5i / %5i |\n", bufBasicHeader, g_strRoundData[i][rndSIKilled], g_strRoundData[i][rndCommon], g_strRoundData[i][rndWitchKilled] );
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Time spent, attemps: | %15s / %5s |\n", bufBasicHeader,
+                strTmp,
+                g_strRoundData[i][g_iCurTeam][rndRestarts]
+            );
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Kills SI, CI, Witch: |     %5i / %5i / %5i |\n", bufBasicHeader,
+                g_strRoundData[i][g_iCurTeam][rndSIKilled],
+                g_strRoundData[i][g_iCurTeam][rndCommon],
+                g_strRoundData[i][g_iCurTeam][rndWitchKilled]
+            );
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|", bufBasicHeader);
         
         if ( !client )
