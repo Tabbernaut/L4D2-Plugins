@@ -106,7 +106,6 @@ enum strOEC
 enum strAbility
 {
     ABL_HUNTERLUNGE,
-    ABL_JOCKEYPOUNCE,
     ABL_ROCKTHROW
 };
 
@@ -375,7 +374,6 @@ public OnPluginStart()
     
     g_hTrieAbility = CreateTrie();
     SetTrieValue(g_hTrieAbility, "ability_lunge",       ABL_HUNTERLUNGE);
-    SetTrieValue(g_hTrieAbility, "ability_pounce",      ABL_JOCKEYPOUNCE);
     SetTrieValue(g_hTrieAbility, "ability_throw",       ABL_ROCKTHROW);
     
     
