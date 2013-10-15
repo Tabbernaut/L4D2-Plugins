@@ -40,6 +40,7 @@ CVars:
 <b>sm_skill_reporttonguecut</b><br />
 <b>sm_skill_reportselfclear</b><br />
 0/1, whether to report these actions in chat.<br />
+Note: for ...selfclear: set to '2' to also report selfclears by shoving the smoker in time.<br />
 
 <b>sm_skill_drawcrown_damage</b><br />
 How much damage a survivor must at least do in the final shot for it to count as a drawcrown.<br />
@@ -50,3 +51,6 @@ How much damage a survivor must at least do while pulled for it to count as a se
 <b>sm_skill_skeet_allowmelee</b><br />
 <b>sm_skill_skeet_allowsniper</b><br />
 1/0, whether to count melee skeets and sniper/magnum headshots as skeets (if not, doesn't forward either)<br />
+
+<b>sm_skill_hidefakedamage</b><br />
+0/1, whether hide any damage on witch that exceeds her maximum health<br />
