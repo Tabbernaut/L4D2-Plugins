@@ -51,7 +51,7 @@
 #include <sourcemod>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "0.9.2"
+#define PLUGIN_VERSION "0.9.3"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -79,10 +79,12 @@
 #define DMG_CLUB                (1 << 7)        // crowbar, punch, headbutt
 #define DMG_BUCKSHOT            (1 << 29)       // not quite a bullet. Little, rounder, different. 
 
-#define DMGARRAYEXT     6                       // MAXPLAYERS+# -- extra indices in witch_dmg_array + 1
+#define DMGARRAYEXT     7                       // MAXPLAYERS+# -- extra indices in witch_dmg_array + 1
 
+#define CUT_SHOVED      1                       // .. i think
 #define CUT_KILL        3                       // reason for tongue break (release_type)
-#define CUT_SLASH       4
+#define CUT_SLASH       4                       // this is used for others shoving a survivor free too, don't trust
+
 
 // trie values: weapon type
 enum _:strWeaponType
@@ -105,17 +107,29 @@ enum strAbility
     ABL_ROCKTHROW
 };
 
-enum strWitchDamage
-{
-    WD_client,
-    WD_damage
-};
-
 enum _:strRockData
 {
     rckDamage,
     rckTank,
     rckSkeeter
+};
+
+/*
+    maxplayers+1 = starting health of witch
+    "         +2 = 0 as long as the witch didn't get a slash
+    "         +3 = 0 as long as the witch didn't startle
+    "         +4 = the last survivor that shot the witch
+    +         +5 = the damage done in the last shot alone
+*/
+enum _:strWitchArray
+{
+    WTCH_NONE,
+    WTCH_HEALTH,
+    WTCH_GOTSLASH,
+    WTCH_STARTLED,
+    WTCH_CROWNER,
+    WTCH_CROWNSHOT,
+    WTCH_CROWNTYPE
 };
 
 new     bool:           g_bLateLoad                                         = false;
@@ -169,9 +183,10 @@ new     bool:           g_bChargerCharging      [MAXPLAYERS + 1];               
 new     Float:          g_fWitchShotStart       [MAXPLAYERS + 1];                               // when the last shotgun blast from a survivor started (on any witch)
 
 // smoker clears
-new     bool:           g_bSmokerClearCheck     [MAXPLAYERS + 1];                               // smoker dies and this is set, it's a self-clear if g_iSmokerVictim is the killer
-new                     g_iSmokerVictim         [MAXPLAYERS + 1];                               // the one that's being pulled
-new                     g_iSmokerVictimDamage   [MAXPLAYERS + 1];                               // amount of damage done to a smoker by the one he pulled
+new     bool:           g_bSmokerClearCheck     [MAXPLAYERS + 1];                               // [smoker] smoker dies and this is set, it's a self-clear if g_iSmokerVictim is the killer
+new                     g_iSmokerVictim         [MAXPLAYERS + 1];                               // [smoker] the one that's being pulled
+new                     g_iSmokerVictimDamage   [MAXPLAYERS + 1];                               // [smoker] amount of damage done to a smoker by the one he pulled
+new     bool:           g_bSmokerShoved         [MAXPLAYERS + 1];                               // [smoker] set if the victim of a pull manages to shove the smoker
 
 // rocks
 new                     g_iTankRock             [MAXPLAYERS + 1];                               // rock entity per tank
@@ -194,6 +209,7 @@ new     Handle:         g_hCvarAllowMelee                                   = IN
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
 new     Handle:         g_hCvarDrawCrownThresh                              = INVALID_HANDLE;   // cvar damage in final shot for drawcrown-req.
 new     Handle:         g_hCvarSelfClearThresh                              = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
+new     Handle:         g_hCvarHideFakeDamage                               = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
@@ -201,12 +217,31 @@ new     Handle:         g_hCvarChargerHealth                                = IN
 new     Handle:         g_hCvarWitchHealth                                  = INVALID_HANDLE;   // z_witch_health
 
 /*
+    Reports:
+    --------
+    Damage shown is damage done in the last shot/slash. So for crowns, this means
+    that the 'damage' value is one shotgun blast
+    
+
+    Quirks:
+    -------
+    Does not report people cutting smoker tongues that target players other
+    than themselves. Could be done, but would require (too much) tracking.
+    
+    
     To do
     -----
     
     - highpounce detection
-    - deathcharge detection
-
+    - ? bhop (streaks)
+    - ? jockey highpounce detection
+    - ? deathcharge detection
+    - ? " assist detection
+    - ? spit-on-cap detection
+    
+    
+    - make cvar for optionally removing fake damage
+        - for charger too
 */
 
 public Plugin:myinfo = 
@@ -281,14 +316,16 @@ public OnPluginStart()
     g_hCvarReportCrowns = CreateConVar(             "sm_skill_report_crown" ,       "0", "Whether to report full crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportDrawCrowns = CreateConVar(         "sm_skill_report_drawcrown",    "0", "Whether to report draw-crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportSmokerTongueCuts = CreateConVar(   "sm_skill_report_tonguecut",    "0", "Whether to report smoker tongue cuts in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportSmokerSelfClears = CreateConVar(   "sm_skill_report_selfclear",    "0", "Whether to report self-clears from smokers in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportSmokerSelfClears = CreateConVar(   "sm_skill_report_selfclear",    "0", "Whether to report self-clears from smokers in chat. 1 = only kills, 2 = report shoves aswell.", FCVAR_PLUGIN, true, 0.0, true, 2.0 );
     g_hCvarReportRockSkeeted = CreateConVar(        "sm_skill_report_rockskeet",    "0", "Whether to report rocks getting skeeted in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
     g_hCvarAllowMelee = CreateConVar(               "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarAllowSniper = CreateConVar(              "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
-    g_hCvarDrawCrownThresh = CreateConVar(          "sm_skill_drawcrown_damage",  "750", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarDrawCrownThresh = CreateConVar(          "sm_skill_drawcrown_damage",  "500", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarSelfClearThresh = CreateConVar(          "sm_skill_selfclear_damage",  "200", "How much damage a survivor must at least do to a smoker for him to count as self-clearing.", FCVAR_PLUGIN, true, 0.0, false );
+    
+    g_hCvarHideFakeDamage = CreateConVar(           "sm_skill_hidefakedamage",      "0", "If set, any damage done that exceeds the health of a victim is hidden in reports.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
     
     // cvars
@@ -507,7 +544,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 if ( g_bChargerCharging[victim] && health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
                 {
                     // charger was killed, was it a full level?
-                    if ( damage >=  GetConVarInt(g_hCvarChargerHealth) ) {
+                    if ( damage >= GetConVarInt(g_hCvarChargerHealth) ) {
                         HandleLevel( attacker, victim );
                     }
                     else {
@@ -663,9 +700,18 @@ public Action: Event_PlayerShoved(Handle:event, const String:name[], bool:dontBr
         }
         
         HandleShove( attacker, victim );
+        
+        g_fVictimLastShove[victim] = GetGameTime();
     }
     
-    g_fVictimLastShove[victim] = GetGameTime();
+    
+    // check for shove on smoker by pull victim
+    if ( g_iSmokerVictim[victim] == attacker )
+    {
+        g_bSmokerShoved[victim] = true;
+    }
+    
+    //PrintDebug(0, "shove by %i on %i", attacker, victim );
 }
 
 public Action: Event_LungePounce(Handle:event, const String:name[], bool:dontBroadcast)
@@ -809,19 +855,30 @@ public OnEntityDestroyed ( entity )
     if ( GetTrieArray(g_hRockTrie, witch_key, rock_array, sizeof(rock_array)) )
     {
         // tank rock
+        CreateTimer( SHOTGUN_BLAST_TIME, Timer_CheckRockSkeet, entity );
         SDKUnhook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
         
-        RemoveFromTrie(g_hRockTrie, witch_key);
         
-        // if rock didn't hit anyone / didn't touch anything, it was shot
-        if ( rock_array[rckDamage] > 0 )
-        {
-            HandleRockSkeeted( rock_array[rckSkeeter], rock_array[rckTank] );
-        }
     }
 }
 
-
+public Action: Timer_CheckRockSkeet (Handle:timer, any:rock)
+{
+    decl rock_array[3];
+    decl String: rock_key[10];
+    FormatEx(rock_key, sizeof(rock_key), "%x", rock);
+    if (!GetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array)) ) { return Plugin_Continue; }
+    
+    RemoveFromTrie(g_hRockTrie, rock_key);
+    
+    // if rock didn't hit anyone / didn't touch anything, it was shot
+    if ( rock_array[rckDamage] > 0 )
+    {
+        HandleRockSkeeted( rock_array[rckSkeeter], rock_array[rckTank] );
+    }
+    
+    return Plugin_Continue;
+}
 
 // boomer got somebody
 public Action: Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast)
@@ -857,17 +914,10 @@ public Action: Event_WitchSpawned ( Handle:event, const String:name[], bool:dont
     
     SDKHook(witch, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
     
-    /*
-        maxplayers+1 = starting health of witch
-        "         +2 = 0 as long as the witch didn't get a slash
-        "         +3 = 0 as long as the witch didn't startle
-        "         +4 = the last survivor that shot the witch
-        +         +5 = the damage done in the last shot alone
-    */
     new witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", witch);
-    witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
+    witch_dmg_array[MAXPLAYERS+WTCH_HEALTH] = GetConVarInt(g_hCvarWitchHealth);
     SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
 }
 
@@ -896,13 +946,13 @@ public Action: Event_WitchHarasserSet ( Handle:event, const String:name[], bool:
         {
             witch_dmg_array[i] = 0;
         }
-        witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
-        witch_dmg_array[MAXPLAYERS+3] = 1;  // harasser set
+        witch_dmg_array[MAXPLAYERS+WTCH_HEALTH] = GetConVarInt(g_hCvarWitchHealth);
+        witch_dmg_array[MAXPLAYERS+WTCH_STARTLED] = 1;  // harasser set
         SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
     }
     else
     {
-        witch_dmg_array[MAXPLAYERS+3] = 1;  // harasser set
+        witch_dmg_array[MAXPLAYERS+WTCH_STARTLED] = 1;  // harasser set
         SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
     }
 }
@@ -939,13 +989,13 @@ public Action:OnTakeDamageByWitch ( victim, &attacker, &inflictor, &Float:damage
                 {
                     witch_dmg_array[i] = 0;
                 }
-                witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
-                witch_dmg_array[MAXPLAYERS+2] = 1;  // failed
+                witch_dmg_array[MAXPLAYERS+WTCH_HEALTH] = GetConVarInt(g_hCvarWitchHealth);
+                witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] = 1;  // failed
                 SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
             }
             else
             {
-                witch_dmg_array[MAXPLAYERS+2] = 1;  // failed
+                witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] = 1;  // failed
                 SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
             }
         }
@@ -966,7 +1016,7 @@ public OnTakeDamagePost_Witch ( victim, attacker, inflictor, Float:damage, damag
         {
             witch_dmg_array[i] = 0;
         }
-        witch_dmg_array[MAXPLAYERS+1] = GetConVarInt(g_hCvarWitchHealth);
+        witch_dmg_array[MAXPLAYERS+WTCH_HEALTH] = GetConVarInt(g_hCvarWitchHealth);
         SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, false);
     }
     
@@ -974,19 +1024,20 @@ public OnTakeDamagePost_Witch ( victim, attacker, inflictor, Float:damage, damag
     if ( IS_VALID_SURVIVOR(attacker) )
     {
         witch_dmg_array[attacker] += RoundToFloor(damage);
-        witch_dmg_array[MAXPLAYERS+1] -= RoundToFloor(damage);
+        witch_dmg_array[MAXPLAYERS+WTCH_HEALTH] -= RoundToFloor(damage);
         
         // remember last shot
         if ( g_fWitchShotStart[attacker] == 0.0 || FloatSub(GetGameTime(), g_fWitchShotStart[attacker]) > SHOTGUN_BLAST_TIME )
         {
             // reset last shot damage count and attacker
             g_fWitchShotStart[attacker] = GetGameTime();
-            witch_dmg_array[MAXPLAYERS+4] = attacker;
-            witch_dmg_array[MAXPLAYERS+5] = 0;
+            witch_dmg_array[MAXPLAYERS+WTCH_CROWNER] = attacker;
+            witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] = 0;
+            witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] = ( damagetype & DMG_BUCKSHOT ) ? 1 : 0; // only allow shotguns
         }
         
         // continued blast, add up
-        witch_dmg_array[MAXPLAYERS+5] += RoundToFloor(damage);
+        witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] += RoundToFloor(damage);
         
         SetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT, true);
     }
@@ -1004,8 +1055,10 @@ stock CheckWitchCrown ( witch, attacker )
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", witch);
     decl witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
-    
     if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) ) { return; }
+    
+    new chipDamage = 0;
+    new iWitchHealth = GetConVarInt(g_hCvarWitchHealth);
     
     /*
         the attacker is the last one that did damage to witch
@@ -1013,30 +1066,57 @@ stock CheckWitchCrown ( witch, attacker )
             if their damage is full or > drawcrown_threshhold, it's a drawcrown
     */
     
-    // not a crown at all if anyone was hit
-    if ( witch_dmg_array[MAXPLAYERS+2] ) { return; }
+    // not a crown at all if anyone was hit, or if the killing damage wasn't a shotgun blast
+    if ( witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] || !witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] ) { return; }
+    
     
     // full crown? unharrassed
-    if ( !witch_dmg_array[MAXPLAYERS+3] && witch_dmg_array[attacker] >= GetConVarInt(g_hCvarWitchHealth) )
+    if ( !witch_dmg_array[MAXPLAYERS+WTCH_STARTLED] && witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] >= iWitchHealth )
     {
+        // make sure that we don't count any type of chip
+        if ( GetConVarBool(g_hCvarHideFakeDamage) )
+        {
+            chipDamage = 0;
+            for ( new i = 0; i <= MAXPLAYERS; i++ )
+            {
+                if ( i == attacker ) { continue; }
+                chipDamage += witch_dmg_array[i];
+            }
+            witch_dmg_array[attacker] = iWitchHealth - chipDamage;
+        }
         HandleCrown( attacker, witch_dmg_array[attacker] );
     }
-    else if ( witch_dmg_array[attacker] > GetConVarInt(g_hCvarDrawCrownThresh) )
+    else if ( witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] >= GetConVarInt(g_hCvarDrawCrownThresh) )
     {
         // draw crown: harassed + over X damage done by one survivor -- in ONE shot
-        new chipDamage = 0;
+        
         for ( new i = 0; i <= MAXPLAYERS; i++ )
         {
             if ( i == attacker ) {
                 // count any damage done before final shot as chip
-                chipDamage += witch_dmg_array[i] - witch_dmg_array[MAXPLAYERS+5];
+                chipDamage += witch_dmg_array[i] - witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT];
             } else {
                 chipDamage += witch_dmg_array[i];
             }
         }
         
+        // make sure that we don't count any type of chip
+        if ( GetConVarBool(g_hCvarHideFakeDamage) )
+        {
+            // unlikely to happen, but if the chip was A LOT
+            if ( chipDamage >= iWitchHealth ) {
+                chipDamage = iWitchHealth - 1;
+                witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] = 1;
+            }
+            else {
+                witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] = iWitchHealth - chipDamage;
+            }
+            // re-check whether it qualifies as a drawcrown:
+            if ( witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] < GetConVarInt(g_hCvarDrawCrownThresh) ) { return; }
+        }
+        
         // plus, set final shot as 'damage', and the rest as chip
-        HandleDrawCrown( attacker, witch_dmg_array[MAXPLAYERS+5], chipDamage );
+        HandleDrawCrown( attacker, witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT], chipDamage );
     }
 }
 
@@ -1094,18 +1174,31 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
     new smoker = GetClientOfUserId( GetEventInt(event, "smoker") );
     new reason = GetEventInt(event, "release_type");
     
-    //PrintToChatAll( "reason for tongue break: %i", reason );
-    PrintDebug(0, "smoker %i tongue broke (victim %i): reason: %i", attacker, victim, reason );
-    
     if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return; }
     
-    if ( reason == CUT_KILL && attacker == victim )
+    //PrintDebug(0, "smoker %i: tongue broke (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
+    
+    if ( attacker != victim ) { return; }
+    
+    if ( reason == CUT_KILL )
     {
         g_bSmokerClearCheck[smoker] = true;
     }
-    else if ( reason == CUT_SLASH )
+    else if ( g_bSmokerShoved[smoker] )
     {
-        HandleTongueCut( attacker, smoker );
+        HandleSmokerSelfClear( attacker, smoker, true );
+    }
+    else if ( reason == CUT_SLASH ) // note: can't trust this to actually BE a slash..
+    {
+        // check weapon
+        decl String:weapon[32];
+        GetClientWeapon( attacker, weapon, 32 );
+        PrintToChatAll("waepon: %s", weapon);
+        // this doesn't count the chainsaw, but that's no-skill anyway
+        if ( StrEqual(weapon, "weapon_melee", false) )
+        {
+            HandleTongueCut( attacker, smoker );
+        }
     }
 }
 
@@ -1117,7 +1210,8 @@ public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBro
     if ( IS_VALID_INFECTED(attacker) && IS_VALID_SURVIVOR(victim) )
     {
         // new pull, clean damage
-        g_bSmokerClearCheck[victim] = false;
+        g_bSmokerClearCheck[attacker] = false;
+        g_bSmokerShoved[attacker] = false;
         g_iSmokerVictim[attacker] = victim;
         g_iSmokerVictimDamage[attacker] = 0;
     }
@@ -1193,10 +1287,10 @@ stock HandleLevelHurt( attacker, victim, damage )
         }
         else if ( IS_VALID_INGAME(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 leveled a charger. (\x03%i\x01 damage)", attacker, damage );
+            PrintToChatAll( "\x04%N\x01 chip-leveled a charger. (\x03%i\x01 damage)", attacker, damage );
         }
         else {
-            PrintToChatAll( "A charger was leveled (\x03%i\x01 damage).", damage );
+            PrintToChatAll( "A charger was chip-leveled (\x03%i\x01 damage).", damage );
         }
     }
     
@@ -1407,18 +1501,19 @@ HandleTongueCut( attacker, victim )
     Call_Finish();
 }
 
-HandleSmokerSelfClear( attacker, victim )
+HandleSmokerSelfClear( attacker, victim, bool:withShove = false )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportSmokerSelfClears) )
+    new iReport = GetConVarInt(g_hCvarReportSmokerSelfClears);
+    if ( iReport && (!withShove || iReport > 1) )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
-            PrintToChatAll( "\x04%N\x01 cleared himself from \x05%N\x01's tongue.", attacker, victim );
+            PrintToChatAll( "\x04%N\x01 cleared himself from \x05%N\x01's tongue%s.", attacker, victim, (withShove) ? " by shoving" : "" );
         }
         else if ( IS_VALID_INGAME(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 cleared himself from a smoker tongue.", attacker );
+            PrintToChatAll( "\x04%N\x01 cleared himself from a smoker tongue%s.", attacker, (withShove) ? " by shoving" : "" );
         }
     }
     
