@@ -178,6 +178,7 @@ new                     g_iTankRock             [MAXPLAYERS + 1];               
 new                     g_iRocksBeingThrown     [10];                                           // 10 tanks max simultanously throwing rocks should be ok (this stores the tank client)
 new                     g_iRocksBeingThrownCount                            = 0;                // so we can do a push/pop type check for who is throwing a created rock
 
+// cvars
 new     Handle:         g_hCvarReportSkeets                                 = INVALID_HANDLE;   // cvar whether to report skeets
 new     Handle:         g_hCvarReportNonSkeets                              = INVALID_HANDLE;   // cvar whether to report non-/hurt skeets
 new     Handle:         g_hCvarReportLevels                                 = INVALID_HANDLE;
@@ -205,10 +206,7 @@ new     Handle:         g_hCvarWitchHealth                                  = IN
     
     - highpounce detection
     - deathcharge detection
-    - rockskeet detection
-    - rockhit detection
 
-    - make it compatible with multiple tanks at the same time (detail)
 */
 
 public Plugin:myinfo = 
@@ -787,7 +785,7 @@ public OnEntityCreated ( entity, const String:classname[] )
             }
             SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
             
-            SDKHook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
+            SDKHook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
             SDKHook(entity, SDKHook_Touch, OnTouch_Rock);
         }
     }
@@ -811,7 +809,7 @@ public OnEntityDestroyed ( entity )
     if ( GetTrieArray(g_hRockTrie, witch_key, rock_array, sizeof(rock_array)) )
     {
         // tank rock
-        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Rock);
+        SDKUnhook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
         
         RemoveFromTrie(g_hRockTrie, witch_key);
         
@@ -1043,13 +1041,14 @@ stock CheckWitchCrown ( witch, attacker )
 }
 
 // tank rock
-public OnTakeDamagePost_Rock ( victim, attacker, inflictor, Float:damage, damagetype )
+public Action: TraceAttack_Rock (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
 {
-    // only called for tank rocks, so no check required
-    
-    // store damage done to witch
     if ( IS_VALID_SURVIVOR(attacker) )
     {
+        /*
+            can't really use this for precise detection, though it does
+            report the last shot -- the damage report is without distance falloff
+        */
         decl String:rock_key[10];
         decl rock_array[3];
         FormatEx(rock_key, sizeof(rock_key), "%x", victim);
@@ -1059,6 +1058,7 @@ public OnTakeDamagePost_Rock ( victim, attacker, inflictor, Float:damage, damage
         SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
     }
 }
+
 public OnTouch_Rock ( entity )
 {
     // remember that the rock wasn't shot
