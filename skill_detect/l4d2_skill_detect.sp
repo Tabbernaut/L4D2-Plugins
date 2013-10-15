@@ -246,6 +246,11 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     To do
     -----
     
+    - try a more elegant approach to hunter skeet detection:
+        - traceattack: check that netprop, remember
+        - then in ontakedamage: if less than X time passed since traceattack.. we know it was pouncing still
+    
+    - ? speedcrown detection?
     - ? bhop (streaks) detection
     - ? deathcharge detection
     - ? " assist detection
@@ -1312,7 +1317,7 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
         // check weapon
         decl String:weapon[32];
         GetClientWeapon( attacker, weapon, 32 );
-        PrintToChatAll("waepon: %s", weapon);
+        
         // this doesn't count the chainsaw, but that's no-skill anyway
         if ( StrEqual(weapon, "weapon_melee", false) )
         {
