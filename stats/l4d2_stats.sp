@@ -43,6 +43,7 @@
 #define MAXMAP                  32
 #define MAXGAME                 24
 
+#define STATS_RESET_DELAY       5.0
 #define ROUNDEND_DELAY          3.0
 #define ROUNDEND_DELAY_SCAV     2.0
 
@@ -93,19 +94,15 @@
 #define FFTYPE_SNIPER           3
 #define FFTYPE_MELEE            4
 #define FFTYPE_FIRE             5
-#define FFTYPE_INCAPPED         6
+#define FFTYPE_INCAP            6
 #define FFTYPE_OTHER            7
-#define FFTYPE_SELF             8               // only for printing
-#define MAXFFTYPES              8
-
-#define MAXRNDSTATS             11
-#define MAXPLYSTATS             51
+#define FFTYPE_SELF             8
+#define FFTYPE_MAX              9
 
 #define SORT_SI                 0
 #define SORT_CI                 1
 #define SORT_FF                 2
 #define MAXSORTS                3
-
 
 #define LTEAM_A                 0
 #define LTEAM_B                 1
@@ -122,13 +119,14 @@
 #define AUTO_MVPCON_ROUND       (1 << 2)
 #define AUTO_MVPCON_ALL         (1 << 3)
 #define AUTO_MVPCON_TANK        (1 << 4)
-#define AUTO_FFCON              (1 << 5)
-#define AUTO_SKILLCON_ROUND     (1 << 6)
-#define AUTO_SKILLCON_ALL       (1 << 7)
-#define AUTO_ACCCON_ROUND       (1 << 8)
-#define AUTO_ACCCON_ALL         (1 << 9)
-#define AUTO_ACCCON_MORE_ROUND  (1 << 10)
-#define AUTO_ACCCON_MORE_ALL    (1 << 11)
+#define AUTO_FFCON_ROUND        (1 << 5)
+#define AUTO_FFCON_ALL          (1 << 6)
+#define AUTO_SKILLCON_ROUND     (1 << 7)
+#define AUTO_SKILLCON_ALL       (1 << 8)
+#define AUTO_ACCCON_ROUND       (1 << 9)
+#define AUTO_ACCCON_ALL         (1 << 10)
+#define AUTO_ACCCON_MORE_ROUND  (1 << 11)
+#define AUTO_ACCCON_MORE_ALL    (1 << 12)
 
 
 
@@ -147,6 +145,17 @@
     "back"
 };
 */
+
+// types of statistic table(sets)
+enum _:strStatType
+{
+    typGeneral,
+    typMVP,
+    typFF,
+    typSkill,
+    typAcc,
+    typInf
+};
 
 // information for entire game
 enum _:strGameData
@@ -171,6 +180,7 @@ enum _:strRoundData
             rndStartTime,   // GetTime() value when starting    
             rndEndTime      // GetTime() value when done
 };
+#define MAXRNDSTATS                 11
 
 // information per player
 enum _:strPlayerData
@@ -225,9 +235,28 @@ enum _:strPlayerData
             plyTankDamage,          // survivor damage to tank
             plyWitchDamage,
             plyMeleesOnTank,
-            plyRockSkeets,
-            plyRockEats
+            plyRockSkeets,          // 50
+            plyRockEats,
+            plyFFGivenPellet,
+            plyFFGivenBullet,
+            plyFFGivenSniper,
+            plyFFGivenMelee,
+            plyFFGivenFire,
+            plyFFGivenIncap,
+            plyFFGivenOther,
+            plyFFGivenSelf,
+            plyFFTakenPellet,       // 60
+            plyFFTakenBullet,
+            plyFFTakenSniper,
+            plyFFTakenMelee,
+            plyFFTakenFire,
+            plyFFTakenIncap,
+            plyFFTakenOther,
+            plyFFGivenTotal,
+            plyFFTakenTotal
+            
 };
+#define MAXPLYSTATS                 68
 
 // trie values: weapon type (per accuracy-class)
 enum strWeaponType
@@ -274,8 +303,8 @@ new             g_strRoundData          [MAXROUNDS][strRoundData];
 new             g_strPlayerData         [MAXTRACKED][strPlayerData];
 new             g_strRoundPlayerData    [MAXTRACKED][strPlayerData];
 
-new             g_iFFDamageTotal        [MAXTRACKED][2];                                // damage totals: 0 = given, 1 = taken
-new             g_iFFDamage             [MAXTRACKED][MAXTRACKED][MAXFFTYPES];           // damage done player-to-player, per type
+new             g_iFFDamageTotal;
+new             g_iFFRoundDamageTotal;
 
 new             g_iMVPSIDamageTotal     [2];                                            // damage totals for each team
 new             g_iMVPCommonTotal       [2];                                            // common kill totals for each team
@@ -305,7 +334,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.8",
+    version = "0.9.9",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -316,14 +345,13 @@ public Plugin: myinfo =
     ----
         - automatic reports
             - add client-side override
-
         - make infected skills table
                 dps, dc's, damage done
-        
-        - count bhops too (skill_detect)
+        - special skills
+            - count bhops too (skill_detect)
+
         - hide 0 and 0.0% values from tables
-        - only show FF tables if anyone did FF
-        - clean up FF tracking (only given/taken, in strPlayerData table)
+
         - count time active (live round, per team) [show in mvp?]
 
         - write CSV files per round -- db-ready
@@ -332,6 +360,23 @@ public Plugin: myinfo =
             - if there were no stats, or the round was never started,
                 survivors never left, or time was too short, reset it
             - listen to !forcematch / !match command and map restart after?
+        
+        - better 'team' checks, include players who were on the team
+            - even if they switched after or went spec
+            - rule: include everyone that was in the survivor team while the round was live
+                    how to keep track?
+        
+        - clear stats only when next round has actually started (so they're still available for print)
+            - but how to handle current vs previous team then?
+        
+        - tongue cut incorrectly detected if somebody else kills smoker
+        - add: count shoving-free from smoker as self-clearing too
+        - got a chip-level that counted as a full-level
+        
+        - hall of fame type table, with only
+            - most skeets (if any)
+            - most levels (if any)
+            - etc
         
     ideas
     -----
@@ -399,10 +444,10 @@ public OnPluginStart()
     // cvars
     g_hCvarDebug = CreateConVar( "cstat_debug", "2", "Debug mode", FCVAR_PLUGIN, true, -1.0, false);
     g_hCvarMVPBrevityFlags = CreateConVar( "sm_survivor_mvp_brevity", "4", "Flags for setting brevity of MVP chat report (hide 1:SI, 2:CI, 4:FF, 8:rank, 32:perc, 64:abs).", FCVAR_PLUGIN, true, 0.0);
-    g_hCvarAutoPrintVs = CreateConVar(   "sm_stats_autoprint_vs_round",    "69", "Flags for automatic print [versus round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32:FF, 64,128:special, 256,512,1024,2048:accuracy).", FCVAR_PLUGIN, true, 0.0);
-    //  default = 1 (mvpchat) + 4 (mvpcon-round) + 64 (special round) = 69
-    g_hCvarAutoPrintCoop = CreateConVar( "sm_stats_autoprint_coop_round", "649", "Flags for automatic print [campaign round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32:FF, 64,128:special, 256,512,1024,2048:accuracy).", FCVAR_PLUGIN, true, 0.0);
-    //  default = 1 (mvpchat) + 8 (mvpcon-all) + 128 (special all) + 512 (acc all) = 649
+    g_hCvarAutoPrintVs = CreateConVar(   "sm_stats_autoprint_vs_round",    "133", "Flags for automatic print [versus round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32,64:FF, 128,256:special, 512,1024,2048,4096:accuracy).", FCVAR_PLUGIN, true, 0.0);
+    //  default = 1 (mvpchat) + 4 (mvpcon-round) + 128 (special round) = 133
+    g_hCvarAutoPrintCoop = CreateConVar( "sm_stats_autoprint_coop_round", "1289", "Flags for automatic print [campaign round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32,64:FF, 128,256:special, 512,1024,2048,4096:accuracy).", FCVAR_PLUGIN, true, 0.0);
+    //  default = 1 (mvpchat) + 8 (mvpcon-all) + 256 (special all) + 1024 (acc all) = 1289
     
     g_iTeamSize = 4;
     
@@ -477,9 +522,6 @@ public Event_MissionLostCampaign (Handle:hEvent, const String:name[], bool:dontB
     
     g_strGameData[gmFailed]++;
     g_strRoundData[g_iRound][rndRestarts]++;
-    
-    // reset stats for this round
-    ResetStats( true );
 }
 
 public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
@@ -487,7 +529,7 @@ public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
     if ( !g_bInRound ) { g_bInRound = true; }
     
     // reset stats for this round
-    ResetStats( true );
+    CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
 }
 
 public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
@@ -495,7 +537,7 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
     // called on versus round end
     // and mission failed coop
     
-    AutomaticRoundEndPrint();
+    AutomaticRoundEndPrint( false );
     
     g_bInRound = false;
 }
@@ -524,7 +566,7 @@ public Event_FinaleWin (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
     // campaign (ignore in versus)
     if ( g_bModeCampaign ) {
-        AutomaticRoundEndPrint();
+        AutomaticRoundEndPrint(false);
     }
     //AutomaticGameEndPrint();
 }
@@ -532,8 +574,22 @@ public Event_FinaleWin (Handle:hEvent, const String:name[], bool:dontBroadcast)
 public OnRoundIsLive()
 {
     // only called if readyup is available
+    RoundReallyStarting();
+}
+
+public Action: L4D_OnFirstSurvivorLeftSafeArea( client )
+{
+    // if no readyup, use this as the starting event
+    if ( !g_bReadyUpAvailable )
+    {
+        RoundReallyStarting();
+    }
+}
+
+stock RoundReallyStarting()
+{
     g_bPlayersLeftStart = true;
-    
+        
     if ( !g_bGameStarted )
     {
         g_bGameStarted = true;
@@ -547,29 +603,6 @@ public OnRoundIsLive()
     
     // make sure the teams are still what we think they are
     UpdatePlayerCurrentTeam();
-}
-
-public Action: L4D_OnFirstSurvivorLeftSafeArea( client )
-{
-    // if no readyup, use this as the starting event
-    if ( !g_bReadyUpAvailable )
-    {
-        g_bPlayersLeftStart = true;
-        
-        if ( !g_bGameStarted )
-        {
-            g_bGameStarted = true;
-            g_strGameData[gmStartTime] = GetTime();
-        }
-        
-        if ( g_strRoundData[g_iRound][rndRestarts] == 0 )
-        {
-            g_strRoundData[g_iRound][rndStartTime] = GetTime();
-        }
-        
-        // make sure the teams are still what we think they are
-        UpdatePlayerCurrentTeam();
-    }
 }
 
 /*
@@ -586,6 +619,7 @@ public Action: Cmd_Say ( client, args )
     GetCmdArg(1, sMessage, sizeof(sMessage));
     
     if (    StrEqual(sMessage, "!mvp")   ||
+            StrEqual(sMessage, "!ff")    ||
             StrEqual(sMessage, "!stats")
     ) {
         return Plugin_Handled;
@@ -596,134 +630,148 @@ public Action: Cmd_Say ( client, args )
 
 public Action: Cmd_StatsDisplayGeneral ( client, args )
 {
+    new iType = typGeneral;
+    new bool:bSetRound, bool:bRound = true;
+    new bool:bSetGame,  bool:bGame = false;
+    new bool:bSetAll,   bool:bAll = false;
+    new bool:bSetTeam,  bool:bTeam = true;
+    new bool:bTank = false;
+    new bool:bMore = false;
+    new iStart = 1;
+    new String: sArg[24];
+    
     if ( args )
     {
-        decl String:sMessage[24];
-        decl String:sMessageB[24];
-        GetCmdArg(1, sMessage, sizeof(sMessage));
-    
-        if ( StrEqual(sMessage, "general", false) || StrEqual(sMessage, "rounds", false) ) {
-            DisplayStats( client );
-        }
-        else if ( StrEqual(sMessage, "ff", false) ) {
-            DisplayStatsFriendlyFire( client );
-        }
-        else if ( StrEqual(sMessage, "mvp", false) ) {
-            if ( args > 1 )
-            {
-                GetCmdArg(2, sMessageB, sizeof(sMessageB));
-                PrintToChatAll("%s", sMessageB);
-                
-                if ( StrEqual(sMessageB, "all", false) || StrEqual(sMessageB, "a", false) ) {
-                    DisplayStatsMVP( client, false, false );
-                    DisplayStatsMVPChat( client, false );
-                }
-                else if ( StrEqual(sMessageB, "tank", false) || StrEqual(sMessageB, "t", false) ) {
-                    DisplayStatsMVP( client, true );
-                    //DisplayStatsMVPChat( client, true );
-                }
-                else {
-                    DisplayStatsMVP( client );
-                    DisplayStatsMVPChat( client );
-                }
-            }
-            else {
-                DisplayStatsMVP( client );
-                DisplayStatsMVPChat( client );
-            }
-        }
-        else if ( StrEqual(sMessage, "special", false) || StrEqual(sMessage, "skill", false) || StrEqual(sMessage, "spec", false) ) {
-            if ( args > 1 )
-            {
-                GetCmdArg(2, sMessageB, sizeof(sMessageB));
-                PrintToChatAll("%s", sMessageB);
-                
-                if ( StrEqual(sMessageB, "round", false) || StrEqual(sMessageB, "r", false) ) {
-                    DisplayStatsSpecial( client, true );
-                }
-                else {
-                    DisplayStatsSpecial( client );
-                }
-            }
-            else {
-                DisplayStatsSpecial( client );
-            }
-        }
-        else if ( StrEqual(sMessage, "acc", false) ) {
-            if ( args > 1 )
-            {
-                GetCmdArg(2, sMessageB, sizeof(sMessageB));
-                
-                PrintToChatAll("%s", sMessageB);
-                
-                if ( StrEqual(sMessageB, "round", false) || StrEqual(sMessageB, "r", false) ) {
-                    DisplayStatsAccuracy( client, false, true );
-                }
-                else if ( StrEqual(sMessageB, "more", false) || StrEqual(sMessageB, "m", false) || StrEqual(sMessageB, "details", false) || StrEqual(sMessageB, "d", false) ) {
-                    DisplayStatsAccuracy( client, true );
-                }
-                else {
-                    DisplayStatsAccuracy( client );
-                }
-            }
-            else {
-                DisplayStatsAccuracy( client );
-            }
-        }
-        else if ( StrEqual(sMessage, "?", false) || StrEqual(sMessage, "help", false) ) {
-            PrintToChat( client, "Use: /stats [roundnumber]" );
-            PrintToChat( client, "and: /stats mvp [tank]" );
-            PrintToChat( client, "and: /stats ff" );
-            PrintToChat( client, "and: /stats skill" );
-            PrintToChat( client, "and: /stats acc [more]" );
+        GetCmdArg( 1, sArg, sizeof(sArg) );
+        
+        // find type selection (always 1)
+        if ( StrEqual(sArg, "help", false) || StrEqual(sArg, "?", false) )
+        {
+            // show help
+            PrintToChat( client, "\x01Use: /stats [<type>] [\x05round\x01/\x05game\x01/\x05team\x01/\x05all\x01]" );
+            PrintToChat( client, "\x01 or: /stats [<type>] [\x05r\x01/\x05g\x01/\x05t\x01/\x05a\x01]" );
+            PrintToChat( client, "\x01 where <type> is '\x04mvp\x01', '\x04skill\x01', '\x04ff\x01', '\x04acc\x01' or '\x04inf\x01'. (for more, see console)" );
+            // to do: print the rest to console instead (with indicator that that's where it went)
             
+            decl String:bufBasic[CONBUFSIZELARGE];
+            Format(bufBasic, CONBUFSIZELARGE,    "|------------------------------------------------------------------------------|\n");
+            Format(bufBasic, CONBUFSIZELARGE,  "%s| /stats command help      in chat:    '/stats <type> [argument [argument]]'   |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|                          in console: 'sm_stats <type> [arguments...]'        |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s| stat type:   'general':  general statistics about the game, as in campaign   |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|              'mvp'    :  SI damage, common kills    (extra argument: 'tank') |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|              'skill'  :  skeets, levels, crowns, tongue cuts, etc            |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|              'ff'     :  friendly fire damage (per type of weapon)           |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|              'acc'    :  accuracy details           (extra argument: 'more') |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|", bufBasic);
+            PrintToConsole( client, bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,    "| examples:                                                                    |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats skill round all' => shows skeets etc for all players, this round   |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats ff team game'    => shows friendly fire for your team, this round  |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats acc'             => shows accuracy stats (your team, this round)   |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats mvp tank'        => shows survivor action while tank is/was up     |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|", bufBasic);
+            PrintToConsole( client, bufBasic);
+            return Plugin_Handled;
         }
-        else {
-            new round = StringToInt(sMessage);
-            DisplayStats( client, round );
+        else if ( StrEqual(sArg, "mvp", false) ) { iType = typMVP; }
+        else if ( StrEqual(sArg, "ff", false) ) { iType = typFF; }
+        else if ( StrEqual(sArg, "skill", false) || StrEqual(sArg, "special", false) || StrEqual(sArg, "s", false) ) { iType = typSkill; }
+        else if ( StrEqual(sArg, "acc", false) || StrEqual(sArg, "accuracy", false) || StrEqual(sArg, "ac", false) ) { iType = typAcc; }
+        else if ( StrEqual(sArg, "inf", false) || StrEqual(sArg, "i", false) ) { iType = typAcc; }
+        else if ( StrEqual(sArg, "general", false) || StrEqual(sArg, "gen", false) ) { iType = typGeneral; iStart++; }
+        
+        // if not general, we know the first was a different type indicator
+        if ( iType != typGeneral ) { iStart++; }
+        
+        // check each other argument and see what we find
+        for ( new i = iStart; i <= args; i++ )
+        {
+            GetCmdArg( i, sArg, sizeof(sArg) );
+            
+            if ( StrEqual(sArg, "round", false)     || StrEqual(sArg, "r", false) ) {
+                bSetRound = true; bRound = true;
+            }
+            else if ( StrEqual(sArg, "game", false) || StrEqual(sArg, "g", false) ) {
+                bSetGame = true; bGame = true;
+            }
+            else if ( StrEqual(sArg, "all", false)  || StrEqual(sArg, "a", false) ) {
+                bSetAll = true; bAll = true;
+            }
+            else if ( StrEqual(sArg, "team", false) || StrEqual(sArg, "t", false) ) {
+                bSetTeam = true; bTeam = true;
+            }
+            else if ( StrEqual(sArg, "more", false) || StrEqual(sArg, "m", false) ) {
+                bMore = true;
+            }
+            else if ( StrEqual(sArg, "tank", false) ) {
+                bTank = true;
+            }
+            else {
+                PrintToChat( client, "Stats command: unknown argument: '%s'. Type '/stats help' for possible arguments.", sArg );
+            }
         }
     }
-    else {
-        DisplayStats( client );
+    
+    switch ( iType )
+    {
+        case typGeneral:
+        {
+            // game by default, unless overridden by 'round'
+            DisplayStats( client, ( bSetRound && bRound ) ? true : false, ( bSetAll && bAll ) ? false : true );
+        }
+        
+        case typMVP:
+        {
+            // by default: only for round
+            DisplayStatsMVP( client, bTank, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true );
+            // only show chat for non-tank table
+            if ( !bTank ) {
+                DisplayStatsMVPChat( client, ( bSetGame && bGame ) ? false : true );
+            }
+        }
+        
+        case typFF:
+        {
+            // by default: only for round
+            DisplayStatsFriendlyFire( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true );
+        }
+        
+        case typSkill:
+        {
+            // by default: only for round
+            DisplayStatsSpecial( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true );
+        }
+        
+        case typAcc:
+        {
+            // by default: only for round
+            DisplayStatsAccuracy( client, bMore, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true );
+        }
+        
+        case typInf:
+        {
+            // To do
+            PrintToChat( client, "Work in progress. Not done yet." );
+        }
     }
+    
     return Plugin_Handled;
 }
 
 public Action: Cmd_StatsDisplayMVP ( client, args )
 {
-    if ( args )
-    {
-        decl String:sMessage[8];
-        GetCmdArg( 1, sMessage, sizeof(sMessage) );
-        
-        if ( StrEqual(sMessage, "all", false) || StrEqual(sMessage, "a", false) )
-        {
-            DisplayStatsMVP( client, false, true );
-            DisplayStatsMVPChat( client, true );
-        }
-        else if ( StrEqual(sMessage, "tank", false) || StrEqual(sMessage, "t", false) )
-        {
-            // current round
-            DisplayStatsMVP( client, true ); 
-            //DisplayStatsMVPChat( client );
-        }
-        else
-        {
-            DisplayStatsMVP( client );
-            DisplayStatsMVPChat( client );
-        }
-    }
-    else {
-        DisplayStatsMVP( client );
-        DisplayStatsMVPChat( client );
-    }
+    // show mvp stats, no tank, this round only, this team
+    DisplayStatsMVP( client, false, true, true );
+    DisplayStatsMVPChat( client );
     return Plugin_Handled;
 }
 
 public Action: Cmd_StatsDisplayFriendlyFire ( client, args )
 {
-    // for active round only
-    DisplayStatsFriendlyFire( client );
+    // ff: this round, this team
+    DisplayStatsFriendlyFire( client, true, true );
     return Plugin_Handled;
 }
 
@@ -787,7 +835,6 @@ public Action: Cmd_StatsReset ( client, args )
     Tracking
     --------
 */
-
 public Action: Event_PlayerTeam ( Handle:hEvent, const String:name[], bool:dontBroadcast )
 {
     //new client = GetClientOfUserId( GetEventInt(hEvent, "userid") );
@@ -810,6 +857,8 @@ public Action: Timer_TeamChanged (Handle:timer)
 
 public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBroadcast )
 {
+    if ( !g_bPlayersLeftStart ) { return Plugin_Continue; }
+    
     new victim = GetClientOfUserId( GetEventInt(event, "userid") );
     new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
     
@@ -830,7 +879,8 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         
         if ( zClass >= ZC_SMOKER && zClass <= ZC_CHARGER )
         {
-            if ( g_bTankInGame ) {
+            if ( g_bTankInGame )
+            {
                 g_strPlayerData[attIndex][plySIDamageTankUp] += damage;
                 g_strRoundPlayerData[attIndex][plySIDamageTankUp] += damage;
             }
@@ -875,13 +925,25 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         }
         
         // record amounts
-        g_iFFDamageTotal[attIndex][TOTAL_FFGIVEN] += damage;
-        g_iFFDamageTotal[vicIndex][TOTAL_FFTAKEN] += damage;
-        g_iFFDamage[attIndex][vicIndex][FFTYPE_TOTAL] += damage;
+        g_iFFDamageTotal += damage;
+        g_iFFRoundDamageTotal += damage;
         
-        if ( IsPlayerIncapacitated(victim) )
+        g_strPlayerData[attIndex][plyFFGivenTotal] += damage;
+        g_strRoundPlayerData[attIndex][plyFFGivenTotal] += damage;
+        g_strPlayerData[vicIndex][plyFFTakenTotal] += damage;
+        g_strRoundPlayerData[vicIndex][plyFFTakenTotal] += damage;
+        
+        if ( attIndex == vicIndex ) {
+            // damage to self
+        }
+        else if ( IsPlayerIncapacitated(victim) )
         {
-            g_iFFDamage[attIndex][vicIndex][FFTYPE_INCAPPED] += damage;
+            // don't count incapped damage for 'ffgiven' / 'fftaken'
+            
+            g_strPlayerData[attIndex][plyFFGivenIncap] += damage;
+            g_strRoundPlayerData[attIndex][plyFFGivenIncap] += damage;
+            g_strPlayerData[vicIndex][plyFFTakenIncap] += damage;
+            g_strRoundPlayerData[vicIndex][plyFFTakenIncap] += damage;
         }
         else
         {
@@ -895,23 +957,38 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
             // which type to save it to?
             if ( type & DMG_BURN )
             {
-                g_iFFDamage[attIndex][vicIndex][FFTYPE_FIRE] += damage;
+                g_strPlayerData[attIndex][plyFFGivenFire] += damage;
+                g_strRoundPlayerData[attIndex][plyFFGivenFire] += damage;
+                g_strPlayerData[vicIndex][plyFFTakenFire] += damage;
+                g_strRoundPlayerData[vicIndex][plyFFTakenFire] += damage;
             }
             else if ( type & DMG_BUCKSHOT )
             {
-                g_iFFDamage[attIndex][vicIndex][FFTYPE_PELLET] += damage;
+                g_strPlayerData[attIndex][plyFFGivenPellet] += damage;
+                g_strRoundPlayerData[attIndex][plyFFGivenPellet] += damage;
+                g_strPlayerData[vicIndex][plyFFTakenPellet] += damage;
+                g_strRoundPlayerData[vicIndex][plyFFTakenPellet] += damage;
             }
             else if ( type & DMG_CLUB || type & DMG_SLASH )
             {
-                g_iFFDamage[attIndex][vicIndex][FFTYPE_MELEE] += damage;
+                g_strPlayerData[attIndex][plyFFGivenMelee] += damage;
+                g_strRoundPlayerData[attIndex][plyFFGivenMelee] += damage;
+                g_strPlayerData[vicIndex][plyFFTakenMelee] += damage;
+                g_strRoundPlayerData[vicIndex][plyFFTakenMelee] += damage;
             }
             else if ( type & DMG_BULLET )
             {
-                g_iFFDamage[attIndex][vicIndex][FFTYPE_BULLET] += damage;
+                g_strPlayerData[attIndex][plyFFGivenBullet] += damage;
+                g_strRoundPlayerData[attIndex][plyFFGivenBullet] += damage;
+                g_strPlayerData[vicIndex][plyFFTakenBullet] += damage;
+                g_strRoundPlayerData[vicIndex][plyFFTakenBullet] += damage;
             }
             else
             {
-                g_iFFDamage[attIndex][vicIndex][FFTYPE_OTHER] += damage;
+                g_strPlayerData[attIndex][plyFFGivenOther] += damage;
+                g_strRoundPlayerData[attIndex][plyFFGivenOther] += damage;
+                g_strPlayerData[vicIndex][plyFFTakenOther] += damage;
+                g_strRoundPlayerData[vicIndex][plyFFTakenOther] += damage;
             }
         }
         
@@ -930,6 +1007,8 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
 
 public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dontBroadcast )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     // catch damage done to witch
     new entity = GetEventInt(event, "entityid");
     
@@ -948,6 +1027,8 @@ public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dont
 }
 public Action: Event_PlayerFallDamage ( Handle:event, const String:name[], bool:dontBroadcast )
 {
+    if ( !g_bPlayersLeftStart ) { return Plugin_Continue; }
+    
     new victim = GetClientOfUserId( GetEventInt(event, "userid") );
     if ( !IS_VALID_SURVIVOR(victim) ) { return Plugin_Continue; }
     
@@ -968,6 +1049,8 @@ public Action: Event_WitchKilled ( Handle:event, const String:name[], bool:dontB
 
 public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontBroadcast )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     new index, attacker, team;
     
@@ -1011,6 +1094,12 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
                 g_strPlayerData[index][plySIKilled]++;
                 g_iMVPSIKilledTotal[team]++;
                 g_iMVPRoundSIKilledTotal[team]++;
+                
+                if ( g_bTankInGame )
+                { 
+                    g_strRoundPlayerData[index][plySIKilledTankUp]++;
+                    g_strPlayerData[index][plySIKilledTankUp]++;
+                }
             }
         }
     }
@@ -1036,6 +1125,11 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
                 
                 g_strRoundPlayerData[index][plyCommon]++;
                 g_strPlayerData[index][plyCommon]++;
+                
+                if ( g_bTankInGame ) {
+                    g_strRoundPlayerData[index][plyCommonTankUp]++;
+                    g_strPlayerData[index][plyCommonTankUp]++;
+                }
             }
         }
     }
@@ -1057,6 +1151,8 @@ public Action: Event_TankSpawned( Handle:hEvent, const String:name[], bool:dontB
 
 public Action: Event_PlayerIncapped (Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     
     if ( IS_VALID_SURVIVOR(client) )
@@ -1092,6 +1188,8 @@ public Action: Event_AdrenUsed (Handle:event, const String:name[], bool:dontBroa
 // keep track of shots fired
 public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBroadcast)
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     if ( !IS_VALID_SURVIVOR(client) || !g_bPlayersLeftStart ) { return; }
     
@@ -1138,6 +1236,7 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
 // special / tank gets hit
 public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
 {
+    if ( !g_bPlayersLeftStart ) { return; }
     if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) ) { return; }
     
     new index = GetPlayerIndexForClient( attacker );
@@ -1200,6 +1299,7 @@ public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage
 // common infected / witch gets hit
 public Action: TraceAttack_Infected (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
 {
+    if ( !g_bPlayersLeftStart ) { return; }
     if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) ) { return; }
     
     new index = GetPlayerIndexForClient( attacker );
@@ -1287,6 +1387,8 @@ public OnEntityCreated ( entity, const String:classname[] )
 // m2 & deadstop
 public OnSpecialShoved ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1295,6 +1397,8 @@ public OnSpecialShoved ( attacker, victim )
 }
 public OnHunterDeadstop ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1305,6 +1409,8 @@ public OnHunterDeadstop ( attacker, victim )
 // skeets
 public OnSkeet ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1313,6 +1419,8 @@ public OnSkeet ( attacker, victim )
 }
 public OnSkeetHurt ( attacker, victim, damage )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1321,6 +1429,8 @@ public OnSkeetHurt ( attacker, victim, damage )
 }
 public OnSkeetMelee ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1337,6 +1447,8 @@ public OnSkeetMelee ( attacker, victim )
 */
 public OnSkeetSniper ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1345,6 +1457,8 @@ public OnSkeetSniper ( attacker, victim )
 }
 public OnSkeetSniperHurt ( attacker, victim, damage )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1355,6 +1469,8 @@ public OnSkeetSniperHurt ( attacker, victim, damage )
 // pops
 public OnBoomerPop ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1365,6 +1481,8 @@ public OnBoomerPop ( attacker, victim )
 // levels
 public OnChargerLevel ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1373,6 +1491,8 @@ public OnChargerLevel ( attacker, victim )
 }
 public OnChargerLevelHurt ( attacker, victim, damage )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1383,6 +1503,8 @@ public OnChargerLevelHurt ( attacker, victim, damage )
 // smoker clears
 public OnTongueCut ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1391,6 +1513,8 @@ public OnTongueCut ( attacker, victim )
 }
 public OnSmokerSelfClear ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1418,6 +1542,8 @@ public OnWitchDrawCrown ( attacker, damage, chipdamage )
 // tank rock
 public OnTankRockEaten ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( victim );
     if ( index == -1 ) { return; }
     
@@ -1427,6 +1553,8 @@ public OnTankRockEaten ( attacker, victim )
 
 public OnTankRockSkeeted ( attacker, victim )
 {
+    if ( !g_bPlayersLeftStart ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
@@ -1437,9 +1565,14 @@ public OnTankRockSkeeted ( attacker, victim )
     Stats cleanup
     -------------
 */
+public Action: Timer_ResetStats (Handle:timer, any:roundOnly)
+{
+    ResetStats( bool:(roundOnly) );
+}
+
 stock ResetStats( bool:bCurrentRoundOnly = false )
 {
-    new i, j, k;
+    new i, j;
     
     if ( !bCurrentRoundOnly )
     {
@@ -1473,6 +1606,8 @@ stock ResetStats( bool:bCurrentRoundOnly = false )
                 g_strPlayerData[i][j] = 0;
             }
         }
+        
+        g_iRound = 0;
     }
     else
     {
@@ -1503,19 +1638,8 @@ stock ResetStats( bool:bCurrentRoundOnly = false )
     }
     
     // ff data
-    for ( i = 0; i < g_iPlayers; i++ )
-    {
-        g_iFFDamageTotal[i][TOTAL_FFGIVEN] = 0;
-        g_iFFDamageTotal[i][TOTAL_FFTAKEN] = 0;
-        
-        for ( j = 0; j < g_iPlayers; j++ )
-        {
-            for ( k = 0; k < MAXFFTYPES; k++ )
-            {
-                g_iFFDamage[i][j][k] = 0;
-            }
-        }
-    }
+    g_iFFDamageTotal = 0;
+    g_iFFRoundDamageTotal = 0;
 }
 
 stock UpdatePlayerCurrentTeam()
@@ -1554,7 +1678,7 @@ stock UpdatePlayerCurrentTeam()
 */
 
 // display general stats -- if round set, only for that round no.
-stock DisplayStats( client = -1, round = -1 )
+stock DisplayStats( client = -1, bool:bRound = false, round = -1 )
 {
     if ( round != -1 ) { round--; }
     
@@ -1790,7 +1914,7 @@ stock DisplayStats( client = -1, round = -1 )
 }
 
 // display mvp stats
-stock DisplayStatsMVPChat( client, bool:round = true )
+stock DisplayStatsMVPChat( client, bool:bRound = true )
 {
     // make sure the MVP stats itself is called first, so the players are already sorted
     
@@ -1819,7 +1943,7 @@ stock DisplayStatsMVPChat( client, bool:round = true )
     
     // also find the three non-mvp survivors and tell them they sucked
     // tell them they sucked with SI
-    if (    (round && g_iMVPRoundSIDamageTotal[team] > 0 || !round && g_iMVPSIDamageTotal[team] > 0) &&
+    if (    (bRound && g_iMVPRoundSIDamageTotal[team] > 0 || !bRound && g_iMVPSIDamageTotal[team] > 0) &&
             !(iBrevityFlags & BREV_RANK) && !(iBrevityFlags & BREV_SI)
     ) {
         
@@ -1843,22 +1967,22 @@ stock DisplayStatsMVPChat( client, bool:round = true )
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] Your rank - SI: #\x03%d \x01(\x05%d \x01dmg,\x05 %d \x01kills)",
                             (i+1),
-                            (round) ? g_strRoundPlayerData[index][plySIDamage] : g_strPlayerData[index][plySIDamage],
-                            (round) ? g_strRoundPlayerData[index][plySIKilled] : g_strPlayerData[index][plySIKilled]
+                            (bRound) ? g_strRoundPlayerData[index][plySIDamage] : g_strPlayerData[index][plySIDamage],
+                            (bRound) ? g_strRoundPlayerData[index][plySIKilled] : g_strPlayerData[index][plySIKilled]
                         );
                 } else if (iBrevityFlags & BREV_ABSOLUTE) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] Your rank - SI: #\x03%d \x01(dmg \x04%.0f%%\x01, kills \x04%.0f%%\x01)",
                             (i+1),
-                            (round) ? ((float(g_strRoundPlayerData[index][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
-                            (round) ? ((float(g_strRoundPlayerData[index][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
+                            (bRound) ? ((float(g_strRoundPlayerData[index][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
+                            (bRound) ? ((float(g_strRoundPlayerData[index][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
                         );
                 } else {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] Your rank - SI: #\x03%d \x01(\x05%d \x01dmg [\x04%.0f%%\x01],\x05 %d \x01kills [\x04%.0f%%\x01])",
                             (i+1),
-                            (round) ? g_strRoundPlayerData[index][plySIDamage] : g_strPlayerData[index][plySIDamage],
-                            (round) ? ((float(g_strRoundPlayerData[index][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
-                            (round) ? g_strRoundPlayerData[index][plySIKilled] : g_strPlayerData[index][plySIKilled],
-                            (round) ? ((float(g_strRoundPlayerData[index][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
+                            (bRound) ? g_strRoundPlayerData[index][plySIDamage] : g_strPlayerData[index][plySIDamage],
+                            (bRound) ? ((float(g_strRoundPlayerData[index][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
+                            (bRound) ? g_strRoundPlayerData[index][plySIKilled] : g_strPlayerData[index][plySIKilled],
+                            (bRound) ? ((float(g_strRoundPlayerData[index][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[index][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
                         );
                 }
                 PrintToChat( found, "\x01%s", tmpBuffer );
@@ -1867,7 +1991,7 @@ stock DisplayStatsMVPChat( client, bool:round = true )
     }
 
     // tell them they sucked with Common
-    if (    (round && g_iMVPRoundCommonTotal[team] > 0 || !round && g_iMVPCommonTotal[team] > 0) &&
+    if (    (bRound && g_iMVPRoundCommonTotal[team] > 0 || !bRound && g_iMVPCommonTotal[team] > 0) &&
             !(iBrevityFlags & BREV_RANK) && !(iBrevityFlags & BREV_CI)
     ) {
         
@@ -1891,18 +2015,18 @@ stock DisplayStatsMVPChat( client, bool:round = true )
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] Your rank - CI: #\x03%d \x01(\x05 %d \x01kills)",
                             (i+1),
-                            (round) ? g_strRoundPlayerData[index][plyCommon] : g_strPlayerData[index][plyCommon]
+                            (bRound) ? g_strRoundPlayerData[index][plyCommon] : g_strPlayerData[index][plyCommon]
                         );
                 } else if (iBrevityFlags & BREV_ABSOLUTE) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] Your rank - CI: #\x03%d \x01(kills \x04%.0f%%\x01)",
                             (i+1),
-                            (round) ? ((float(g_strRoundPlayerData[index][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strPlayerData[index][plyCommon]) / float(g_iMVPCommonTotal[team])) * 100)
+                            (bRound) ? ((float(g_strRoundPlayerData[index][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strPlayerData[index][plyCommon]) / float(g_iMVPCommonTotal[team])) * 100)
                         );
                 } else {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] Your rank - CI: #\x03%d \x01(\x05 %d \x01kills [\x04%.0f%%\x01])",
                             (i+1),
-                            (round) ? g_strRoundPlayerData[index][plyCommon] : g_strPlayerData[index][plyCommon],
-                            (round) ? ((float(g_strRoundPlayerData[index][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strPlayerData[index][plyCommon]) / float(g_iMVPCommonTotal[team])) * 100)
+                            (bRound) ? g_strRoundPlayerData[index][plyCommon] : g_strPlayerData[index][plyCommon],
+                            (bRound) ? ((float(g_strRoundPlayerData[index][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strPlayerData[index][plyCommon]) / float(g_iMVPCommonTotal[team])) * 100)
                         );
                 }
                 PrintToChat( found, "\x01%s", tmpBuffer );
@@ -1929,13 +2053,13 @@ stock DisplayStatsMVPChat( client, bool:round = true )
             
             if ( found == -1 ) { continue; }
 
-            if ( round && !g_strRoundPlayerData[index][plyFFGiven] || !round && !g_strPlayerData[index][plyFFGiven] ) { continue; }
+            if ( bRound && !g_strRoundPlayerData[index][plyFFGiven] || !bRound && !g_strPlayerData[index][plyFFGiven] ) { continue; }
             
             if ( IS_VALID_CLIENT(found) && !IsFakeClient(found) )
             {
                 Format(tmpBuffer, sizeof(tmpBuffer), "[LVP] Your rank - FF: #\x03%d \x01(\x05%d \x01dmg)",
                         (i+1),
-                        (round) ? g_strRoundPlayerData[index][plyFFGiven] : g_strPlayerData[index][plyFFGiven]
+                        (bRound) ? g_strRoundPlayerData[index][plyFFGiven] : g_strPlayerData[index][plyFFGiven]
                     );
 
                 PrintToChat( found, "\x01%s", tmpBuffer );
@@ -1944,7 +2068,7 @@ stock DisplayStatsMVPChat( client, bool:round = true )
     }
 }
 
-String: GetMVPChatString( bool:round = true )
+String: GetMVPChatString( bool:bRound = true )
 {
     decl String: printBuffer[1024];
     decl String: tmpBuffer[512];
@@ -1953,8 +2077,8 @@ String: GetMVPChatString( bool:round = true )
     
     // SI damage already sorted, sort CI and FF too
     //SortPlayersMVP( round, SORT_SI );
-    SortPlayersMVP( round, SORT_CI );
-    SortPlayersMVP( round, SORT_FF );
+    SortPlayersMVP( bRound, SORT_CI );
+    SortPlayersMVP( bRound, SORT_FF );
     
     
     new mvp_SI = g_iPlayerIndexSorted[SORT_SI][0];
@@ -1967,9 +2091,9 @@ String: GetMVPChatString( bool:round = true )
     new iBrevityFlags = GetConVarInt(g_hCvarMVPBrevityFlags);
     
     // if null data, set them to -1
-    if ( g_iPlayers < 1 || round && !g_strRoundPlayerData[mvp_SI][plySIDamage] || !round && !g_strPlayerData[mvp_SI][plySIDamage] ) { mvp_SI = -1; }
-    if ( g_iPlayers < 1 || round && !g_strRoundPlayerData[mvp_Common][plyCommon] || !round && !g_strPlayerData[mvp_Common][plyCommon] ) { mvp_Common = -1; }
-    if ( g_iPlayers < 1 || round && !g_strRoundPlayerData[mvp_FF][plyFFGiven] || !round && !g_strPlayerData[mvp_FF][plyFFGiven] ) { mvp_FF = -1; }
+    if ( g_iPlayers < 1 || bRound && !g_strRoundPlayerData[mvp_SI][plySIDamage]   || !bRound && !g_strPlayerData[mvp_SI][plySIDamage] )   { mvp_SI = -1; }
+    if ( g_iPlayers < 1 || bRound && !g_strRoundPlayerData[mvp_Common][plyCommon] || !bRound && !g_strPlayerData[mvp_Common][plyCommon] ) { mvp_Common = -1; }
+    if ( g_iPlayers < 1 || bRound && !g_strRoundPlayerData[mvp_FF][plyFFGiven]    || !bRound && !g_strPlayerData[mvp_FF][plyFFGiven] )    { mvp_FF = -1; }
     
     // report
     if ( mvp_SI == -1 && mvp_Common == -1 && !(iBrevityFlags & BREV_SI && iBrevityFlags & BREV_CI) )
@@ -1986,22 +2110,22 @@ String: GetMVPChatString( bool:round = true )
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] SI:\x03 %s \x01(\x05%d \x01dmg,\x05 %d \x01kills)\n", 
                             g_sPlayerName[mvp_SI],
-                            (round) ? g_strRoundPlayerData[mvp_SI][plySIDamage] : g_strPlayerData[mvp_SI][plySIDamage],
-                            (round) ? g_strRoundPlayerData[mvp_SI][plySIKilled] : g_strPlayerData[mvp_SI][plySIKilled]
+                            (bRound) ? g_strRoundPlayerData[mvp_SI][plySIDamage] : g_strPlayerData[mvp_SI][plySIDamage],
+                            (bRound) ? g_strRoundPlayerData[mvp_SI][plySIKilled] : g_strPlayerData[mvp_SI][plySIKilled]
                         );
                 } else if ( iBrevityFlags & BREV_ABSOLUTE ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] SI:\x03 %s \x01(dmg \x04%2.0f%%\x01, kills \x04%.0f%%\x01)\n",
                             g_sPlayerName[mvp_SI],
-                            (round) ? ((float(g_strRoundPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
-                            (round) ? ((float(g_strRoundPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
+                            (bRound) ? ((float(g_strRoundPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
+                            (bRound) ? ((float(g_strRoundPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
                         );
                 } else {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] SI:\x03 %s \x01(\x05%d \x01dmg[\x04%.0f%%\x01],\x05 %d \x01kills [\x04%.0f%%\x01])\n",
                             g_sPlayerName[mvp_SI],
-                            (round) ? g_strRoundPlayerData[mvp_SI][plySIDamage] : g_strPlayerData[mvp_SI][plySIDamage],
-                            (round) ? ((float(g_strRoundPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
-                            (round) ? g_strRoundPlayerData[mvp_SI][plySIKilled] : g_strPlayerData[mvp_SI][plySIKilled],
-                            (round) ? ((float(g_strRoundPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
+                            (bRound) ? g_strRoundPlayerData[mvp_SI][plySIDamage] : g_strPlayerData[mvp_SI][plySIDamage],
+                            (bRound) ? ((float(g_strRoundPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPRoundSIDamageTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIDamage]) / float(g_iMVPSIDamageTotal[team])) * 100),
+                            (bRound) ? g_strRoundPlayerData[mvp_SI][plySIKilled] : g_strPlayerData[mvp_SI][plySIKilled],
+                            (bRound) ? ((float(g_strRoundPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPRoundSIKilledTotal[team])) * 100) : ((float(g_strPlayerData[mvp_SI][plySIKilled]) / float(g_iMVPSIKilledTotal[team])) * 100)
                         );
                 }
                 StrCat(printBuffer, sizeof(printBuffer), tmpBuffer);
@@ -2019,18 +2143,18 @@ String: GetMVPChatString( bool:round = true )
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] CI:\x03 %s \x01(\x05%d \x01common)\n",
                             g_sPlayerName[mvp_Common],
-                            (round) ? g_strRoundPlayerData[mvp_Common][plyCommon] : g_strPlayerData[mvp_Common][plyCommon]
+                            (bRound) ? g_strRoundPlayerData[mvp_Common][plyCommon] : g_strPlayerData[mvp_Common][plyCommon]
                         );
                 } else if ( iBrevityFlags & BREV_ABSOLUTE ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] CI:\x03 %s \x01(\x04%.0f%%\x01)\n",
                             g_sPlayerName[mvp_Common],
-                            (round) ? ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100)
+                            (bRound) ? ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100)
                         );
                 } else {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP] CI:\x03 %s \x01(\x05%d \x01common [\x04%.0f%%\x01])\n",
                             g_sPlayerName[mvp_Common],
-                            (round) ? g_strRoundPlayerData[mvp_Common][plyCommon] : g_strPlayerData[mvp_Common][plyCommon],
-                            (round) ? ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100)
+                            (bRound) ? g_strRoundPlayerData[mvp_Common][plyCommon] : g_strPlayerData[mvp_Common][plyCommon],
+                            (bRound) ? ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100) : ((float(g_strRoundPlayerData[mvp_Common][plyCommon]) / float(g_iMVPRoundCommonTotal[team])) * 100)
                         );
                 }
                 StrCat(printBuffer, sizeof(printBuffer), tmpBuffer);
@@ -2050,7 +2174,7 @@ String: GetMVPChatString( bool:round = true )
         {
             Format(tmpBuffer, sizeof(tmpBuffer), "[LVP] FF:\x03 %s \x01(\x05%d \x01dmg)\n",
                         g_sPlayerName[mvp_FF],
-                        (round) ? g_strRoundPlayerData[mvp_FF][plyFFGiven] : g_strPlayerData[mvp_FF][plyFFGiven]
+                        (bRound) ? g_strRoundPlayerData[mvp_FF][plyFFGiven] : g_strPlayerData[mvp_FF][plyFFGiven]
                     );
             
             /*
@@ -2078,38 +2202,36 @@ String: GetMVPChatString( bool:round = true )
     return printBuffer;
 }
 
-stock DisplayStatsMVP( client, bool:tank = false, bool:round = true )
+stock DisplayStatsMVP( client, bool:bTank = false, bool:bRound = true, bool:bTeam = true )
 {
     // get sorted players list
-    SortPlayersMVP( round );
+    SortPlayersMVP( bRound );
     
-    new bool: bTank = bool:( !g_bModeCampaign && IsTankInGame() && g_bInRound );
+    new bool: bTankUp = bool:( !g_bModeCampaign && IsTankInGame() && g_bInRound );
     
     // prepare buffer(s) for printing
-    if ( !tank || !bTank )
+    if ( !bTank || !bTankUp )
     {
-        BuildConsoleBufferMVP( tank, round );
+        BuildConsoleBufferMVP( bTank, bRound, bTeam );
     }
     
     decl String:bufBasicHeader[CONBUFSIZE];
     decl String:bufBasic[CONBUFSIZELARGE];
     
-    
-    
-    if ( tank )
+    if ( bTank )
     {
-        if ( bTank ) {
+        if ( bTankUp ) {
             Format(bufBasicHeader, CONBUFSIZE, "\n");
             Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- Tank Fight (not showing table, tank is still up...)    |", bufBasicHeader);
             Format(bufBasic, CONBUFSIZELARGE,    "|------------------------------------------------------------------------------|\n");
         }
         else {        
             Format(bufBasicHeader, CONBUFSIZE, "\n");
-            if ( round ) {
-                Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- Tank Fight -- This Round                               |\n", bufBasicHeader);
-            } else {
-                Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- Tank Fight                                             |\n", bufBasicHeader);
-            }
+            Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- Tank Fight -- %10s -- %11s                |\n",
+                    bufBasicHeader,
+                    ( bRound ) ? "This Round" : "All Rounds",
+                    ( bTeam ) ? "This Team  " : "All Players"
+                );
             Format(bufBasicHeader, CONBUFSIZE, "%s|------------------------------------------------------------------------------|\n", bufBasicHeader);
             Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | SI during tank | CI d. tank | Melees | Rock skeet/eat |\n", bufBasicHeader);
             Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|----------------|------------|--------|----------------|", bufBasicHeader);
@@ -2120,11 +2242,12 @@ stock DisplayStatsMVP( client, bool:tank = false, bool:round = true )
     else
     {
         Format(bufBasicHeader, CONBUFSIZE, "\n");
-        if ( round ) {
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- This Round                                                                |\n", bufBasicHeader);
-        } else {
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats                                                                              |\n", bufBasicHeader);
-        }
+        
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- %10s -- %11s                                                 |\n",
+                bufBasicHeader,
+                ( bRound ) ? "This Round" : "All Rounds",
+                ( bTeam ) ? "This Team  " : "All Players"
+            );
         Format(bufBasicHeader, CONBUFSIZE, "%s|-------------------------------------------------------------------------------------------------|\n", bufBasicHeader);
         Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Specials   kills/dmg  | Commons         | Tank   | Witch  | FF    | Rcvd |\n", bufBasicHeader);
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|-----------------------|-----------------|--------|--------|-------|------|", bufBasicHeader);
@@ -2154,28 +2277,28 @@ stock DisplayStatsMVP( client, bool:tank = false, bool:round = true )
 }
 
 // display player accuracy stats: details => tank/si/etc
-stock DisplayStatsAccuracy( client, bool:details = false, bool:round = false, bool:bSorted = true )
+stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, bool:bTeam = true, bool:bSorted = true )
 {
     // sorting
     if ( !bSorted )
     {
-        SortPlayersMVP( round, SORT_SI );
+        SortPlayersMVP( bRound, SORT_SI );
     }
     
     // prepare buffer(s) for printing
-    BuildConsoleBufferAccuracy( details, round );
+    BuildConsoleBufferAccuracy( bDetails, bRound, bTeam );
     
     decl String:bufBasicHeader[CONBUFSIZE];
     decl String:bufBasic[CONBUFSIZELARGE];
     
-    if ( details )
+    if ( bDetails )
     {
         Format(bufBasicHeader, CONBUFSIZE, "\n");
-        if ( round ) {
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy Stats -- Details -- This Round                          hits on SI;  headshots on SI;  hits on tank |\n", bufBasicHeader);
-        } else {
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy Stats -- Details                                        hits on SI;  headshots on SI;  hits on tank |\n", bufBasicHeader);
-        }
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy -- Details -- %10s -- %11s                 hits on SI;  headshots on SI;  hits on tank |\n",
+                bufBasicHeader,
+                ( bRound ) ? "This Round" : "All Rounds",
+                ( bTeam ) ? "This Team  " : "All Players"
+            );
         Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------------------------------------------------------------------------------------|\n", bufBasicHeader);
         Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Shotgun             | SMG / Rifle         | Sniper              | Pistol              |\n", bufBasicHeader);
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------|---------------------|---------------------|---------------------|", bufBasicHeader);
@@ -2185,11 +2308,11 @@ stock DisplayStatsAccuracy( client, bool:details = false, bool:round = false, bo
     else
     {
         Format(bufBasicHeader, CONBUFSIZE, "\n");
-        if ( round ) {
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy Stats -- This Round    hits (pellets/bullets);  accuracy percentage;  headshots percentage(of hits) |\n", bufBasicHeader);
-        } else {
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy Stats                  hits (pellets/bullets);  accuracy percentage;  headshots percentage(of hits) |\n", bufBasicHeader);
-        }
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy Stats -- %10s -- %11s            hits (pellets/bullets);  acc %;  headshots % (of hits)  |\n",
+                bufBasicHeader,
+                ( bRound ) ? "This Round" : "All Rounds",
+                ( bTeam ) ? "This Team  " : "All Players"
+            );
         Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------------------------------------------------------------------------------------|\n", bufBasicHeader);
         Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Shotgun buckshot    | SMG / Rifle  acc hs | Sniper       acc hs | Pistol       acc hs |\n", bufBasicHeader);
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------|---------------------|---------------------|---------------------|", bufBasicHeader);
@@ -2219,27 +2342,27 @@ stock DisplayStatsAccuracy( client, bool:details = false, bool:round = false, bo
 }
 
 // display special skill stats
-stock DisplayStatsSpecial( client, bool:round = false, bool:bSorted = false )
+stock DisplayStatsSpecial( client, bool:bRound = false, bool:bTeam = true, bool:bSorted = false )
 {
     // sorting
     if ( !bSorted )
     {
-        SortPlayersMVP( round, SORT_SI );
+        SortPlayersMVP( bRound, SORT_SI );
     }
     
     // prepare buffer(s) for printing
-    BuildConsoleBufferSpecial( round );
+    BuildConsoleBufferSpecial( bRound, bTeam );
     
     decl String:bufBasicHeader[CONBUFSIZE];
     decl String:bufBasic[CONBUFSIZELARGE];
     
     Format(bufBasicHeader, CONBUFSIZE, "\n");
-    if ( round ) {
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Special Stats -- This Round    skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw);            |\n", bufBasicHeader);
-    } else {
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Special Stats                  skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw);            |\n", bufBasicHeader);
-    }
     
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Special -- %10s -- %11s       skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw) |\n",\
+            bufBasicHeader,
+            ( bRound ) ? "This Round" : "All Rounds",
+            ( bTeam ) ? "This Team  " : "All Players"
+        );
     if ( !g_bSkillDetectLoaded ) {
         Format(bufBasicHeader, CONBUFSIZE, "%s| ( skill_detect library not loaded: most of these stats won't be tracked )                         |\n", bufBasicHeader);
     }
@@ -2272,7 +2395,7 @@ stock DisplayStatsSpecial( client, bool:round = false, bool:bSorted = false )
 }
 
 // display tables of survivor friendly fire given/taken
-stock DisplayStatsFriendlyFire ( client, bool:bSorted = false )
+stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, bool:bSorted = false )
 {
     // sorting
     if ( !bSorted )
@@ -2280,20 +2403,37 @@ stock DisplayStatsFriendlyFire ( client, bool:bSorted = false )
         SortPlayersMVP( true, SORT_FF );
     }
     
-    // prepare buffer(s) for printing
-    BuildConsoleBufferFriendlyFire();
-    
-    // friendly fire -- given
     decl String:bufBasicHeader[CONBUFSIZE];
     decl String:bufBasic[CONBUFSIZELARGE];
     
-    Format(bufBasicHeader, CONBUFSIZE, "\n");
-    Format(bufBasicHeader, CONBUFSIZE, "%s| FF GIVEN               Friendly Fire Statistics  --  Offenders                                       |\n", bufBasicHeader);
-    Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------||---------------------------------------------------------||---------|\n", bufBasicHeader);
-    Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Total   || Shotgun | Bullets | Melee  | Fire   | On Incap | Other  || to Self |\n", bufBasicHeader);
-    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------||---------|---------|--------|--------|----------|--------||---------|", bufBasicHeader);
-    Format(bufBasic, CONBUFSIZELARGE,  "%s", g_sConsoleBufFFGiven);
-    Format(bufBasic, CONBUFSIZELARGE,  "%s|--------------------------------||---------------------------------------------------------||---------|\n", bufBasic);
+    // only show tables if there is FF damage
+    new bool:bNoStatsToShow = (bRound && !g_iFFRoundDamageTotal || !bRound && !g_iFFDamageTotal);
+    
+    if ( bNoStatsToShow )
+    {
+        Format(bufBasicHeader, CONBUFSIZE, "\n");
+        Format(bufBasic, CONBUFSIZELARGE,  "FF: No Friendly Fire done, not showing table.");
+    }
+    else
+    {
+    
+        // prepare buffer(s) for printing
+        BuildConsoleBufferFriendlyFire( bRound );
+        
+        
+        // friendly fire -- given
+        Format(bufBasicHeader, CONBUFSIZE, "\n");
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Friendly Fire -- Given / Offenders -- %10s -- %11s                                      |\n",
+                bufBasicHeader,
+                ( bRound ) ? "This Round" : "All Rounds",
+                ( bTeam ) ? "This Team  " : "All Players"
+            );
+        Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------||---------------------------------------------------------||---------|\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Total   || Shotgun | Bullets | Melee  | Fire   | On Incap | Other  || to Self |\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------||---------|---------|--------|--------|----------|--------||---------|", bufBasicHeader);
+        Format(bufBasic, CONBUFSIZELARGE,  "%s", g_sConsoleBufFFGiven);
+        Format(bufBasic, CONBUFSIZELARGE,  "%s|--------------------------------||---------------------------------------------------------||---------|\n", bufBasic);
+    }
 
     if ( !client )
     {
@@ -2315,9 +2455,18 @@ stock DisplayStatsFriendlyFire ( client, bool:bSorted = false )
         }
     }
     
+    if ( bNoStatsToShow )
+    {
+        return;
+    }
+    
     // friendly fire -- taken
     Format(bufBasicHeader, CONBUFSIZE, "\n");
-    Format(bufBasicHeader, CONBUFSIZE, "%s| FF RECEIVED            Friendly Fire Statistics  --  Victims                                         |\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Friendly Fire -- Received / Victims -- %10s -- %11s                                     |\n",
+                bufBasicHeader,
+                ( bRound ) ? "This Round" : "All Rounds",
+                ( bTeam ) ? "This Team  " : "All Players"
+            );
     Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------||---------------------------------------------------------||---------|\n", bufBasicHeader);
     Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Total   || Shotgun | Bullets | Melee  | Fire   | Incapped | Other  || Fall    |\n", bufBasicHeader);
     Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------||---------|---------|--------|--------|----------|--------||---------|", bufBasicHeader);
@@ -2345,7 +2494,7 @@ stock DisplayStatsFriendlyFire ( client, bool:bSorted = false )
     }
 }
 
-stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bSorted = false )
+stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, bool:bSorted = false )
 {
     g_sConsoleBufGen = "";
     new const s_len = 24;
@@ -2443,7 +2592,7 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bSorted = false )
     }
 }
 
-stock BuildConsoleBufferAccuracy ( bool: details = false, bool:bRound = false )
+stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bool:bTeam = true )
 {
     g_sConsoleBufAcc = "";
     new const s_len = 24;
@@ -2654,7 +2803,7 @@ stock BuildConsoleBufferAccuracy ( bool: details = false, bool:bRound = false )
 }
 
 
-stock BuildConsoleBufferMVP ( bool: tank = false, bool:bRound = true )
+stock BuildConsoleBufferMVP ( bool:tank = false, bool:bRound = true, bool:bTeam = true )
 {
     g_sConsoleBufMVP = "";
     new const s_len = 24;
@@ -2687,7 +2836,7 @@ stock BuildConsoleBufferMVP ( bool: tank = false, bool:bRound = true )
             
             // commons
             Format( strTmp[1], s_len, "   %7d",
-                    ( (bRound) ? g_strRoundPlayerData[i][plyCommon] : g_strPlayerData[i][plyCommon] )
+                    ( (bRound) ? g_strRoundPlayerData[i][plyCommonTankUp] : g_strPlayerData[i][plyCommonTankUp] )
                 );
             
             // melee on tank
@@ -2796,16 +2945,14 @@ stock BuildConsoleBufferMVP ( bool: tank = false, bool:bRound = true )
     }
 }
 
-stock BuildConsoleBufferFriendlyFire ()
+stock BuildConsoleBufferFriendlyFire ( bool:bRound = true, bool:bTeam = true )
 {
     g_sConsoleBufFFGiven = "";
     g_sConsoleBufFFTaken = "";
     
     new const s_len = 15;
-    decl String:strPrint[MAXFFTYPES+1][s_len];    // types + type_self
-    new dmgCount[MAXFFTYPES];
-    new dmgSelf, dmgWorld;
-    new i, j, x, z;
+    decl String:strPrint[FFTYPE_MAX][s_len];
+    new i, j, x;
     
     
     // GIVEN
@@ -2814,53 +2961,39 @@ stock BuildConsoleBufferFriendlyFire ()
         i = g_iPlayerIndexSorted[SORT_FF][x];
         
         // skip any row where total of given and taken is 0
-        if ( !g_iFFDamageTotal[i][TOTAL_FFGIVEN] && !g_iFFDamageTotal[i][TOTAL_FFTAKEN] ) { continue; }
+        if ( bRound && !g_strRoundPlayerData[i][plyFFGivenTotal] && !g_strRoundPlayerData[i][plyFFTakenTotal] ||
+            !bRound && !g_strPlayerData[i][plyFFGivenTotal] && !g_strPlayerData[i][plyFFTakenTotal]
+        ) {
+            continue;
+        }
         
         // also skip bots for this list
         if ( i < FIRST_NON_BOT ) { continue; }
         
-        dmgSelf = 0;
-        for ( z = 0; z < MAXFFTYPES; z++ )
-        {
-            dmgCount[z] = 0;
-        }
-        
-        for ( j = 0; j < g_iPlayers; j++ )
-        {
-            dmgCount[FFTYPE_TOTAL] += g_iFFDamage[i][j][FFTYPE_TOTAL];
-            
-            if ( i == j )
-            {
-                // self (no further differentiation)
-                dmgSelf += g_iFFDamage[i][j][FFTYPE_TOTAL];
-            }
-            else
-            {
-                dmgCount[FFTYPE_PELLET] +=    g_iFFDamage[i][j][FFTYPE_PELLET];
-                dmgCount[FFTYPE_BULLET] +=    g_iFFDamage[i][j][FFTYPE_BULLET];
-                dmgCount[FFTYPE_MELEE] +=     g_iFFDamage[i][j][FFTYPE_MELEE];
-                dmgCount[FFTYPE_FIRE] +=      g_iFFDamage[i][j][FFTYPE_FIRE];
-                dmgCount[FFTYPE_INCAPPED] +=  g_iFFDamage[i][j][FFTYPE_INCAPPED];
-                dmgCount[FFTYPE_OTHER] +=     g_iFFDamage[i][j][FFTYPE_OTHER];
-            }
-        }
-        
         // prepare print
-        if ( dmgCount[FFTYPE_TOTAL] ) {     Format(strPrint[FFTYPE_TOTAL],      s_len, "%7d",   dmgCount[FFTYPE_TOTAL] );
+        if ( bRound && g_strPlayerData[i][plyFFGivenTotal] || !bRound && g_strRoundPlayerData[i][plyFFGivenTotal] ) {
+            Format(strPrint[FFTYPE_TOTAL],      s_len, "%7d", (bRound) ? g_strPlayerData[i][plyFFGivenTotal] : g_strRoundPlayerData[i][plyFFGivenTotal] );
         } else {                            Format(strPrint[FFTYPE_TOTAL],      s_len, "       " ); }
-        if ( dmgCount[FFTYPE_PELLET] ) {    Format(strPrint[FFTYPE_PELLET],     s_len, "%7d",   dmgCount[FFTYPE_PELLET] );
+        if ( bRound && g_strPlayerData[i][plyFFGivenPellet] || !bRound && g_strRoundPlayerData[i][plyFFGivenPellet] ) {
+            Format(strPrint[FFTYPE_PELLET],     s_len, "%7d", (bRound) ? g_strPlayerData[i][plyFFGivenPellet] : g_strRoundPlayerData[i][plyFFGivenPellet] );
         } else {                            Format(strPrint[FFTYPE_PELLET],     s_len, "       " ); }
-        if ( dmgCount[FFTYPE_BULLET] ) {    Format(strPrint[FFTYPE_BULLET],     s_len, "%7d",   dmgCount[FFTYPE_BULLET]);
+        if ( bRound && g_strPlayerData[i][plyFFGivenBullet] || !bRound && g_strRoundPlayerData[i][plyFFGivenBullet] ) {
+            Format(strPrint[FFTYPE_BULLET],     s_len, "%7d", (bRound) ? g_strPlayerData[i][plyFFGivenBullet] : g_strRoundPlayerData[i][plyFFGivenBullet] );
         } else {                            Format(strPrint[FFTYPE_BULLET],     s_len, "       " ); }
-        if ( dmgCount[FFTYPE_MELEE] ) {     Format(strPrint[FFTYPE_MELEE],      s_len, "%6d",   dmgCount[FFTYPE_MELEE]);
+        if ( bRound && g_strPlayerData[i][plyFFGivenMelee] || !bRound && g_strRoundPlayerData[i][plyFFGivenMelee] ) {
+            Format(strPrint[FFTYPE_MELEE],      s_len, "%6d", (bRound) ? g_strPlayerData[i][plyFFGivenMelee] : g_strRoundPlayerData[i][plyFFGivenMelee] );
         } else {                            Format(strPrint[FFTYPE_MELEE],      s_len, "      " ); }
-        if ( dmgCount[FFTYPE_FIRE] ) {      Format(strPrint[FFTYPE_FIRE],       s_len, "%6d",   dmgCount[FFTYPE_FIRE]);
+        if ( bRound && g_strPlayerData[i][plyFFGivenFire] || !bRound && g_strRoundPlayerData[i][plyFFGivenFire] ) {
+            Format(strPrint[FFTYPE_FIRE],       s_len, "%6d", (bRound) ? g_strPlayerData[i][plyFFGivenFire] : g_strRoundPlayerData[i][plyFFGivenFire] );
         } else {                            Format(strPrint[FFTYPE_FIRE],       s_len, "      " ); }
-        if ( dmgCount[FFTYPE_INCAPPED] ) {  Format(strPrint[FFTYPE_INCAPPED],   s_len, "%8d",   dmgCount[FFTYPE_INCAPPED]);
-        } else {                            Format(strPrint[FFTYPE_INCAPPED],   s_len, "        " ); }
-        if ( dmgCount[FFTYPE_OTHER] ) {     Format(strPrint[FFTYPE_OTHER],      s_len, "%6d",   dmgCount[FFTYPE_OTHER]);
-        } else {                            Format(strPrint[FFTYPE_OTHER],      s_len, "      " ); }        
-        if ( dmgSelf ) {                    Format(strPrint[FFTYPE_SELF],       s_len, "%7d",   dmgSelf);
+        if ( bRound && g_strPlayerData[i][plyFFGivenIncap] || !bRound && g_strRoundPlayerData[i][plyFFGivenIncap] ) {
+            Format(strPrint[FFTYPE_INCAP],      s_len, "%8d", (bRound) ? g_strPlayerData[i][plyFFGivenIncap] : g_strRoundPlayerData[i][plyFFGivenIncap] );
+        } else {                            Format(strPrint[FFTYPE_INCAP],      s_len, "        " ); }
+        if ( bRound && g_strPlayerData[i][plyFFGivenOther] || !bRound && g_strRoundPlayerData[i][plyFFGivenOther] ) {
+            Format(strPrint[FFTYPE_OTHER],      s_len, "%6d", (bRound) ? g_strPlayerData[i][plyFFGivenOther] : g_strRoundPlayerData[i][plyFFGivenOther] );
+        } else {                            Format(strPrint[FFTYPE_OTHER],      s_len, "      " ); }
+        if ( bRound && g_strPlayerData[i][plyFFGivenSelf] || !bRound && g_strRoundPlayerData[i][plyFFGivenSelf] ) {
+            Format(strPrint[FFTYPE_SELF],       s_len, "%7d", (bRound) ? g_strPlayerData[i][plyFFGivenSelf] : g_strRoundPlayerData[i][plyFFGivenSelf] );
         } else {                            Format(strPrint[FFTYPE_SELF],       s_len, "       " ); }
         
         // prepare non-unicode string
@@ -2873,7 +3006,7 @@ stock BuildConsoleBufferFriendlyFire ()
                 g_sTmpString,
                 strPrint[FFTYPE_TOTAL],
                 strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
-                strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAPPED], strPrint[FFTYPE_OTHER],
+                strPrint[FFTYPE_FIRE],   strPrint[FFTYPE_INCAP],  strPrint[FFTYPE_OTHER],
                 strPrint[FFTYPE_SELF]
             );
     }
@@ -2884,45 +3017,36 @@ stock BuildConsoleBufferFriendlyFire ()
         j = g_iPlayerIndexSorted[SORT_FF][x];
         
         // skip any row where total of given and taken is 0
-        if ( !g_iFFDamageTotal[j][TOTAL_FFGIVEN] && !g_iFFDamageTotal[j][TOTAL_FFTAKEN] ) { continue; }
-        
-        dmgWorld = g_strRoundPlayerData[j][plyFallDamage];
-        for ( z = 0; z < MAXFFTYPES; z++ )
-        {
-            dmgCount[z] = 0;
-        }
-        
-        for ( i = 0; i < g_iPlayers; i++ )
-        {
-            dmgCount[FFTYPE_TOTAL] += g_iFFDamage[i][j][FFTYPE_TOTAL];
-            
-            if ( i != j )
-            {
-                dmgCount[FFTYPE_PELLET] +=    g_iFFDamage[i][j][FFTYPE_PELLET];
-                dmgCount[FFTYPE_BULLET] +=    g_iFFDamage[i][j][FFTYPE_BULLET];
-                dmgCount[FFTYPE_MELEE] +=     g_iFFDamage[i][j][FFTYPE_MELEE];
-                dmgCount[FFTYPE_FIRE] +=      g_iFFDamage[i][j][FFTYPE_FIRE];
-                dmgCount[FFTYPE_INCAPPED] +=  g_iFFDamage[i][j][FFTYPE_INCAPPED];
-                dmgCount[FFTYPE_OTHER] +=     g_iFFDamage[i][j][FFTYPE_OTHER];
-            }
+        if ( bRound && !g_strRoundPlayerData[j][plyFFGivenTotal] && !g_strRoundPlayerData[j][plyFFTakenTotal] ||
+            !bRound && !g_strPlayerData[j][plyFFGivenTotal] && !g_strPlayerData[j][plyFFTakenTotal]
+        ) {
+            continue;
         }
         
         // prepare print
-        if ( dmgCount[FFTYPE_TOTAL] ) {     Format(strPrint[FFTYPE_TOTAL],      s_len, "%7d",   dmgCount[FFTYPE_TOTAL]);
+        if ( bRound && g_strPlayerData[j][plyFFTakenTotal] || !bRound && g_strRoundPlayerData[j][plyFFTakenTotal] ) {
+            Format(strPrint[FFTYPE_TOTAL],      s_len, "%7d", (bRound) ? g_strPlayerData[j][plyFFTakenTotal] : g_strRoundPlayerData[j][plyFFTakenTotal] );
         } else {                            Format(strPrint[FFTYPE_TOTAL],      s_len, "       " ); }
-        if ( dmgCount[FFTYPE_PELLET] ) {    Format(strPrint[FFTYPE_PELLET],     s_len, "%7d",   dmgCount[FFTYPE_PELLET]);
+        if ( bRound && g_strPlayerData[j][plyFFTakenPellet] || !bRound && g_strRoundPlayerData[j][plyFFTakenPellet] ) {
+            Format(strPrint[FFTYPE_PELLET],     s_len, "%7d", (bRound) ? g_strPlayerData[j][plyFFTakenPellet] : g_strRoundPlayerData[j][plyFFTakenPellet] );
         } else {                            Format(strPrint[FFTYPE_PELLET],     s_len, "       " ); }
-        if ( dmgCount[FFTYPE_BULLET] ) {    Format(strPrint[FFTYPE_BULLET],     s_len, "%7d",   dmgCount[FFTYPE_BULLET]);
+        if ( bRound && g_strPlayerData[j][plyFFTakenBullet] || !bRound && g_strRoundPlayerData[j][plyFFTakenBullet] ) {
+            Format(strPrint[FFTYPE_BULLET],     s_len, "%7d", (bRound) ? g_strPlayerData[j][plyFFTakenBullet] : g_strRoundPlayerData[j][plyFFTakenBullet] );
         } else {                            Format(strPrint[FFTYPE_BULLET],     s_len, "       " ); }
-        if ( dmgCount[FFTYPE_MELEE] ) {     Format(strPrint[FFTYPE_MELEE],      s_len, "%6d",   dmgCount[FFTYPE_MELEE]);
+        if ( bRound && g_strPlayerData[j][plyFFTakenMelee] || !bRound && g_strRoundPlayerData[j][plyFFTakenMelee] ) {
+            Format(strPrint[FFTYPE_MELEE],      s_len, "%6d", (bRound) ? g_strPlayerData[j][plyFFTakenMelee] : g_strRoundPlayerData[j][plyFFTakenMelee] );
         } else {                            Format(strPrint[FFTYPE_MELEE],      s_len, "      " ); }
-        if ( dmgCount[FFTYPE_FIRE] ) {      Format(strPrint[FFTYPE_FIRE],       s_len, "%6d",   dmgCount[FFTYPE_FIRE]);
+        if ( bRound && g_strPlayerData[j][plyFFTakenFire] || !bRound && g_strRoundPlayerData[j][plyFFTakenFire] ) {
+            Format(strPrint[FFTYPE_FIRE],       s_len, "%6d", (bRound) ? g_strPlayerData[j][plyFFTakenFire] : g_strRoundPlayerData[j][plyFFTakenFire] );
         } else {                            Format(strPrint[FFTYPE_FIRE],       s_len, "      " ); }
-        if ( dmgCount[FFTYPE_INCAPPED] ) {  Format(strPrint[FFTYPE_INCAPPED],   s_len, "%8d",   dmgCount[FFTYPE_INCAPPED]);
-        } else {                            Format(strPrint[FFTYPE_INCAPPED],   s_len, "        " ); }
-        if ( dmgCount[FFTYPE_OTHER] ) {     Format(strPrint[FFTYPE_OTHER],      s_len, "%6d",   dmgCount[FFTYPE_OTHER]);
+        if ( bRound && g_strPlayerData[j][plyFFTakenIncap] || !bRound && g_strRoundPlayerData[j][plyFFTakenIncap] ) {
+            Format(strPrint[FFTYPE_INCAP],      s_len, "%8d", (bRound) ? g_strPlayerData[j][plyFFTakenIncap] : g_strRoundPlayerData[j][plyFFTakenIncap] );
+        } else {                            Format(strPrint[FFTYPE_INCAP],      s_len, "        " ); }
+        if ( bRound && g_strPlayerData[j][plyFFTakenOther] || !bRound && g_strRoundPlayerData[j][plyFFTakenOther] ) {
+            Format(strPrint[FFTYPE_OTHER],      s_len, "%6d", (bRound) ? g_strPlayerData[j][plyFFTakenOther] : g_strRoundPlayerData[j][plyFFTakenOther] );
         } else {                            Format(strPrint[FFTYPE_OTHER],      s_len, "      " ); }
-        if ( dmgWorld ) {                   Format(strPrint[FFTYPE_SELF],       s_len, "%7d",   dmgWorld );
+        if ( bRound && g_strPlayerData[j][plyFallDamage] || !bRound && g_strRoundPlayerData[j][plyFallDamage] ) {
+            Format(strPrint[FFTYPE_SELF],       s_len, "%7d", (bRound) ? g_strRoundPlayerData[j][plyFallDamage] : g_strPlayerData[j][plyFallDamage] );
         } else {                            Format(strPrint[FFTYPE_SELF],       s_len, "       " ); }
         
         // prepare non-unicode string
@@ -2935,7 +3059,7 @@ stock BuildConsoleBufferFriendlyFire ()
                 g_sTmpString,
                 strPrint[FFTYPE_TOTAL],
                 strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
-                strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAPPED], strPrint[FFTYPE_OTHER],
+                strPrint[FFTYPE_FIRE],   strPrint[FFTYPE_INCAP],  strPrint[FFTYPE_OTHER],
                 strPrint[FFTYPE_SELF]
             );
     }
@@ -3014,7 +3138,6 @@ stock SortPlayersMVP( bool:round = true, sortCol = SORT_SI )
     Automatic display
     -----------------
 */
-
 stock AutomaticRoundEndPrint( bool:doDelay = true )
 {
     new Float:fDelay = ROUNDEND_DELAY;
@@ -3078,8 +3201,11 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
     }
     
     // ff
-    if ( iFlags & AUTO_FFCON ) {
-        DisplayStatsFriendlyFire(0, bSorted);
+    if ( iFlags & AUTO_FFCON_ROUND ) {
+        DisplayStatsFriendlyFire(0, true, bSorted);
+    }
+    if ( iFlags & AUTO_FFCON_ALL ) {
+        DisplayStatsFriendlyFire(0, false, bSorted);
     }
     
     // accuracy
@@ -3309,8 +3435,6 @@ stock CheckGameMode()
     new String:tmpStr[24];
     GetConVarString( FindConVar("mp_gamemode"), tmpStr, sizeof(tmpStr) );
     
-    PrintToChatAll("gamemode: %s", tmpStr);
-    
     if (    StrEqual(tmpStr, "coop", false)         ||
             StrEqual(tmpStr, "mutation4", false)    ||      // hard eight
             StrEqual(tmpStr, "mutation14", false)   ||      // gib fest
@@ -3382,6 +3506,11 @@ stock stripUnicode ( String:testString[MAXNAME], maxLength = 20 )
                 g_sTmpString[i - j] = 95; 
             }
         }
+    }
+    
+    if ( strlen(g_sTmpString) > maxLength )
+    {
+        g_sTmpString[maxLength] = 0;
     }
 }
 
