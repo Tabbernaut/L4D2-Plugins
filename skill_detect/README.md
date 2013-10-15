@@ -26,7 +26,8 @@ Forwards this:
  *      OnDeathCharge( charger, victim )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
-
+ *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
+ *      OnJockeyHighPounce( jockey, victim, Float:height )
 
 CVars:
 ------
@@ -39,18 +40,23 @@ CVars:
 <b>sm_skill_reportdrawcrown</b><br />
 <b>sm_skill_reporttonguecut</b><br />
 <b>sm_skill_reportselfclear</b><br />
-0/1, whether to report these actions in chat.<br />
+[0/1], whether to report these actions in chat.<br />
 Note: for ...selfclear: set to '2' to also report selfclears by shoving the smoker in time.<br />
 
 <b>sm_skill_drawcrown_damage</b><br />
-How much damage a survivor must at least do in the final shot for it to count as a drawcrown.<br />
+[500] How much damage a survivor must at least do in the final shot for it to count as a drawcrown.<br />
 
 <b>sm_skill_selfclear_damage</b><br />
-How much damage a survivor must at least do while pulled for it to count as a self-clear from a smoker tongue.<br />
+[200] How much damage a survivor must at least do while pulled for it to count as a self-clear from a smoker tongue.<br />
 
 <b>sm_skill_skeet_allowmelee</b><br />
 <b>sm_skill_skeet_allowsniper</b><br />
-1/0, whether to count melee skeets and sniper/magnum headshots as skeets (if not, doesn't forward either)<br />
+[1/0], whether to count melee skeets and sniper/magnum headshots as skeets (if not, doesn't forward either)<br />
 
+<b>sm_skill_hunterdp_damage</b><br />
+[15] How much damage a hunter must do in a pounce for it to count as a 'high pounce'<br />
+
+<b>sm_skill_jockeydp_height</b><br />
+[300] The mininum height for a jockey pounce for it to count as a 'high pounce'.<br />
 <b>sm_skill_hidefakedamage</b><br />
-0/1, whether hide any damage on witch that exceeds her maximum health<br />
+[0/1], whether hide any damage on witch that exceeds her maximum health<br />
