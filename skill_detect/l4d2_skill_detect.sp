@@ -30,9 +30,10 @@
  *      OnSmokerSelfClear( survivor, smoker )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
+ *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
+ *      OnJockeyHighPounce( jockey, victim, Float:height )
  
- *      OnHighPounce( hunter, victim, damage )
- *      OnJockeyHighPounce( jockey, victim )                ?
+ 
  *      OnDeathCharge( charger, victim )                    ?
  *      OnBHop( player, isInfected, speed, streak )         ?
  
@@ -69,6 +70,7 @@
 #define ZC_SMOKER       1
 #define ZC_BOOMER       2
 #define ZC_HUNTER       3
+#define ZC_JOCKEY       5
 #define ZC_CHARGER      6
 #define ZC_TANK         8
 #define HITGROUP_HEAD   1
@@ -104,6 +106,7 @@ enum strOEC
 enum strAbility
 {
     ABL_HUNTERLUNGE,
+    ABL_JOCKEYPOUNCE,
     ABL_ROCKTHROW
 };
 
@@ -151,6 +154,8 @@ new     Handle:         g_hForwardTongueCut                                 = IN
 new     Handle:         g_hForwardSmokerSelfClear                           = INVALID_HANDLE;
 new     Handle:         g_hForwardRockSkeeted                               = INVALID_HANDLE;
 new     Handle:         g_hForwardRockEaten                                 = INVALID_HANDLE;
+new     Handle:         g_hForwardHunterDP                                  = INVALID_HANDLE;
+new     Handle:         g_hForwardJockeyDP                                  = INVALID_HANDLE;
 
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
@@ -169,6 +174,9 @@ new     bool:           g_bHunterPouncingShot   [MAXPLAYERS + 1];               
 new                     g_iHunterLastHealth     [MAXPLAYERS + 1];                               // last time hunter took any damage, how much health did it have left?
 new                     g_iHunterOverkill       [MAXPLAYERS + 1];                               // how much more damage a hunter would've taken if it wasn't already dead
 new     bool:           g_bHunterKilledPouncing [MAXPLAYERS + 1];                               // whether the hunter was killed when actually pouncing
+
+// highpounces
+new     Float:          g_fPouncePosition       [MAXPLAYERS + 1][3];                            // position that a hunter (jockey?) pounced from
 
 // deadstops
 new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1];                               // when was the player shoved last? (to prevent doubles)
@@ -204,17 +212,24 @@ new     Handle:         g_hCvarReportDrawCrowns                             = IN
 new     Handle:         g_hCvarReportSmokerTongueCuts                       = INVALID_HANDLE;
 new     Handle:         g_hCvarReportSmokerSelfClears                       = INVALID_HANDLE;
 new     Handle:         g_hCvarReportRockSkeeted                            = INVALID_HANDLE;
+new     Handle:         g_hCvarReportHunterDP                               = INVALID_HANDLE;
+new     Handle:         g_hCvarReportJockeyDP                               = INVALID_HANDLE;
 
 new     Handle:         g_hCvarAllowMelee                                   = INVALID_HANDLE;   // cvar whether to count melee skeets
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
 new     Handle:         g_hCvarDrawCrownThresh                              = INVALID_HANDLE;   // cvar damage in final shot for drawcrown-req.
 new     Handle:         g_hCvarSelfClearThresh                              = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
+new     Handle:         g_hCvarHunterDPThresh                               = INVALID_HANDLE;   // cvar damage for hunter highpounce
+new     Handle:         g_hCvarJockeyDPThresh                               = INVALID_HANDLE;   // cvar distance for jockey highpounce
 new     Handle:         g_hCvarHideFakeDamage                               = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
 new     Handle:         g_hCvarChargerHealth                                = INVALID_HANDLE;   // z_charger_health
 new     Handle:         g_hCvarWitchHealth                                  = INVALID_HANDLE;   // z_witch_health
+new     Handle:         g_hCvarMaxPounceDistance                            = INVALID_HANDLE;   // z_pounce_damage_range_max
+new     Handle:         g_hCvarMinPounceDistance                            = INVALID_HANDLE;   // z_pounce_damage_range_min
+new     Handle:         g_hCvarMaxPounceDamage                              = INVALID_HANDLE;   // z_hunter_max_pounce_bonus_damage;
 
 /*
     Reports:
@@ -232,16 +247,12 @@ new     Handle:         g_hCvarWitchHealth                                  = IN
     To do
     -----
     
-    - highpounce detection
-    - ? bhop (streaks)
-    - ? jockey highpounce detection
+    - ? bhop (streaks) detection
     - ? deathcharge detection
     - ? " assist detection
     - ? spit-on-cap detection
     
-    
-    - make cvar for optionally removing fake damage
-        - for charger too
+    - make cvar for optionally removing fake damage: for charger too
 */
 
 public Plugin:myinfo = 
@@ -275,6 +286,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockSkeeted =     CreateGlobalForward("OnTankRockSkeeted", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float );
+    g_hForwardJockeyDP =        CreateGlobalForward("OnJockeyHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float );
     
     g_bLateLoad = late;
     
@@ -290,6 +303,7 @@ public OnPluginStart()
     HookEvent("ability_use",                Event_AbilityUse,               EventHookMode_Post);
     HookEvent("lunge_pounce",               Event_LungePounce,              EventHookMode_Post);
     HookEvent("player_shoved",              Event_PlayerShoved,             EventHookMode_Post);
+    HookEvent("player_jump",                Event_PlayerJumped,             EventHookMode_Post);
     
     HookEvent("player_now_it",              Event_PlayerBoomed,             EventHookMode_Post);
     HookEvent("boomer_exploded",            Event_BoomerExploded,           EventHookMode_Post);
@@ -304,10 +318,12 @@ public OnPluginStart()
     
     HookEvent("tongue_grab",                Event_TongueGrab,               EventHookMode_Post);
     HookEvent("tongue_pull_stopped",        Event_TonguePullStopped,        EventHookMode_Post);
+    HookEvent("jockey_ride",                Event_JockeyRide,               EventHookMode_Post);
     
     // version cvar
     CreateConVar( "sm_skill_detect_version", PLUGIN_VERSION, "Skill detect plugin version.", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_REPLICATED|FCVAR_DONTRECORD );
     
+    // cvars: config
     g_hCvarReportSkeets = CreateConVar(             "sm_skill_report_skeet" ,       "0", "Whether to report skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportNonSkeets = CreateConVar(          "sm_skill_report_hurtskeet",    "0", "Whether to report hurt/failed skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportLevels = CreateConVar(             "sm_skill_report_level" ,       "0", "Whether to report charger levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
@@ -318,23 +334,31 @@ public OnPluginStart()
     g_hCvarReportSmokerTongueCuts = CreateConVar(   "sm_skill_report_tonguecut",    "0", "Whether to report smoker tongue cuts in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarReportSmokerSelfClears = CreateConVar(   "sm_skill_report_selfclear",    "0", "Whether to report self-clears from smokers in chat. 1 = only kills, 2 = report shoves aswell.", FCVAR_PLUGIN, true, 0.0, true, 2.0 );
     g_hCvarReportRockSkeeted = CreateConVar(        "sm_skill_report_rockskeet",    "0", "Whether to report rocks getting skeeted in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportHunterDP = CreateConVar(           "sm_skill_report_hunterdp" ,    "0", "Whether to report hunter high-pounces in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportJockeyDP = CreateConVar(           "sm_skill_report_jockeydp" ,    "0", "Whether to report jockey high-pounces in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
     g_hCvarAllowMelee = CreateConVar(               "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarAllowSniper = CreateConVar(              "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    
     g_hCvarDrawCrownThresh = CreateConVar(          "sm_skill_drawcrown_damage",  "500", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarSelfClearThresh = CreateConVar(          "sm_skill_selfclear_damage",  "200", "How much damage a survivor must at least do to a smoker for him to count as self-clearing.", FCVAR_PLUGIN, true, 0.0, false );
-    
+    g_hCvarHunterDPThresh = CreateConVar(           "sm_skill_hunterdp_damage",    "15", "How much damage a hunter must do for his pounce to count as a DP.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarJockeyDPThresh = CreateConVar(           "sm_skill_jockeydp_height",   "300", "How much height distance a jockey must make for his 'DP' to count as a reportable highpounce.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarHideFakeDamage = CreateConVar(           "sm_skill_hidefakedamage",      "0", "If set, any damage done that exceeds the health of a victim is hidden in reports.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
-    
-    // cvars
+    // cvars: built in
     g_hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
     HookConVarChange(g_hCvarPounceInterrupt, CvarChange_PounceInterrupt);
     g_iPounceInterrupt = GetConVarInt(g_hCvarPounceInterrupt);
     
     g_hCvarChargerHealth = FindConVar("z_charger_health");
     g_hCvarWitchHealth = FindConVar("z_witch_health");
+    
+    g_hCvarMaxPounceDistance = FindConVar("z_pounce_damage_range_max");
+    if ( g_hCvarMaxPounceDistance == INVALID_HANDLE ) { g_hCvarMaxPounceDistance = CreateConVar( "z_pounce_damage_range_max",  "1000.0", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
+    g_hCvarMinPounceDistance = FindConVar("z_pounce_damage_range_min");
+    if ( g_hCvarMinPounceDistance == INVALID_HANDLE ) { g_hCvarMinPounceDistance = CreateConVar( "z_pounce_damage_range_min",  "300.0", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
+    g_hCvarMaxPounceDamage = FindConVar("z_hunter_max_pounce_bonus_damage");
+    if ( g_hCvarMaxPounceDamage == INVALID_HANDLE ) { g_hCvarMaxPounceDamage = CreateConVar( "z_hunter_max_pounce_bonus_damage",  "49", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
     
     
     // tries
@@ -351,6 +375,7 @@ public OnPluginStart()
     
     g_hTrieAbility = CreateTrie();
     SetTrieValue(g_hTrieAbility, "ability_lunge",       ABL_HUNTERLUNGE);
+    SetTrieValue(g_hTrieAbility, "ability_pounce",      ABL_JOCKEYPOUNCE);
     SetTrieValue(g_hTrieAbility, "ability_throw",       ABL_ROCKTHROW);
     
     
@@ -405,7 +430,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
         new damagetype = GetEventInt(event, "type");
         new hitgroup = GetEventInt(event, "hitgroup");
         
-        if ( damage < 1 ) { return; }
+        if ( damage < 1 ) { return Plugin_Continue; }
         
         switch ( zClass )
         {
@@ -415,7 +440,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 if ( !IS_VALID_SURVIVOR(attacker) )
                 {
                     g_iHunterLastHealth[victim] = health;
-                    return;
+                    return Plugin_Continue;
                 }
                 
                 // if the damage done is greater than the health we know the hunter to have remaining, reduce the damage done
@@ -538,7 +563,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
             
             case ZC_CHARGER:
             {
-                if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
+                if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
                 
                 // check for levels
                 if ( g_bChargerCharging[victim] && health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
@@ -555,7 +580,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
             
             case ZC_SMOKER:
             {
-                if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
+                if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
                 
                 g_iSmokerVictimDamage[victim] += damage;
             }
@@ -594,12 +619,14 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
             }
         }
     }
+    
+    return Plugin_Continue;
 }
 
 public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new client = GetClientOfUserId(GetEventInt(event, "userid"));
-    if ( !IS_VALID_INFECTED(client) ) { return; }
+    if ( !IS_VALID_INFECTED(client) ) { return Plugin_Continue; }
     
     new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
     
@@ -619,10 +646,24 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
             g_iSmokerVictim[client] = 0;
             g_iSmokerVictimDamage[client] = 0;
         }
+        case ZC_HUNTER:
+        {
+            g_fPouncePosition[client][0] = 0.0;
+            g_fPouncePosition[client][1] = 0.0;
+            g_fPouncePosition[client][2] = 0.0;
+        }
+        case ZC_JOCKEY:
+        {
+            g_fPouncePosition[client][0] = 0.0;
+            g_fPouncePosition[client][1] = 0.0;
+            g_fPouncePosition[client][2] = 0.0;
+        }
     }
+    
+    return Plugin_Continue;
 }
 
-public Action: Event_PlayerDeath(Handle:hEvent, const String:name[], bool:dontBroadcast)
+public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontBroadcast )
 {
     new victim = GetClientOfUserId( GetEventInt(hEvent, "userid") );
     new attacker = GetClientOfUserId( GetEventInt(hEvent, "attacker") ); 
@@ -682,15 +723,16 @@ public Action: Event_PlayerDeath(Handle:hEvent, const String:name[], bool:dontBr
             }
         }
     }
+    
     return Plugin_Continue;
 }
 
-public Action: Event_PlayerShoved(Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new victim = GetClientOfUserId(GetEventInt(event, "userid"));
     new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
     
-    if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(victim) ) { return; }
+    if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(victim) ) { return Plugin_Continue; }
     
     if ( g_fVictimLastShove[victim] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim] ) > SHOVE_TIME )
     {
@@ -712,14 +754,89 @@ public Action: Event_PlayerShoved(Handle:event, const String:name[], bool:dontBr
     }
     
     //PrintDebug(0, "shove by %i on %i", attacker, victim );
+    return Plugin_Continue;
 }
 
-public Action: Event_LungePounce(Handle:event, const String:name[], bool:dontBroadcast)
+public Action: Event_LungePounce( Handle:event, const String:name[], bool:dontBroadcast )
 {
-    new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
-
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    new victim = GetClientOfUserId( GetEventInt(event, "victim") );
+    
     // clear hunter-hit stats (not skeeted)
-    ResetHunter(attacker);
+    ResetHunter(client);
+    
+    // check if it was a DP    
+    // ignore if no real pounce start pos
+    if ( g_fPouncePosition[client][0] == 0.0 && g_fPouncePosition[client][1] == 0.0 && g_fPouncePosition[client][2] == 0.0 ) { return Plugin_Continue; }
+        
+    new Float: endPos[3];
+    GetClientAbsOrigin( client, endPos );
+    new Float: fHeight = g_fPouncePosition[client][2] - endPos[2];
+    
+    // from pounceannounce:
+    // distance supplied isn't the actual 2d vector distance needed for damage calculation. See more about it at
+    // http://forums.alliedmods.net/showthread.php?t=93207
+    
+    new Float: fMin = GetConVarFloat(g_hCvarMinPounceDistance);
+    new Float: fMax = GetConVarFloat(g_hCvarMaxPounceDistance);
+    new Float: fMaxDmg = GetConVarFloat(g_hCvarMaxPounceDamage);
+    
+    // calculate 2d distance between previous position and pounce position
+    new distance = RoundToNearest( GetVectorDistance(g_fPouncePosition[client], endPos) );
+    
+    // get damage using hunter damage formula
+    // damage in this is expressed as a float because my server has competitive hunter pouncing where the decimal counts
+    new Float: fDamage = ( ( (float(distance) - fMin) / (fMax - fMin) ) * fMaxDmg ) + 1.0;
+    
+    if ( fDamage >= GetConVarFloat(g_hCvarHunterDPThresh) )
+    {
+        HandleHunterDP( client, victim, fDamage, fHeight );
+    }
+    
+    return Plugin_Continue;
+}
+
+public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    
+    if ( !IS_VALID_INFECTED(client) ) { return Plugin_Continue; }
+    
+    new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
+    
+    if ( zClass != ZC_JOCKEY ) { return Plugin_Continue; }
+    
+    // where did jockey jump from?
+    GetClientAbsOrigin( client, g_fPouncePosition[client] );
+    
+    return Plugin_Continue;
+}
+
+public Action: Event_JockeyRide( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    new victim = GetClientOfUserId( GetEventInt(event, "victim") );
+    
+    if ( !IS_VALID_INFECTED(client) || !IS_VALID_SURVIVOR(victim) ) { return Plugin_Continue; }
+    
+    
+    // minimum distance travelled?
+    // ignore if no real pounce start pos
+    if ( g_fPouncePosition[client][0] == 0.0 && g_fPouncePosition[client][1] == 0.0 && g_fPouncePosition[client][2] == 0.0 ) { return Plugin_Continue; }
+    
+    new Float: endPos[3];
+    GetClientAbsOrigin( client, endPos );
+    new Float: fHeight = g_fPouncePosition[client][2] - endPos[2];
+    
+    //PrintToChatAll("jockey height: %.3f", fHeight);
+    
+    if ( fHeight >= GetConVarFloat(g_hCvarJockeyDPThresh) )
+    {
+        // high pounce
+        HandleJockeyDP( client, victim, fHeight );
+    }
+    
+    return Plugin_Continue;
 }
 
 public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBroadcast )
@@ -729,10 +846,10 @@ public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBro
     new String: abilityName[64];
     GetEventString( event, "ability", abilityName, sizeof(abilityName) );
     
-    if ( !IS_VALID_INGAME(client) ) { return; }
+    if ( !IS_VALID_INGAME(client) ) { return Plugin_Continue; }
     
     new strAbility: ability;
-    if ( !GetTrieValue(g_hTrieAbility, abilityName, ability) ) { return; }
+    if ( !GetTrieValue(g_hTrieAbility, abilityName, ability) ) { return Plugin_Continue; }
     
     switch ( ability )
     {
@@ -742,6 +859,8 @@ public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBro
             ResetHunter(client);
             g_bHunterPouncing[client] = true;
             CreateTimer( POUNCE_CHECK_TIME, Timer_HunterGroundTouch, client, TIMER_REPEAT );
+            
+            GetClientAbsOrigin( client, g_fPouncePosition[client] );
         }
     
         case ABL_ROCKTHROW:
@@ -753,6 +872,8 @@ public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBro
             if ( g_iRocksBeingThrownCount < 9 ) { g_iRocksBeingThrownCount++; }
         }
     }
+    
+    return Plugin_Continue;
 }
 
 public Action: Timer_HunterGroundTouch( Handle:timer, any:client )
@@ -857,8 +978,6 @@ public OnEntityDestroyed ( entity )
         // tank rock
         CreateTimer( SHOTGUN_BLAST_TIME, Timer_CheckRockSkeet, entity );
         SDKUnhook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
-        
-        
     }
 }
 
@@ -927,10 +1046,12 @@ public Action: Event_WitchKilled ( Handle:event, const String:name[], bool:dontB
     new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
     SDKUnhook(witch, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
     
-    if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
+    if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
     
     // is it a crown / drawcrown?
     CheckWitchCrown( witch, attacker );
+    
+    return Plugin_Continue;
 }
 public Action: Event_WitchHarasserSet ( Handle:event, const String:name[], bool:dontBroadcast )
 {
@@ -1174,11 +1295,11 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
     new smoker = GetClientOfUserId( GetEventInt(event, "smoker") );
     new reason = GetEventInt(event, "release_type");
     
-    if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return; }
+    if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return Plugin_Continue; }
     
     //PrintDebug(0, "smoker %i: tongue broke (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
     
-    if ( attacker != victim ) { return; }
+    if ( attacker != victim ) { return Plugin_Continue; }
     
     if ( reason == CUT_KILL )
     {
@@ -1200,6 +1321,8 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
             HandleTongueCut( attacker, smoker );
         }
     }
+    
+    return Plugin_Continue;
 }
 
 public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBroadcast)
@@ -1215,6 +1338,8 @@ public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBro
         g_iSmokerVictim[attacker] = victim;
         g_iSmokerVictimDamage[attacker] = 0;
     }
+    
+    return Plugin_Continue;
 }
 
 // boomer pop
@@ -1550,6 +1675,51 @@ HandleRockSkeeted( attacker, victim )
     Call_StartForward(g_hForwardRockSkeeted);
     Call_PushCell(attacker);
     Call_PushCell(victim);
+    Call_Finish();
+}
+
+// highpounces
+stock HandleHunterDP( attacker, victim, Float:damage, Float:height )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportHunterDP) )
+    {
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", attacker,  victim, RoundToFloor(damage), RoundFloat(height) );
+        }
+        else if ( IS_VALID_INGAME(victim) )
+        {
+            PrintToChatAll( "A hunter high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", victim, RoundToFloor(damage), RoundFloat(height) );
+        }
+    }
+    
+    Call_StartForward(g_hForwardHunterDP);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_PushFloat(damage);
+    Call_PushFloat(height);
+    Call_Finish();
+}
+stock HandleJockeyDP( attacker, victim, Float:height )
+{
+    // report?
+    if ( GetConVarBool(g_hCvarReportJockeyDP) )
+    {
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 jockey high-pounced \x05%N\x01 (height: \x05%i\x01).", attacker,  victim, RoundFloat(height) );
+        }
+        else if ( IS_VALID_INGAME(victim) )
+        {
+            PrintToChatAll( "A jockey high-pounced \x05%N\x01 (height: \x05%i\x01).", victim, RoundFloat(height) );
+        }
+    }
+    
+    Call_StartForward(g_hForwardJockeyDP);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_PushFloat(height);
     Call_Finish();
 }
 
