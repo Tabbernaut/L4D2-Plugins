@@ -35,9 +35,7 @@ CVars:
 [0/1], whether to report the actions added up in _flags in chat.<br />
 
 <b>sm_skill_report_flags</b><br />
-bitflags.<br/>
-<br/>
-Add the values up for everything you want it to display:<br/>
+bitflags. Add the values up for everything you want it to display in reports:<br/>
 <pre>
 REP_SKEET               1
 REP_HURTSKEET           2
