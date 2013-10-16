@@ -37,12 +37,12 @@ CVars:
 <b>sm_skill_report_flags</b><br />
 bitflags. Add the values up for everything you want it to display in reports:<br/>
 <pre>
-REP_SKEET               1
+REP_SKEET               1              *
 REP_HURTSKEET           2
-REP_LEVEL               4
+REP_LEVEL               4              *
 REP_HURTLEVEL           8
-REP_CROWN               16
-REP_DRAWCROWN           32
+REP_CROWN               16             *
+REP_DRAWCROWN           32             *
 REP_TONGUECUT           64
 REP_SELFCLEAR           128
 REP_SELFCLEARSHOVE      256
@@ -50,9 +50,10 @@ REP_ROCKSKEET           512
 REP_DEADSTOP            1024
 REP_POP                 2048
 REP_SHOVE               4096
-REP_HUNTERDP            8192
-REP_JOCKEYDP            16384
+REP_HUNTERDP            8192           *
+REP_JOCKEYDP            16384          *
 </pre>
+( * = enabled by default )<br />
 
 <b>sm_skill_drawcrown_damage</b><br />
 [500] How much damage a survivor must at least do in the final shot for it to count as a drawcrown.<br />
