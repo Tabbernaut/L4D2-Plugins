@@ -33,12 +33,11 @@
  *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
  *      OnJockeyHighPounce( jockey, victim, Float:height )
  
- 
  *      OnDeathCharge( charger, victim )                    ?
  *      OnBHop( player, isInfected, speed, streak )         ?
  
  *
- *  Where survivor == -2 if it was a team skeet, -1 or 0 if unknown or invalid client.
+ *  Where survivor == -2 if it was a team effort, -1 or 0 if unknown or invalid client.
  *  damage is the amount of damage done (that didn't add up to skeeting damage),
  *  and isOverkill indicates whether the shot would've been a skeet if the hunter
  *  had not been chipped.
@@ -62,6 +61,7 @@
 #define IS_VALID_INFECTED(%1)   (IS_VALID_INGAME(%1) && IS_INFECTED(%1))
 #define IS_SURVIVOR_ALIVE(%1)   (IS_VALID_SURVIVOR(%1) && IsPlayerAlive(%1))
 #define IS_INFECTED_ALIVE(%1)   (IS_VALID_INFECTED(%1) && IsPlayerAlive(%1))
+#define QUOTES(%1)              (%1)
 
 #define SHOTGUN_BLAST_TIME  0.1
 #define POUNCE_CHECK_TIME   0.1
@@ -87,6 +87,23 @@
 #define CUT_KILL        3                       // reason for tongue break (release_type)
 #define CUT_SLASH       4                       // this is used for others shoving a survivor free too, don't trust
 
+#define REP_SKEET               (1 << 0)
+#define REP_HURTSKEET           (1 << 1)
+#define REP_LEVEL               (1 << 2)
+#define REP_HURTLEVEL           (1 << 3)
+#define REP_CROWN               (1 << 4)
+#define REP_DRAWCROWN           (1 << 5)
+#define REP_TONGUECUT           (1 << 6)
+#define REP_SELFCLEAR           (1 << 7)
+#define REP_SELFCLEARSHOVE      (1 << 8)
+#define REP_ROCKSKEET           (1 << 9)
+#define REP_DEADSTOP            (1 << 10)
+#define REP_POP                 (1 << 11)
+#define REP_SHOVE               (1 << 12)
+#define REP_HUNTERDP            (1 << 13)
+#define REP_JOCKEYDP            (1 << 14)
+
+#define REP_DEFAULT             "(REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP)"
 
 // trie values: weapon type
 enum _:strWeaponType
@@ -201,18 +218,8 @@ new                     g_iRocksBeingThrown     [10];                           
 new                     g_iRocksBeingThrownCount                            = 0;                // so we can do a push/pop type check for who is throwing a created rock
 
 // cvars
-new     Handle:         g_hCvarReportSkeets                                 = INVALID_HANDLE;   // cvar whether to report skeets
-new     Handle:         g_hCvarReportNonSkeets                              = INVALID_HANDLE;   // cvar whether to report non-/hurt skeets
-new     Handle:         g_hCvarReportLevels                                 = INVALID_HANDLE;
-new     Handle:         g_hCvarReportLevelsHurt                             = INVALID_HANDLE;
-new     Handle:         g_hCvarReportDeadstops                              = INVALID_HANDLE;
-new     Handle:         g_hCvarReportCrowns                                 = INVALID_HANDLE;
-new     Handle:         g_hCvarReportDrawCrowns                             = INVALID_HANDLE;
-new     Handle:         g_hCvarReportSmokerTongueCuts                       = INVALID_HANDLE;
-new     Handle:         g_hCvarReportSmokerSelfClears                       = INVALID_HANDLE;
-new     Handle:         g_hCvarReportRockSkeeted                            = INVALID_HANDLE;
-new     Handle:         g_hCvarReportHunterDP                               = INVALID_HANDLE;
-new     Handle:         g_hCvarReportJockeyDP                               = INVALID_HANDLE;
+new     Handle:         g_hCvarReport                                       = INVALID_HANDLE;   // cvar whether to report at all
+new     Handle:         g_hCvarReportFlags                                  = INVALID_HANDLE;   // cvar what to report
 
 new     Handle:         g_hCvarAllowMelee                                   = INVALID_HANDLE;   // cvar whether to count melee skeets
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
@@ -255,6 +262,7 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     - ? deathcharge detection
     - ? " assist detection
     - ? spit-on-cap detection
+    - ? insta-clears?
     
     - make cvar for optionally removing fake damage: for charger too
 */
@@ -328,18 +336,9 @@ public OnPluginStart()
     CreateConVar( "sm_skill_detect_version", PLUGIN_VERSION, "Skill detect plugin version.", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_REPLICATED|FCVAR_DONTRECORD );
     
     // cvars: config
-    g_hCvarReportSkeets = CreateConVar(             "sm_skill_report_skeet" ,       "0", "Whether to report skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportNonSkeets = CreateConVar(          "sm_skill_report_hurtskeet",    "0", "Whether to report hurt/failed skeets in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportLevels = CreateConVar(             "sm_skill_report_level" ,       "0", "Whether to report charger levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportLevelsHurt = CreateConVar(         "sm_skill_report_hurtlevel",    "0", "Whether to report chipped levels in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportDeadstops = CreateConVar(          "sm_skill_report_deadstop" ,    "0", "Whether to report deadstops in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportCrowns = CreateConVar(             "sm_skill_report_crown" ,       "0", "Whether to report full crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportDrawCrowns = CreateConVar(         "sm_skill_report_drawcrown",    "0", "Whether to report draw-crowns in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportSmokerTongueCuts = CreateConVar(   "sm_skill_report_tonguecut",    "0", "Whether to report smoker tongue cuts in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportSmokerSelfClears = CreateConVar(   "sm_skill_report_selfclear",    "0", "Whether to report self-clears from smokers in chat. 1 = only kills, 2 = report shoves aswell.", FCVAR_PLUGIN, true, 0.0, true, 2.0 );
-    g_hCvarReportRockSkeeted = CreateConVar(        "sm_skill_report_rockskeet",    "0", "Whether to report rocks getting skeeted in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportHunterDP = CreateConVar(           "sm_skill_report_hunterdp" ,    "0", "Whether to report hunter high-pounces in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportJockeyDP = CreateConVar(           "sm_skill_report_jockeydp" ,    "0", "Whether to report jockey high-pounces in chat.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    
+    g_hCvarReport = CreateConVar(                   "sm_skill_report_enable" ,      "0", "Whether to report in chat (see sm_skill_report_flags).", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportFlags = CreateConVar(              "sm_skill_report_flags" ,       REP_DEFAULT, "What to report skeets in chat (bitflags: 1,2:skeets/hurt; 4,8:level/chip; 16,32:crown/draw; 64,128:cut/selfclear, ... ).", FCVAR_PLUGIN, true, 0.0 );
     
     g_hCvarAllowMelee = CreateConVar(               "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarAllowSniper = CreateConVar(              "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
@@ -358,10 +357,10 @@ public OnPluginStart()
     g_hCvarWitchHealth = FindConVar("z_witch_health");
     
     g_hCvarMaxPounceDistance = FindConVar("z_pounce_damage_range_max");
-    if ( g_hCvarMaxPounceDistance == INVALID_HANDLE ) { g_hCvarMaxPounceDistance = CreateConVar( "z_pounce_damage_range_max",  "1000.0", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
     g_hCvarMinPounceDistance = FindConVar("z_pounce_damage_range_min");
-    if ( g_hCvarMinPounceDistance == INVALID_HANDLE ) { g_hCvarMinPounceDistance = CreateConVar( "z_pounce_damage_range_min",  "300.0", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
     g_hCvarMaxPounceDamage = FindConVar("z_hunter_max_pounce_bonus_damage");
+    if ( g_hCvarMaxPounceDistance == INVALID_HANDLE ) { g_hCvarMaxPounceDistance = CreateConVar( "z_pounce_damage_range_max",  "1000.0", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
+    if ( g_hCvarMinPounceDistance == INVALID_HANDLE ) { g_hCvarMinPounceDistance = CreateConVar( "z_pounce_damage_range_min",  "300.0", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
     if ( g_hCvarMaxPounceDamage == INVALID_HANDLE ) { g_hCvarMaxPounceDamage = CreateConVar( "z_hunter_max_pounce_bonus_damage",  "49", "Not available on this server, added by l4d2_skill_detect.", FCVAR_PLUGIN, true, 0.0, false ); }
     
     
@@ -374,8 +373,8 @@ public OnPluginStart()
     SetTrieValue(g_hTrieWeapons, "pistol_magnum",       WPTYPE_MAGNUM);
     
     g_hTrieEntityCreated = CreateTrie();
-    SetTrieValue(g_hTrieEntityCreated, "tank_rock",         OEC_TANKROCK);
-    SetTrieValue(g_hTrieEntityCreated, "witch",             OEC_WITCH);
+    SetTrieValue(g_hTrieEntityCreated, "tank_rock",     OEC_TANKROCK);
+    SetTrieValue(g_hTrieEntityCreated, "witch",         OEC_WITCH);
     
     g_hTrieAbility = CreateTrie();
     SetTrieValue(g_hTrieAbility, "ability_lunge",       ABL_HUNTERLUNGE);
@@ -414,6 +413,10 @@ public OnClientDisconnect(client)
 
 
 
+/*
+    Tracking
+    --------
+*/
 public Action: Event_RoundStart( Handle:event, const String:name[], bool:dontBroadcast )
 {
     g_iRocksBeingThrownCount = 0;
@@ -1345,32 +1348,25 @@ public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBro
     return Plugin_Continue;
 }
 
+/*
+    Reporting and forwards
+    ----------------------
+*/
 // boomer pop
 stock HandlePop( attacker, victim )
 {
     // report?
-    /*
-    if ( GetConVarBool(g_hCvarReportPops) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_POP )
     {
-        if ( attacker == -2 )
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
-            // team skeet sets to -2
-            if ( IS_VALID_INGAME(victim) ) {
-                PrintToChatAll( "\x05%N\x01 was team-skeeted.", victim );
-            } else {
-                PrintToChatAll( "\x01A hunter was team-skeeted." );
-            }
-        }
-        else if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) )
-        {
-            PrintToChatAll( "\x04%N\x01 %sskeeted \x05%N\x01.", attacker, (bMelee) ? "melee-": ((bSniper) ? "headshot-" : ""), victim );
+            PrintToChatAll( "\x04%N\x01 popped \x05%N\x01.", attacker, victim );
         }
         else if ( IS_VALID_INGAME(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 %sskeeted a hunter.", attacker, (bMelee) ? "melee-": ((bSniper) ? "headshot-" : "") );
+            PrintToChatAll( "\x04%N\x01 popped a boomer.", attacker );
         }
     }
-    */
     
     Call_StartForward(g_hForwardBoomerPop);
     Call_PushCell(attacker);
@@ -1382,7 +1378,7 @@ stock HandlePop( attacker, victim )
 stock HandleLevel( attacker, victim )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportLevels) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_LEVEL )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
@@ -1407,7 +1403,7 @@ stock HandleLevel( attacker, victim )
 stock HandleLevelHurt( attacker, victim, damage )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportLevelsHurt) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_HURTLEVEL )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
@@ -1434,7 +1430,7 @@ stock HandleLevelHurt( attacker, victim, damage )
 stock HandleDeadstop( attacker, victim )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportDeadstops) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_DEADSTOP )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
@@ -1444,9 +1440,6 @@ stock HandleDeadstop( attacker, victim )
         {
             PrintToChatAll( "\x04%N\x01 deadstopped a hunter.", attacker );
         }
-        /*else {
-            PrintToChatAll( "A hunter was deadstopped." );
-        }*/
     }
     
     Call_StartForward(g_hForwardHunterDeadstop);
@@ -1456,6 +1449,19 @@ stock HandleDeadstop( attacker, victim )
 }
 stock HandleShove( attacker, victim )
 {
+    // report?
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_SHOVE )
+    {
+        if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
+        {
+            PrintToChatAll( "\x04%N\x01 shoved \x05%N\x01.", attacker, victim );
+        }
+        else if ( IS_VALID_INGAME(attacker) )
+        {
+            PrintToChatAll( "\x04%N\x01 shoved an SI.", attacker );
+        }
+    }
+    
     Call_StartForward(g_hForwardSIShove);
     Call_PushCell(attacker);
     Call_PushCell(victim);
@@ -1466,7 +1472,7 @@ stock HandleShove( attacker, victim )
 stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportSkeets) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_SKEET )
     {
         if ( attacker == -2 )
         {
@@ -1516,7 +1522,7 @@ stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false )
 stock HandleNonSkeet( attacker, victim, damage, bool:bOverKill = false, bool:bMelee = false, bool:bSniper = false )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportNonSkeets) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_HURTSKEET )
     {
         if ( IS_VALID_INGAME(victim) )
         {
@@ -1563,7 +1569,7 @@ stock HandleNonSkeet( attacker, victim, damage, bool:bOverKill = false, bool:bMe
 HandleCrown( attacker, damage )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportCrowns) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_CROWN )
     {
         if ( IS_VALID_INGAME(attacker) )
         {
@@ -1584,7 +1590,7 @@ HandleCrown( attacker, damage )
 HandleDrawCrown( attacker, damage, chipdamage )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportDrawCrowns) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_DRAWCROWN )
     {
         if ( IS_VALID_INGAME(attacker) )
         {
@@ -1607,7 +1613,7 @@ HandleDrawCrown( attacker, damage, chipdamage )
 HandleTongueCut( attacker, victim )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportSmokerTongueCuts) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_TONGUECUT )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
@@ -1616,9 +1622,6 @@ HandleTongueCut( attacker, victim )
         else if ( IS_VALID_INGAME(attacker) )
         {
             PrintToChatAll( "\x04%N\x01 cut smoker tongue.", attacker );
-        }
-        else {
-            PrintToChatAll( "A smoker tongue was cut." );
         }
     }
     
@@ -1632,9 +1635,9 @@ HandleTongueCut( attacker, victim )
 HandleSmokerSelfClear( attacker, victim, bool:withShove = false )
 {
     // report?
-    new iReport = GetConVarInt(g_hCvarReportSmokerSelfClears);
-    if ( iReport && (!withShove || iReport > 1) )
-    {
+    if (    GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_SELFCLEAR &&
+            (!withShove || GetConVarInt(g_hCvarReport) & REP_SELFCLEARSHOVE )
+    ) {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
             PrintToChatAll( "\x04%N\x01 cleared himself from \x05%N\x01's tongue%s.", attacker, victim, (withShove) ? " by shoving" : "" );
@@ -1663,7 +1666,7 @@ HandleRockEaten( attacker, victim )
 HandleRockSkeeted( attacker, victim )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportRockSkeeted) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_ROCKSKEET )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
@@ -1685,7 +1688,7 @@ HandleRockSkeeted( attacker, victim )
 stock HandleHunterDP( attacker, victim, Float:damage, Float:height )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportHunterDP) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_HUNTERDP )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
         {
@@ -1707,7 +1710,7 @@ stock HandleHunterDP( attacker, victim, Float:damage, Float:height )
 stock HandleJockeyDP( attacker, victim, Float:height )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReportJockeyDP) )
+    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_JOCKEYDP )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
         {
