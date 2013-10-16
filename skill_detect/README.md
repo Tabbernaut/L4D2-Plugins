@@ -1,8 +1,6 @@
 Skill Detect
 ============
 
-[ WORK IN PROGRESS ]
-
 The name is pretty tongue in cheek. What this plugin does is track stuff that
 survivors (and infected) can do and (if cvars are set) report these actions
 and send global forwards so other plugins can make use of the tracking.
