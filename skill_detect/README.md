@@ -19,9 +19,8 @@ Forwards this:
  *      OnWitchCrown( survivor, damage )
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
  *      OnTongueCut( survivor, victim )
- *      OnSmokerSelfClear( survivor, smoker )
- *      OnHighPounce( hunter, victim, damage )
- *      OnDeathCharge( charger, victim )
+ *      OnSmokerSelfClear( survivor, smoker, withShove )
+ *      OnDeathCharge( charger, victim ) [ NOT DONE YET ]
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
  *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
