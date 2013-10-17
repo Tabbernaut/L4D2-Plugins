@@ -186,12 +186,12 @@ enum _:strRoundData
             rndWitchKilled,
             rndTankKilled,
             rndIncaps,
-            rndDeaths,
+            rndDeaths,              // 10
             rndFFDamageTotal,
             rndStartTime,           // GetTime() value when starting    
             rndEndTime              // GetTime() value when done
 };
-#define MAXRNDSTATS                 14
+#define MAXRNDSTATS                 13
 
 // information per player
 enum _:strPlayerData
@@ -266,10 +266,15 @@ enum _:strPlayerData
             plyFFGivenTotal,
             plyFFTakenTotal,
             plyHunterDPs,
-            plyJockeyDPs            // 70
-            
+            plyJockeyDPs,           // 70
+            plyTimeStartPresent,    //      time present (on the team)
+            plyTimeStopPresent,     //      if stoptime is 0, then it's NOW, ongoing
+            plyTimeStartAlive,
+            plyTimeStopAlive,
+            plyTimeStartUpright,    //      time not capped
+            plyTimeStopUpright
 };
-#define MAXPLYSTATS                 71
+#define MAXPLYSTATS                 76
 
 // trie values: weapon type (per accuracy-class)
 enum strWeaponType
@@ -358,6 +363,12 @@ public Plugin: myinfo =
         - automatic reports
             - add client-side override
         
+        - survivor
+            - count time active (live round, per team) [show in mvp?]
+            - time present
+            - time upright
+            - time alive
+
         - skill
             - clears / instaclears / average clear time
 
@@ -368,7 +379,7 @@ public Plugin: myinfo =
 
         - hide 0 and 0.0% values from tables
 
-        - count time active (live round, per team) [show in mvp?]
+        
 
         - write CSV files per round -- db-ready
         
@@ -376,16 +387,27 @@ public Plugin: myinfo =
             - if there were no stats, or the round was never started,
                 survivors never left, or time was too short, reset it
             - listen to !forcematch / !match command and map restart after?
+        - fix: some way of 'listening' to CMT?
         
-        - better 'team' checks, include players who were on the team
-            - even if they switched after or went spec
-            - rule: include everyone that was in the survivor team while the round was live
-                    how to keep track?
-            - rule: don't include anyone who was in the team less than X time, or
-                    not at end and with 0 stats
+        - better 'team' checks (in list-building)
+            - rule: don't include anyone who was in the team less than X time with 0 stats,
+                or NOT at end and with 0 stats
         
+        - fix !mvp & sm_mvp for clients
+        
+        - time fixes:
+            - after round ends: add up times to strPlayerData[]
+            
+            - coop:
+                player_bot_replace
+                    short 	player 	user ID of the player
+                    short 	bot 	user ID of the bot
 
-        - timing for automatic print should be sooner: use door close (in versus)  ?
+                bot_player_replace
+                    short 	bot 	user ID of the bot
+                    short 	player 	user ID of the player
+                player_afk
+                    short 	player 	user ID of the player 
         
     details:
     --------
@@ -448,7 +470,12 @@ public OnPluginStart()
     HookEvent("player_hurt",                Event_PlayerHurt,               EventHookMode_Post);
     HookEvent("player_death",               Event_PlayerDeath,              EventHookMode_Post);
     HookEvent("player_incapacitated",       Event_PlayerIncapped,           EventHookMode_Post);
+    HookEvent("player_ledge_grab",          Event_PlayerLedged,             EventHookMode_Post);
+    HookEvent("player_ledge_release",       Event_PlayerLedgeRelease,       EventHookMode_Post);
+    
+    HookEvent("revive_success",             Event_PlayerRevived,            EventHookMode_Post);
     HookEvent("player_falldamage",          Event_PlayerFallDamage,         EventHookMode_Post);
+    
     
     HookEvent("weapon_fire",                Event_WeaponFire,               EventHookMode_Post);
     HookEvent("infected_hurt",              Event_InfectedHurt,             EventHookMode_Post);
@@ -527,6 +554,24 @@ public OnConfigsExecuted()
 public OnClientPostAdminCheck( client )
 {
     GetPlayerIndexForClient( client );
+}
+
+public OnClientDisconnected( client )
+{
+    if ( !g_bPlayersLeftStart ) { return; }
+    
+    new index = GetPlayerIndexForClient( client );
+    if ( index == -1 ) { return; }
+    
+    // only note time for survivor team players
+    if ( g_iPlayerRoundTeam[g_iCurTeam][index] != g_iCurTeam ) { return; }
+    
+    // store time they left
+    new time = GetTime();
+    g_strPlayerData[index][plyTimeStopPresent] = time;
+    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] = time;
+    if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] = time; }
+    if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = time; }
 }
 
 public OnMapStart()
@@ -635,6 +680,7 @@ stock RoundReallyStarting()
     {
         g_bGameStarted = true;
         g_strGameData[gmStartTime] = GetTime();
+        SetStartSurvivorTime(true);
     }
     
     if ( g_strRoundData[g_iRound][g_iCurTeam][rndRestarts] == 0 )
@@ -644,6 +690,7 @@ stock RoundReallyStarting()
     
     // make sure the teams are still what we think they are
     UpdatePlayerCurrentTeam();
+    SetStartSurvivorTime();
 }
 
 /*
@@ -1058,6 +1105,11 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         
         g_strRoundPlayerData[index][g_iCurTeam][plyDied]++;
         g_strPlayerData[index][plyDied]++;
+        
+        // store time they died
+        new time = GetTime();
+        g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] = time;
+        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = time; }
     }
     else if ( IS_VALID_INFECTED(client) )
     {
@@ -1153,14 +1205,87 @@ public Action: Event_PlayerIncapped (Handle:event, const String:name[], bool:don
         
         g_strRoundPlayerData[index][g_iCurTeam][plyIncaps]++;
         g_strPlayerData[index][plyIncaps]++;
+        
+        // store time they incapped (if they weren't already)
+        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = GetTime(); }
     }
 }
 
+public Action: Event_PlayerRevived (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    if ( !g_bPlayersLeftStart ) { return; }
+    
+    new client = GetClientOfUserId( GetEventInt(event, "subject") );
+    
+    if ( IS_VALID_SURVIVOR(client) )
+    {
+        new index = GetPlayerIndexForClient( client );
+        if ( index == -1 ) { return; }
+        
+        if ( !IsPlayerIncapacitatedAtAll(client) && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] ) {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += GetTime() - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = 0;
+        }
+    }
+}
+
+// ledgegrabs
+public Action: Event_PlayerLedged (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    if ( !g_bPlayersLeftStart ) { return; }
+    
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    
+    if ( IS_VALID_SURVIVOR(client) )
+    {
+        new index = GetPlayerIndexForClient( client );
+        if ( index == -1 ) { return; }
+        
+        // store time they incapped (if they weren't already)
+        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = GetTime(); }
+    }
+}
+
+public Action: Event_PlayerLedgeRelease (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    if ( !g_bPlayersLeftStart ) { return; }
+    
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    
+    if ( IS_VALID_SURVIVOR(client) )
+    {
+        new index = GetPlayerIndexForClient( client );
+        if ( index == -1 ) { return; }
+        
+        if ( !IsPlayerIncapacitatedAtAll(client) && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] ) {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += GetTime() - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = 0;
+        }
+    }
+}
 
 // items used
 public Action: Event_DefibUsed (Handle:event, const String:name[], bool:dontBroadcast)
 {
+    new client = GetClientOfUserId( GetEventInt(event, "subject") );
+    
     g_strRoundData[g_iRound][g_iCurTeam][rndDefibsUsed]++;
+    
+    if ( IS_VALID_SURVIVOR(client) )
+    {
+        new index = GetPlayerIndexForClient( client );
+        if ( index == -1 ) { return; }
+        
+        new time = GetTime();
+        if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] )  {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive];
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] = 0;
+        }
+        if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] )  {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = 0;
+        }
+    }
 }
 public Action: Event_HealSuccess (Handle:event, const String:name[], bool:dontBroadcast)
 {
@@ -1601,7 +1726,7 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
         {
             g_sMapName[i] = "";
             for ( j = 0; j < 2; j++ ) {
-                for ( k = 0; k < MAXRNDSTATS; k++ ) {
+                for ( k = 0; k <= MAXRNDSTATS; k++ ) {
                     g_strRoundData[i][j][k] = 0;
                 }
             }
@@ -1609,7 +1734,7 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
         
         // clear players
         for ( i = 0; i < MAXTRACKED; i++ ) {
-            for ( j = 0; j < MAXPLYSTATS; j++ ) {
+            for ( j = 0; j <= MAXPLYSTATS; j++ ) {
                 g_strPlayerData[i][j] = 0;
             }
         }
@@ -1622,7 +1747,7 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
     }
     else
     {
-        for ( k = 0; k < MAXRNDSTATS; k++ ) {
+        for ( k = 0; k <= MAXRNDSTATS; k++ ) {
             g_strRoundData[g_iRound][iTeam][k] = 0;
         }
     }
@@ -1634,7 +1759,7 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
     // round data for players
     for ( i = 0; i < MAXTRACKED; i++ ) {
         for ( j = 0; j < 2; j++ ) {
-            for ( k = 0; k < MAXPLYSTATS; k++ ) {
+            for ( k = 0; k <= MAXPLYSTATS; k++ ) {
                 g_strRoundPlayerData[i][j][k] = 0;
             }
         }
@@ -1644,12 +1769,13 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
 stock UpdatePlayerCurrentTeam()
 {
     new i, client, index;
-    new round = (g_bSecondHalf) ? 1 : 0;
+    new time = GetTime();
+    
+    // store per round by survivor team: team 0 = survivor round for team A
     
     // reset all
-    for ( i = 0; i < MAXTRACKED; i++ )
-    {
-        g_iPlayerRoundTeam[round][i] = -1;
+    for ( i = 0; i < MAXTRACKED; i++ ) {
+        g_iPlayerRoundTeam[g_iCurTeam][i] = -1;
     }
     
     // find all survivors
@@ -1662,15 +1788,68 @@ stock UpdatePlayerCurrentTeam()
         index = GetPlayerIndexForClient( client );
         if ( index == -1 ) { continue; }
         
-        if ( IS_VALID_SURVIVOR(client) ) {
-            g_iPlayerRoundTeam[round][index] = g_iCurTeam;
+        if ( IS_VALID_SURVIVOR(client) )
+        {
+            g_iPlayerRoundTeam[g_iCurTeam][index] = g_iCurTeam;
+            
+            if ( !g_bPlayersLeftStart ) { continue; }
+            
+            // if player wasn't present, update presence (shift start forward)
+            // if player wasn't alive and is now, update
+            // if player wasn't upright and is now, update
+            
+            /*
+                playerdata is update after round(half) ends
+            if ( g_strPlayerData[index][plyTimeStopPresent] && g_strPlayerData[index][plyTimeStartPresent] )  {
+                g_strPlayerData[index][plyTimeStartPresent] += time - g_strPlayerData[index][plyTimeStopPresent];
+                g_strPlayerData[index][plyTimeStopPresent] = 0;
+            } */
+            if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] )  {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent];
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] = 0;
+            }
+            if ( IsPlayerAlive(client) && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] )  {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive];
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] = 0;
+            }
+            if ( !IsPlayerIncapacitatedAtAll(client) && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] )  {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = 0;
+            }
         }
-        else if ( IS_VALID_INFECTED(client) ) {
-            g_iPlayerRoundTeam[round][index] = (g_iCurTeam) ? 0 : 1;
+        else if ( IS_VALID_INFECTED(client) )
+        {
+            g_iPlayerRoundTeam[g_iCurTeam][index] = (g_iCurTeam) ? 0 : 1;
         }
     }
 }
 
+stock SetStartSurvivorTime( bool:bGame = false )
+{
+    new client, index;
+    new time = GetTime();
+    
+    for ( client = 1; client <= MaxClients; client++ )
+    {
+        if ( !IS_VALID_INGAME(client) ) { continue; }
+        
+        index = GetPlayerIndexForClient( client );
+        if ( index == -1 ) { continue; }
+        
+        if ( IS_VALID_SURVIVOR(client) )
+        {
+            if ( bGame ) {
+                g_strPlayerData[index][plyTimeStartPresent] = time;
+                g_strPlayerData[index][plyTimeStartAlive] = time;
+                g_strPlayerData[index][plyTimeStartUpright] = time;
+            } else {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] = time;
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time;
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time;
+            }
+        }
+    }
+}
 /*
     Display
     -------
@@ -1996,7 +2175,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             if ( found == -1 ) { continue; }
             
             // only count survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
             if ( listNumber && ( !IS_VALID_CLIENT(client) || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
             {
@@ -2052,7 +2231,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             if ( found == -1 ) { continue; }
             
             // only count survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
             if ( listNumber && ( !IS_VALID_CLIENT(client) || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
             {
@@ -2102,7 +2281,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             if ( found == -1 ) { continue; }
             
             // only count survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
 
             if ( bRound && !g_strRoundPlayerData[index][team][plyFFGiven] || !bRound && !g_strPlayerData[index][plyFFGiven] ) { continue; }
             
@@ -2681,7 +2860,7 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
         if ( i < FIRST_NON_BOT ) { continue; }
         
         // only show survivors for the round in question
-        if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+        if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
         
         // skeets:
         if (    bRound && (g_strRoundPlayerData[i][team][plySkeets] || g_strRoundPlayerData[i][team][plySkeetsHurt] || g_strRoundPlayerData[i][team][plySkeetsMelee]) ||
@@ -2816,7 +2995,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             if ( i < FIRST_NON_BOT ) { continue; }
             
             // only show survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
             // shotgun:
             if ( bRound && g_strRoundPlayerData[i][team][plyHitsShotgun] || !bRound && g_strPlayerData[i][plyHitsShotgun] ) {
@@ -2922,7 +3101,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             if ( i < FIRST_NON_BOT ) { continue; }
             
             // only show survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
             // shotgun:
             if ( bRound && g_strRoundPlayerData[i][team][plyShotsShotgun] || !bRound && g_strPlayerData[i][plyShotsShotgun] ) {
@@ -3074,7 +3253,7 @@ stock BuildConsoleBufferMVP ( bool:tank = false, bool:bRound = true, bool:bTeam 
             //if ( i < FIRST_NON_BOT ) { continue; }
             
             // only show survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
             // si damage
             Format( strTmp[0], s_len, "%5d %8d",
@@ -3146,7 +3325,7 @@ stock BuildConsoleBufferMVP ( bool:tank = false, bool:bRound = true, bool:bTeam 
             if ( i < FIRST_NON_BOT ) { continue; }
             
             // only show survivors for the round in question
-            if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+            if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
             // si damage
             if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0);
@@ -3256,7 +3435,7 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
         if ( i < FIRST_NON_BOT ) { continue; }
         
         // only show survivors for the round in question
-        if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+        if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
         
         // skip any row where total of given and taken is 0
         if ( bRound && !g_strRoundPlayerData[i][team][plyFFGivenTotal] && !g_strRoundPlayerData[i][team][plyFFTakenTotal] ||
@@ -3354,7 +3533,7 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
         //if ( i < FIRST_NON_BOT ) { continue; }
         
         // only show survivors for the round in question
-        if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
+        if ( bRound && g_iPlayerRoundTeam[team][i] != team ) { continue; }
         
         // skip any row where total of given and taken is 0
         if ( bRound && !g_strRoundPlayerData[j][team][plyFFGivenTotal] && !g_strRoundPlayerData[j][team][plyFFTakenTotal] ||
@@ -3754,6 +3933,14 @@ stock bool: IsTankInGame()
 stock bool: IsPlayerIncapacitated ( client )
 {
     return bool: GetEntProp(client, Prop_Send, "m_isIncapacitated", 1);
+}
+stock bool: IsHangingFromLedge ( client )
+{
+    return bool:(GetEntProp(client, Prop_Send, "m_isHangingFromLedge") || GetEntProp(client, Prop_Send, "m_isFallingFromLedge"));
+}
+stock bool: IsPlayerIncapacitatedAtAll ( client )
+{
+    return bool: ( IsPlayerIncapacitated(client) || IsHangingFromLedge(client) );
 }
 
 /*
