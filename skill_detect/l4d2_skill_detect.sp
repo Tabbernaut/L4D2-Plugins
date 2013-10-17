@@ -27,7 +27,7 @@
  *      OnWitchCrown( survivor, damage )
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
  *      OnTongueCut( survivor, smoker )
- *      OnSmokerSelfClear( survivor, smoker )
+ *      OnSmokerSelfClear( survivor, smoker, withShove )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
  *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
@@ -103,7 +103,7 @@
 #define REP_HUNTERDP            (1 << 13)
 #define REP_JOCKEYDP            (1 << 14)
 
-#define REP_DEFAULT             "(REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP)"
+#define REP_DEFAULT             "24629"  //(REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP) -- 1 4 16 32 8192 16384
 
 // trie values: weapon type
 enum _:strWeaponType
@@ -295,7 +295,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardCrown =           CreateGlobalForward("OnWitchCrown", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardDrawCrown =       CreateGlobalForward("OnWitchDrawCrown", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardTongueCut =       CreateGlobalForward("OnTongueCut", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardRockSkeeted =     CreateGlobalForward("OnTankRockSkeeted", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float );
@@ -337,16 +337,16 @@ public OnPluginStart()
     
     // cvars: config
     
-    g_hCvarReport = CreateConVar(                   "sm_skill_report_enable" ,      "0", "Whether to report in chat (see sm_skill_report_flags).", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarReportFlags = CreateConVar(              "sm_skill_report_flags" ,       REP_DEFAULT, "What to report skeets in chat (bitflags: 1,2:skeets/hurt; 4,8:level/chip; 16,32:crown/draw; 64,128:cut/selfclear, ... ).", FCVAR_PLUGIN, true, 0.0 );
+    g_hCvarReport = CreateConVar(           "sm_skill_report_enable" ,      "0", "Whether to report in chat (see sm_skill_report_flags).", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarReportFlags = CreateConVar(      "sm_skill_report_flags" ,       REP_DEFAULT, "What to report skeets in chat (bitflags: 1,2:skeets/hurt; 4,8:level/chip; 16,32:crown/draw; 64,128:cut/selfclear, ... ).", FCVAR_PLUGIN, true, 0.0 );
     
-    g_hCvarAllowMelee = CreateConVar(               "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarAllowSniper = CreateConVar(              "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
-    g_hCvarDrawCrownThresh = CreateConVar(          "sm_skill_drawcrown_damage",  "500", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
-    g_hCvarSelfClearThresh = CreateConVar(          "sm_skill_selfclear_damage",  "200", "How much damage a survivor must at least do to a smoker for him to count as self-clearing.", FCVAR_PLUGIN, true, 0.0, false );
-    g_hCvarHunterDPThresh = CreateConVar(           "sm_skill_hunterdp_damage",    "15", "How much damage a hunter must do for his pounce to count as a DP.", FCVAR_PLUGIN, true, 0.0, false );
-    g_hCvarJockeyDPThresh = CreateConVar(           "sm_skill_jockeydp_height",   "300", "How much height distance a jockey must make for his 'DP' to count as a reportable highpounce.", FCVAR_PLUGIN, true, 0.0, false );
-    g_hCvarHideFakeDamage = CreateConVar(           "sm_skill_hidefakedamage",      "0", "If set, any damage done that exceeds the health of a victim is hidden in reports.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowMelee = CreateConVar(       "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowSniper = CreateConVar(      "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarDrawCrownThresh = CreateConVar(  "sm_skill_drawcrown_damage",  "500", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarSelfClearThresh = CreateConVar(  "sm_skill_selfclear_damage",  "200", "How much damage a survivor must at least do to a smoker for him to count as self-clearing.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarHunterDPThresh = CreateConVar(   "sm_skill_hunterdp_damage",    "15", "How much damage a hunter must do for his pounce to count as a DP.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarJockeyDPThresh = CreateConVar(   "sm_skill_jockeydp_height",   "300", "How much height distance a jockey must make for his 'DP' to count as a reportable highpounce.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarHideFakeDamage = CreateConVar(   "sm_skill_hidefakedamage",      "0", "If set, any damage done that exceeds the health of a victim is hidden in reports.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     
     // cvars: built in
     g_hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
@@ -1652,6 +1652,7 @@ HandleSmokerSelfClear( attacker, victim, bool:withShove = false )
     Call_StartForward(g_hForwardSmokerSelfClear);
     Call_PushCell(attacker);
     Call_PushCell(victim);
+    Call_PushCell(withShove);
     Call_Finish();
 }
 
