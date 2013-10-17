@@ -387,12 +387,8 @@ public Plugin: myinfo =
 
         - timing for automatic print should be sooner: use door close (in versus)  ?
         
-        - cut prints in chunks, paste the buffer per X lines
-        
     details:
     --------
-        - add lines in big tables so they're easier to read (every 4 rows)
-        
         - hall of fame print, with only
             - most skeets (if any)
             - most levels (if any)
@@ -2279,8 +2275,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bRound = true, bool:bTea
     if ( bTank )
     {
         if ( bTankUp ) {
-            Format(bufBasicHeader, CONBUFSIZE, "\n");
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- Tank Fight (not showing table, tank is still up...)    |\n", bufBasicHeader);
+            Format(bufBasicHeader, CONBUFSIZE, "\n| Survivor MVP Stats -- Tank Fight (not showing table, tank is still up...)    |\n", bufBasicHeader);
             Format(bufBasicHeader, CONBUFSIZE, "%s|------------------------------------------------------------------------------|", bufBasicHeader);
             g_iConsoleBufChunks = -1;
         }
@@ -2302,13 +2297,15 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bRound = true, bool:bTea
                     g_sConsoleBuf[g_iConsoleBufChunks]
                 );
             }
+            if ( g_iConsoleBufChunks == -1 ) {
+                Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                         |\n", bufBasicHeader);
+                Format(bufBasicHeader, CONBUFSIZE, "%s|------------------------------------------------------------------------------|", bufBasicHeader);
+            }
         }
     }
     else
     {
-        Format(bufBasicHeader, CONBUFSIZE, "\n");
-        
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Survivor MVP Stats -- %10s -- %11s                                                 |\n",
+        Format(bufBasicHeader, CONBUFSIZE, "\n| Survivor MVP Stats -- %10s -- %11s                                                 |\n",
                 bufBasicHeader,
                 ( bRound ) ? "This Round" : "ALL Rounds",
                 ( bTeam ) ? "This Team  " : "ALL Players"
@@ -2323,6 +2320,10 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bRound = true, bool:bTea
                                            "%s|-------------------------------------------------------------------------------------------------|\n",
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
+        }
+        if ( g_iConsoleBufChunks == -1 ) {
+            Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                                            |\n", bufBasicHeader);
+            Format(bufBasicHeader, CONBUFSIZE, "%s|-------------------------------------------------------------------------------------------------|", bufBasicHeader);
         }
     }
     
@@ -2372,9 +2373,7 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
     
     if ( bDetails )
     {
-        Format(bufBasicHeader, CONBUFSIZE, "\n");
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy -- Details -- %10s -- %11s                 hits on SI;  headshots on SI;  hits on tank |\n",
-                bufBasicHeader,
+        Format(bufBasicHeader, CONBUFSIZE, "\n| Accuracy -- Details -- %10s -- %11s                 hits on SI;  headshots on SI;  hits on tank |\n",
                 ( bRound ) ? "This Round" : "ALL Rounds",
                 ( bTeam ) ? "This Team  " : "ALL Players"
             );
@@ -2389,12 +2388,14 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
         }
+        if ( g_iConsoleBufChunks == -1 ) {
+            Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                                                         |\n", bufBasicHeader);
+            Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------------------------------------------------------------------------------------|", bufBasicHeader);
+        }
     }
     else
     {
-        Format(bufBasicHeader, CONBUFSIZE, "\n");
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Accuracy Stats -- %10s -- %11s            hits (pellets/bullets);  acc %;  headshots % (of hits)  |\n",
-                bufBasicHeader,
+        Format(bufBasicHeader, CONBUFSIZE, "\n| Accuracy Stats -- %10s -- %11s            hits (pellets/bullets);  acc %;  headshots % (of hits)  |\n",
                 ( bRound ) ? "This Round" : "ALL Rounds",
                 ( bTeam ) ? "This Team  " : "ALL Players"
             );
@@ -2409,6 +2410,11 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
         }
+        if ( g_iConsoleBufChunks == -1 ) {
+            Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                                                         |\n", bufBasicHeader);
+            Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------------------------------------------------------------------------------------|", bufBasicHeader);
+        }
+
     }
     
     if ( client == -1 ) {
@@ -2455,9 +2461,7 @@ stock DisplayStatsSpecial( client, bool:bRound = false, bool:bTeam = true, bool:
     
     decl String:bufBasicHeader[CONBUFSIZE];
     
-    Format(bufBasicHeader, CONBUFSIZE, "\n");
-    Format(bufBasicHeader, CONBUFSIZE, "%s| Special -- %10s -- %11s       skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw) |\n",\
-            bufBasicHeader,
+    Format(bufBasicHeader, CONBUFSIZE, "\n| Special -- %10s -- %11s       skts(full/hurt/melee); lvl(full/hurt); crwn(full/draw) |\n",
             ( bRound ) ? "This Round" : "ALL Rounds",
             ( bTeam ) ? "This Team  " : "ALL Players"
         );
@@ -2475,6 +2479,10 @@ stock DisplayStatsSpecial( client, bool:bRound = false, bool:bTeam = true, bool:
                                        "%s|---------------------------------------------------------------------------------------------------|\n",
             g_sConsoleBuf[g_iConsoleBufChunks]
         );
+    }
+    if ( g_iConsoleBufChunks == -1 ) {
+        Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                                              |\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s|---------------------------------------------------------------------------------------------------|", bufBasicHeader);
     }
     
     if ( client == -1 ) {
@@ -2539,6 +2547,7 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
     if ( bNoStatsToShow )
     {
         Format(bufBasicHeader, CONBUFSIZE, "\nFF: No Friendly Fire done, not showing table.");
+        g_iConsoleBufChunks = -1;
     }
     else
     {
@@ -2546,9 +2555,7 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
         BuildConsoleBufferFriendlyFireGiven( bRound, bTeam, iTeam );
         
         // friendly fire -- given
-        Format(bufBasicHeader, CONBUFSIZE, "\n");
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Friendly Fire -- Given / Offenders -- %10s -- %11s                                      |\n",
-                bufBasicHeader,
+        Format(bufBasicHeader, CONBUFSIZE, "\n| Friendly Fire -- Given / Offenders -- %10s -- %11s                                      |\n",
                 ( bRound ) ? "This Round" : "ALL Rounds",
                 ( bTeam ) ? "This Team  " : "ALL Players"
             );
@@ -2562,6 +2569,10 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
                                            "%s|--------------------------------||---------------------------------------------------------||---------|",
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
+        }
+        if ( g_iConsoleBufChunks == -1 ) {
+            Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                                                 |\n", bufBasicHeader);
+            Format(bufBasicHeader, CONBUFSIZE, "%s|------------------------------------------------------------------------------------------------------|", bufBasicHeader);
         }
     }
 
@@ -2610,6 +2621,10 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
                                        "%s|--------------------------------||---------------------------------------------------------||---------|\n",
             g_sConsoleBuf[g_iConsoleBufChunks]
         );
+    }
+    if ( g_iConsoleBufChunks == -1 ) {
+        Format(bufBasicHeader, CONBUFSIZE, "%s\n| (nothing to display)                                                                                 |\n", bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s|------------------------------------------------------------------------------------------------------|", bufBasicHeader);
     }
     
     
@@ -3056,7 +3071,7 @@ stock BuildConsoleBufferMVP ( bool:tank = false, bool:bRound = true, bool:bTeam 
             i = g_iPlayerIndexSorted[SORT_SI][x];
             
             // also skip bots for this list?
-            if ( i < FIRST_NON_BOT ) { continue; }
+            //if ( i < FIRST_NON_BOT ) { continue; }
             
             // only show survivors for the round in question
             if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
@@ -3336,7 +3351,7 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
         j = g_iPlayerIndexSorted[SORT_FF][x];
         
         // also skip bots for this list?
-        if ( i < FIRST_NON_BOT ) { continue; }
+        //if ( i < FIRST_NON_BOT ) { continue; }
         
         // only show survivors for the round in question
         if ( bRound && g_iPlayerRoundTeam[thisRound][i] != team ) { continue; }
