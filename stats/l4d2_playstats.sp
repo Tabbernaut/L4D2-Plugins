@@ -416,7 +416,6 @@ public Plugin: myinfo =
         
     details:
     --------
-        - bots should always go at bottom (on equal scores)
         - cvar for % detail (1 decimal or no decimal option)
         - hide 0 and 0.0% values from tables
         
@@ -546,6 +545,7 @@ public OnPluginStart()
     
     RegConsoleCmd( "say",           Cmd_Say );
     RegConsoleCmd( "say_team",      Cmd_Say );
+    
     
     // tries
     InitTries();
@@ -1962,7 +1962,7 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
     decl String: strTmp[24];
     decl String: strTmpA[40];
     //decl String: strTmpB[32];
-    new iCount, i, j;
+    new i, j;
     
     g_iConsoleBufChunks = 0;
     
@@ -1977,31 +1977,12 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
         // game info
         if ( g_bGameStarted )
         {
-            new tmpInt = GetTime() - g_strGameData[gmStartTime];
-            strTmp = "";
-            
-            if ( tmpInt > 3600 ) {
-                new tmpHr = RoundToFloor( float(tmpInt) / 3600.0 );
-                Format( strTmp, sizeof(strTmp), "%ih", tmpHr );
-                tmpInt -= (tmpHr * 3600);
-            }
-            if ( tmpInt > 60 ) {
-                if ( strlen( strTmp ) ) {  Format( strTmp, sizeof(strTmp), "%s ", strTmp ); }
-                new tmpMin = RoundToFloor( float(tmpInt) / 60.0 );
-                Format( strTmp, sizeof(strTmp), "%im", tmpMin );
-                tmpInt -= (tmpMin * 60);
-            }
-            if ( tmpInt ) {
-                if ( strlen( strTmp ) ) { Format( strTmp, sizeof(strTmp), "%s ", strTmp ); }
-                Format( strTmp, sizeof(strTmp), "%s%is", strTmp, tmpInt );
-            }
+            FormatTimeAsDuration( strTmp, sizeof(strTmp), GetTime() - g_strGameData[gmStartTime] );
+            LeftPadString( strTmp, sizeof(strTmp), 14 );
         }
         else {
-            Format( strTmp, sizeof(strTmp), "(not started)" );
+            Format( strTmp, sizeof(strTmp), " (not started)" );
         }
-        iCount = 0;
-        while (strlen(strTmp) < 14 && iCount < 1000) { iCount++; Format(strTmp, sizeof(strTmp), " %s", strTmp); }
-        
         
         // kill stats
         new tmpSpecial, tmpCommon, tmpWitches, tmpTanks, tmpIncap, tmpDeath;
@@ -2059,33 +2040,16 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
                 } else {
                     tmpInt = GetTime() - g_strRoundData[i][team][rndStartTime];
                 }
-                strTmp = "";
                 
-                if ( tmpInt > 3600 ) {
-                    new tmpHr = RoundToFloor( float(tmpInt) / 3600.0 );
-                    Format( strTmp, sizeof(strTmp), "%ih", tmpHr );
-                    tmpInt -= (tmpHr * 3600);
-                }
-                if ( tmpInt > 60 ) {
-                    if ( strlen( strTmp ) ) {  Format( strTmp, sizeof(strTmp), "%s ", strTmp ); }
-                    new tmpMin = RoundToFloor( float(tmpInt) / 60.0 );
-                    Format( strTmp, sizeof(strTmp), "%im", tmpMin );
-                    tmpInt -= (tmpMin * 60);
-                }
-                if ( tmpInt ) {
-                    if ( strlen( strTmp ) ) { Format( strTmp, sizeof(strTmp), "%s ", strTmp ); }
-                    Format( strTmp, sizeof(strTmp), "%s%is", strTmp, tmpInt );
-                }
+                FormatTimeAsDuration( strTmp, sizeof(strTmp), tmpInt );
+                LeftPadString( strTmp, sizeof(strTmp), 17 );
             }
             else {
                 Format( strTmp, sizeof(strTmp), "(not started yet)" );
             }
-            iCount = 0;
-            while (strlen(strTmp) < 17 && iCount < 1000) { iCount++; Format(strTmp, sizeof(strTmp), " %s", strTmp); }
             
             strcopy(strTmpA, sizeof(strTmpA), g_sMapName[i]);
-            iCount = 0;
-            while (strlen(strTmpA) < 32 && iCount < 1000) { iCount++; Format(strTmpA, sizeof(strTmpA), " %s", strTmpA); }
+            LeftPadString( strTmpA, sizeof(strTmpA), 32 );
             
             Format(bufBasicHeader, CONBUFSIZE, "|--------------------------------------------------|\n");
             Format(bufBasicHeader, CONBUFSIZE, "%s| Round %3i.:     %32s |\n", bufBasicHeader, (i + 1), strTmpA );
@@ -2126,7 +2090,11 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
         // too high
         if ( IsClientAndInGame( client ) )
         {
-            PrintToChat( client, "<round> must be a number between 1 and %i", g_iRound + 1 );
+            if ( g_iRound == 0 ) {
+                PrintToChat( client, "<round> can only be 1 (for now)." );
+            } else {
+                PrintToChat( client, "<round> must be a number between 1 and %i", g_iRound + 1 );
+            }
         }
     }
     else
@@ -2142,33 +2110,16 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
             } else {
                 tmpInt = GetTime() - g_strRoundData[i][team][rndStartTime];
             }
-            strTmp = "";
             
-            if ( tmpInt > 3600 ) {
-                new tmpHr = RoundToFloor( float(tmpInt) / 3600.0 );
-                Format( strTmp, sizeof(strTmp), "%ih", tmpHr );
-                tmpInt -= (tmpHr * 3600);
-            }
-            if ( tmpInt > 60 ) {
-                if ( strlen( strTmp ) ) {  Format( strTmp, sizeof(strTmp), "%s ", strTmp ); }
-                new tmpMin = RoundToFloor( float(tmpInt) / 60.0 );
-                Format( strTmp, sizeof(strTmp), "%im", tmpMin );
-                tmpInt -= (tmpMin * 60);
-            }
-            if ( tmpInt ) {
-                if ( strlen( strTmp ) ) { Format( strTmp, sizeof(strTmp), "%s ", strTmp ); }
-                Format( strTmp, sizeof(strTmp), "%s%is", strTmp, tmpInt );
-            }
+            FormatTimeAsDuration( strTmp, sizeof(strTmp), tmpInt );
+            LeftPadString( strTmp, sizeof(strTmp), 17 );
         }
         else {
             Format( strTmp, sizeof(strTmp), "(not started yet)" );
         }
-        iCount = 0;
-        while (strlen(strTmp) < 15 && iCount < 1000) { iCount++; Format(strTmp, sizeof(strTmp), " %s", strTmp); }
         
         strcopy(strTmpA, sizeof(strTmpA), g_sMapName[i]);
-        iCount = 0;
-        while (strlen(strTmpA) < 32 && iCount < 1000) { iCount++; Format(strTmpA, sizeof(strTmpA), " %s", strTmpA); }
+        LeftPadString( strTmpA, sizeof(strTmpA), 32 );
         
         Format(bufBasicHeader, CONBUFSIZE, "|--------------------------------------------------|\n");
         Format(bufBasicHeader, CONBUFSIZE, "%s| Round %3i.:     %32s |\n", bufBasicHeader, (i + 1), strTmpA );
@@ -3458,7 +3409,8 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool:bRound = true, bool:bTeam
             // si damage
             if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0);
             } else {        Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plySIDamage] ) / float( g_iMVPSIDamageTotal[team] ) * 100.0); }
-            while (strlen(strTmpA) < 5) { Format(strTmpA, s_len, " %s", strTmpA); }
+            LeftPadString( strTmpA, s_len, 5 );
+            
             Format( strTmp[0], s_len, "%4d %8d  %5s%%%%",
                     ( (bRound) ? g_strRoundPlayerData[i][team][plySIKilled] : g_strPlayerData[i][plySIKilled] ),
                     ( (bRound) ? g_strRoundPlayerData[i][team][plySIDamage] : g_strPlayerData[i][plySIDamage] ),
@@ -3469,7 +3421,8 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool:bRound = true, bool:bTeam
             // commons
             if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plyCommon] ) / float( g_iMVPRoundCommonTotal[team] ) * 100.0);
             } else {        Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plyCommon] ) / float( g_iMVPCommonTotal[team] ) * 100.0); }
-            while (strlen(strTmpA) < 5) { Format(strTmpA, s_len, " %s", strTmpA); }
+            LeftPadString( strTmpA, s_len, 5 );
+            
             Format( strTmp[1], s_len, "%7d  %5s%%%%",
                     ( (bRound) ? g_strRoundPlayerData[i][team][plyCommon] : g_strPlayerData[i][plyCommon] ),
                     strTmpA
@@ -3756,7 +3709,7 @@ stock SortPlayersMVP( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true, 
                         if ( bTeam ) {
                             if (    highest == -1 || g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] || 
                                     g_strRoundPlayerData[i][team][plySIDamage] == g_strRoundPlayerData[highest][team][plySIDamage] &&
-                                    g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon]
+                                    ( g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] || highest < FIRST_NON_BOT )
                             ) {
                                 highest = i;
                             }
@@ -3765,14 +3718,17 @@ stock SortPlayersMVP( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true, 
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plySIDamage] >= g_strRoundPlayerData[i][LTEAM_B][plySIDamage] ) ? LTEAM_A : LTEAM_B;
                             if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage] ||
                                     g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][pickTeam][plySIDamage] &&
-                                    g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon]
+                                    ( g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon] || highest < FIRST_NON_BOT )
                             ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                             }
                         }
                     } else {
-                        if ( highest == -1 || g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] ) {
+                        if (    highest == -1 || g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] &&
+                                g_strPlayerData[i][plySIDamage] == g_strPlayerData[highest][plySIDamage] &&
+                                ( g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] || highest < FIRST_NON_BOT )
+                        ) {
                             highest = i;
                         }
                     }
@@ -3783,7 +3739,7 @@ stock SortPlayersMVP( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true, 
                         if ( bTeam ) {
                             if (    highest == -1 || g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ||
                                     g_strRoundPlayerData[i][team][plyCommon] == g_strRoundPlayerData[highest][team][plyCommon] &&
-                                    g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage]
+                                    ( g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] || highest < FIRST_NON_BOT )
                             ) {
                                 highest = i;
                             }
@@ -3791,14 +3747,17 @@ stock SortPlayersMVP( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true, 
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plyCommon] >= g_strRoundPlayerData[i][LTEAM_B][plyCommon] ) ? LTEAM_A : LTEAM_B;
                             if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon] ||
                                     g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][pickTeam][plyCommon] &&
-                                    g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage]
+                                    ( g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage] || highest < FIRST_NON_BOT )
                             ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                             }
                         }
                     } else {
-                        if ( highest == -1 || g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] ) {
+                        if (    highest == -1 || g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] &&
+                                g_strPlayerData[i][plyCommon] == g_strPlayerData[highest][plyCommon] &&
+                                ( g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] || highest < FIRST_NON_BOT )
+                        ) {
                             highest = i;
                         }
                     }
@@ -4145,6 +4104,53 @@ stock InitTries()
     General functions
     -----------------
 */
+
+stock LeftPadString ( String:text[], maxlength, cutOff = 20 )
+{
+    new String: tmp[maxlength];
+    new safe = 0;   // just to make sure we're never stuck in an eternal loop
+    
+    while ( strlen(tmp) < cutOff && safe < 1000 )
+    {
+        Format( tmp, maxlength, " %s", text );
+        safe++;
+    }
+    
+    strcopy( text, maxlength, tmp );
+}
+
+stock FormatTimeAsDuration ( String:text[], maxlength, time = 20 )
+{
+    new String: tmp[maxlength];
+    
+    if ( time > 3600 )
+    {
+        new tmpHr = RoundToFloor( float(time) / 3600.0 );
+        Format( tmp, maxlength, "%ih", tmpHr );
+        time -= (tmpHr * 3600);
+    }
+    
+    if ( time > 60 )
+    {
+        if ( strlen( tmp ) ) {
+            Format( tmp, maxlength, "%s ", tmp );
+        }
+        new tmpMin = RoundToFloor( float(time) / 60.0 );
+        Format( tmp, maxlength, "%im", tmpMin );
+        time -= (tmpMin * 60);
+    }
+    
+    if ( time )
+    {
+        if ( strlen( tmp ) ) {
+            Format( tmp, maxlength, "%s ", tmp );
+        }
+        Format( tmp, maxlength, "%s%is", tmp, time );
+    }
+    
+    strcopy( text, maxlength, tmp );
+}
+
 stock CheckGameMode()
 {
     // check gamemode for 'coop'
