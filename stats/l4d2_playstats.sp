@@ -345,7 +345,6 @@ new             g_iPlayers                                          = 0;
 
 new     String: g_sConsoleBuf           [MAXCHUNKS][CONBUFSIZELARGE];
 new             g_iConsoleBufChunks                                 = 0;
-new     bool:   g_bLastLineDivider                                  = false;
 
 new     String: g_sTmpString            [MAXNAME];
 
@@ -417,11 +416,10 @@ public Plugin: myinfo =
         
     details:
     --------
-        - sort by common after si damage for Mvp
-        - if divider line is last line, replace with table end line..
         - bots should always go at bottom (on equal scores)
         - cvar for % detail (1 decimal or no decimal option)
         - hide 0 and 0.0% values from tables
+        
         - hall of fame print, with only
             - most skeets (if any)
             - most levels (if any)
@@ -2572,14 +2570,13 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bRound = true, bool:bTea
             Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|----------------|------------|--------|----------------|",    bufBasicHeader);
             
             if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-            if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+            if ( g_iConsoleBufChunks > -1 ) {
                 Format( g_sConsoleBuf[g_iConsoleBufChunks],
                         CONBUFSIZELARGE,
-                                               "%s|------------------------------------------------------------------------------|\n",
+                                               "%s\n|------------------------------------------------------------------------------|\n",
                         g_sConsoleBuf[g_iConsoleBufChunks]
                 );
-            }
-            if ( g_iConsoleBufChunks == -1 ) {
+            } else {
                 Format( bufBasicHeader,
                         CONBUFSIZE,
                                              "%s\n| (nothing to display)                                                         |\n",
@@ -2602,14 +2599,13 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bRound = true, bool:bTea
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|-----------------------|-----------------|--------|--------|-------|------|",     bufBasicHeader);
         
         if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-        if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+        if ( g_iConsoleBufChunks > -1 ) {
             Format( g_sConsoleBuf[g_iConsoleBufChunks],
                     CONBUFSIZELARGE,
-                                           "%s|-------------------------------------------------------------------------------------------------|\n",
+                                           "%s\n|-------------------------------------------------------------------------------------------------|\n",
                     g_sConsoleBuf[g_iConsoleBufChunks]
                 );
-        }
-        if ( g_iConsoleBufChunks == -1 ) {
+        } else {
             Format( bufBasicHeader,
                     CONBUFSIZE,
                                          "%s\n| (nothing to display)                                                                            |%s",
@@ -2678,14 +2674,13 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------|---------------------|---------------------|---------------------|", bufBasicHeader);
         
         if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-        if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+        if ( g_iConsoleBufChunks > -1 ) {
             Format( g_sConsoleBuf[g_iConsoleBufChunks],
                     CONBUFSIZELARGE,
-                                           "%s|--------------------------------------------------------------------------------------------------------------|\n",
+                                         "%s\n|--------------------------------------------------------------------------------------------------------------|\n",
                     g_sConsoleBuf[g_iConsoleBufChunks]
                 );
-        }
-        if ( g_iConsoleBufChunks == -1 ) {
+        } else {
             Format( bufBasicHeader,
                     CONBUFSIZE,
                                          "%s\n| (nothing to display)                                                                                         |%s",
@@ -2705,14 +2700,13 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------|---------------------|---------------------|---------------------|", bufBasicHeader);
         
         if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-        if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+        if ( g_iConsoleBufChunks > -1 ) {
             Format( g_sConsoleBuf[g_iConsoleBufChunks],
                     CONBUFSIZELARGE,
-                                           "%s|--------------------------------------------------------------------------------------------------------------|\n",
+                                         "%s\n|--------------------------------------------------------------------------------------------------------------|\n",
                     g_sConsoleBuf[g_iConsoleBufChunks]
                 );
-        }
-        if ( g_iConsoleBufChunks == -1 ) {
+        } else {
             Format( bufBasicHeader,
                     CONBUFSIZE,
                                          "%s\n| (nothing to display)                                                                                         |%s",
@@ -2784,14 +2778,13 @@ stock DisplayStatsSpecial( client, bool:bRound = false, bool:bTeam = true, bool:
     Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|------------------|-----------|-----------|------|-------------|------------|", bufBasicHeader);
     
     if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-    if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+    if ( g_iConsoleBufChunks > -1 ) {
         Format( g_sConsoleBuf[g_iConsoleBufChunks],
                 CONBUFSIZELARGE,
-                                       "%s|---------------------------------------------------------------------------------------------------|\n",
+                                     "%s\n|---------------------------------------------------------------------------------------------------|\n",
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
-    }
-    if ( g_iConsoleBufChunks == -1 ) {
+    } else {
         Format( bufBasicHeader,
                 CONBUFSIZE,
                                      "%s\n| (nothing to display)                                                                              |%s",
@@ -2879,13 +2872,12 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------||---------|---------|--------|--------|----------|--------||---------|", bufBasicHeader);
         
         if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-        if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+        if ( g_iConsoleBufChunks > -1 ) {
             Format(g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE,
-                                           "%s|--------------------------------||---------------------------------------------------------||---------|",
+                                         "%s\n|--------------------------------||---------------------------------------------------------||---------|",
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
-        }
-        if ( g_iConsoleBufChunks == -1 ) {
+        } else {
             Format( bufBasicHeader,
                     CONBUFSIZE,
                                          "%s\n| (nothing to display)                                                                                 |%s",
@@ -2937,14 +2929,13 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
     Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------||---------|---------|--------|--------|----------|--------||---------|", bufBasicHeader);
     
     if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
-    if ( g_iConsoleBufChunks > -1 && !g_bLastLineDivider ) {
+    if ( g_iConsoleBufChunks > -1 ) {
         Format( g_sConsoleBuf[g_iConsoleBufChunks],
                 CONBUFSIZELARGE,
-                                       "%s|--------------------------------||---------------------------------------------------------||---------|\n",
+                                     "%s\n|--------------------------------||---------------------------------------------------------||---------|\n",
                 g_sConsoleBuf[g_iConsoleBufChunks]
             );
-    }
-    if ( g_iConsoleBufChunks == -1 ) {
+    } else {
         Format( bufBasicHeader,
                 CONBUFSIZE,
                                      "%s\n| (nothing to display)                                                                                 |%s",
@@ -2986,11 +2977,11 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
 {
     g_iConsoleBufChunks = 0;
     g_sConsoleBuf[0] = "";
-    g_bLastLineDivider = false;
     
     new const s_len = 24;
     new String: strTmp[6][s_len];
     new i, x, line;
+    new bool: bDivider = false;
     
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
     
@@ -3081,38 +3072,30 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
         // prepare non-unicode string
         stripUnicode( g_sPlayerName[i] );
         
-        // Format the basic stats
-        Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                CONBUFSIZELARGE,
-                "%s| %20s | %16s | %9s | %9s | %4s | %11s | %10s |%s",
-                g_sConsoleBuf[g_iConsoleBufChunks],
-                g_sTmpString,
-                strTmp[0], strTmp[1], strTmp[2],
-                strTmp[3], strTmp[4], strTmp[5],
-                ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-            );
-        
-        line++;
-        
-        if ( line >= DIVIDERINTERVAL ) {
-            Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                    CONBUFSIZELARGE,
-                    "%s%s| -------------------- | ---------------- | --------- | --------- | ---- | ----------- | ---------- |%s",
-                    g_sConsoleBuf[g_iConsoleBufChunks],
-                    ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                );
-            g_bLastLineDivider = true;
-            line++;
-        } else {
-            g_bLastLineDivider = false;
-        }
-        
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             line = 0;
             g_iConsoleBufChunks++;
             g_sConsoleBuf[g_iConsoleBufChunks] = "";
+        } else if ( line > 0 ) {
+            Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+        }
+        
+        // Format the basic stats
+        Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                CONBUFSIZELARGE,
+                "%s%s| %20s | %16s | %9s | %9s | %4s | %11s | %10s |",
+                g_sConsoleBuf[g_iConsoleBufChunks],
+                ( bDivider ) ? "| -------------------- | ---------------- | --------- | --------- | ---- | ----------- | ---------- |\n" : "",
+                g_sTmpString,
+                strTmp[0], strTmp[1], strTmp[2],
+                strTmp[3], strTmp[4], strTmp[5]
+            );
+        
+        line++;
+        if ( bDivider ) {
+            line++;
+            bDivider = false;
         }
     }
 }
@@ -3121,11 +3104,11 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
 {
     g_iConsoleBufChunks = 0;
     g_sConsoleBuf[0] = "";
-    g_bLastLineDivider = false;
     
     new const s_len = 24;
     new String: strTmp[5][s_len], String: strTmpA[s_len], String: strTmpB[s_len];
     new i, line;
+    new bool: bDivider = false;
     
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
     
@@ -3212,37 +3195,29 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
             
-            // Format the basic stats
-            Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                    CONBUFSIZELARGE,
-                    "%s| %20s | %19s | %19s | %19s | %19s |%s",
-                    g_sConsoleBuf[g_iConsoleBufChunks],
-                    g_sTmpString,
-                    strTmp[0], strTmp[1], strTmp[2], strTmp[3],
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                );
-            
-            line++;
-            
-            if ( line >= DIVIDERINTERVAL ) {
-                Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                        CONBUFSIZELARGE,
-                        "%s%s| -------------------- | ------------------- | ------------------- | ------------------- | ------------------- |%s",
-                        g_sConsoleBuf[g_iConsoleBufChunks],
-                        ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                        ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                    );
-                g_bLastLineDivider = true;
-                line++;
-            } else {
-                g_bLastLineDivider = false;
-            }
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 line = 0;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
+            } else if ( line > 0 ) {
+                Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+            }
+            
+            // Format the basic stats
+            Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                    CONBUFSIZELARGE,
+                    "%s%s| %20s | %19s | %19s | %19s | %19s |",
+                    g_sConsoleBuf[g_iConsoleBufChunks],
+                    ( bDivider ) ? "| -------------------- | ------------------- | ------------------- | ------------------- | ------------------- |\n" : "",
+                    g_sTmpString,
+                    strTmp[0], strTmp[1], strTmp[2], strTmp[3]
+                );
+            
+            line++;
+            if ( bDivider ) {
+                line++;
+                bDivider = false;
             }
         }
     }
@@ -3353,27 +3328,17 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             // Format the basic stats
             Format( g_sConsoleBuf[g_iConsoleBufChunks],
                     CONBUFSIZELARGE,
-                    "%s| %20s | %19s | %19s | %19s | %19s |%s",
+                    "%s%s| %20s | %19s | %19s | %19s | %19s |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
+                    ( bDivider ) ? "| -------------------- | ------------------- | ------------------- | ------------------- | ------------------- |\n" : "",
                     g_sTmpString,
-                    strTmp[0], strTmp[1], strTmp[2], strTmp[3],
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
+                    strTmp[0], strTmp[1], strTmp[2], strTmp[3]
                 );
             
             line++;
-            
-            if ( line >= DIVIDERINTERVAL ) {
-                Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                        CONBUFSIZELARGE,
-                        "%s%s| -------------------- | ------------------- | ------------------- | ------------------- | ------------------- |%s",
-                        g_sConsoleBuf[g_iConsoleBufChunks],
-                        ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                        ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                    );
-                g_bLastLineDivider = true;
+            if ( bDivider ) {
                 line++;
-            } else {
-                g_bLastLineDivider = false;
+                bDivider = false;
             }
             
             // cut into chunks:
@@ -3381,6 +3346,8 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
                 line = 0;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
+            } else {
+                Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
             }
         }
     }
@@ -3390,11 +3357,11 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool:bRound = true, bool:bTeam
 {
     g_iConsoleBufChunks = 0;
     g_sConsoleBuf[0] = "";
-    g_bLastLineDivider = false;
     
     new const s_len = 24;
     new String: strTmp[6][s_len], String: strTmpA[s_len];
     new i, x, line;
+    new bool: bDivider = false;
     
     // current logical survivor team?
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
@@ -3443,37 +3410,29 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool:bRound = true, bool:bTeam
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
             
-            // Format the basic stats
-            Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                    CONBUFSIZELARGE,
-                    "%s| %20s | %14s | %10s | %6s | %14s |%s",
-                    g_sConsoleBuf[g_iConsoleBufChunks],
-                    g_sTmpString,
-                    strTmp[0], strTmp[1], strTmp[2], strTmp[3],
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                );
-            
-            line++;
-            
-            if ( line >= DIVIDERINTERVAL ) {
-                Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                        CONBUFSIZELARGE,
-                        "%s%s| -------------------- | -------------- | ---------- | ------ | -------------- |%s",
-                        g_sConsoleBuf[g_iConsoleBufChunks],
-                        ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                        ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                    );
-                g_bLastLineDivider = true;
-                line++;
-            } else {
-                g_bLastLineDivider = false;
-            }
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 line = 0;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
+            } else if ( line > 0 ) {
+                Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+            }
+            
+            // Format the basic stats
+            Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                    CONBUFSIZELARGE,
+                    "%s%s| %20s | %14s | %10s | %6s | %14s |",
+                    g_sConsoleBuf[g_iConsoleBufChunks],
+                    ( bDivider ) ? "| -------------------- | -------------- | ---------- | ------ | -------------- |\n" : "",
+                    g_sTmpString,
+                    strTmp[0], strTmp[1], strTmp[2], strTmp[3]
+                );
+            
+            line++;
+            if ( bDivider ) {
+                line++;
+                bDivider = false;
             }
         }
     }
@@ -3544,38 +3503,31 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool:bRound = true, bool:bTeam
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
             
-            // Format the basic stats
-            Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                    CONBUFSIZELARGE,
-                    "%s| %20s | %21s | %15s | %6s | %6s | %5s | %4s |%s",
-                    g_sConsoleBuf[g_iConsoleBufChunks],
-                    g_sTmpString,
-                    strTmp[0], strTmp[1], strTmp[2],
-                    strTmp[3], strTmp[4], strTmp[5],
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                );
-            
-            line++;
-            
-            if ( line >= DIVIDERINTERVAL ) {
-                Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                        CONBUFSIZELARGE,
-                        "%s%s| -------------------- | --------------------- | --------------- | ------ | ------ | ----- | ---- |%s",
-                        g_sConsoleBuf[g_iConsoleBufChunks],
-                        ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                        ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                    );
-                g_bLastLineDivider = true;
-                line++;
-            } else {
-                g_bLastLineDivider = false;
-            }
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 line = 0;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
+            }
+            else if ( line > 0 ) {
+                Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+            }
+            
+            // Format the basic stats
+            Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                    CONBUFSIZELARGE,
+                    "%s%s| %20s | %21s | %15s | %6s | %6s | %5s | %4s |",
+                    g_sConsoleBuf[g_iConsoleBufChunks],
+                    ( bDivider ) ? "| -------------------- | --------------------- | --------------- | ------ | ------ | ----- | ---- |\n" : "",
+                    g_sTmpString,
+                    strTmp[0], strTmp[1], strTmp[2],
+                    strTmp[3], strTmp[4], strTmp[5]
+                );
+            
+            line++;
+            if ( bDivider ) {
+                line++;
+                bDivider = false;
             }
         }
     }
@@ -3585,11 +3537,11 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
 {
     g_iConsoleBufChunks = 0;
     g_sConsoleBuf[0] = "";
-    g_bLastLineDivider = false;
     
     new const s_len = 15;
     decl String:strPrint[FFTYPE_MAX][s_len];
     new i, x, line;
+    new bool: bDivider = false;
     
     // current logical survivor team?
     new team = g_iCurTeam;
@@ -3647,40 +3599,32 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
         // prepare non-unicode string
         stripUnicode( g_sPlayerName[i] );
 
-        // Format the basic stats
-        Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                CONBUFSIZELARGE,
-                "%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |%s",
-                g_sConsoleBuf[g_iConsoleBufChunks],
-                g_sTmpString,
-                strPrint[FFTYPE_TOTAL],
-                strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
-                strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAP], strPrint[FFTYPE_OTHER],
-                strPrint[FFTYPE_SELF],
-                ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-            );
-        
-        line++;
-        
-        if ( line >= DIVIDERINTERVAL ) {
-            Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                    CONBUFSIZELARGE,
-                    "%s%s| -------------------- | ------- || ------- | ------- | ------ | ------ | -------- | ------ || ------- |%s",
-                    g_sConsoleBuf[g_iConsoleBufChunks],
-                    ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                );
-            g_bLastLineDivider = true;
-            line++;
-        } else {
-            g_bLastLineDivider = false;
-        }
-        
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             line = 0;
             g_iConsoleBufChunks++;
             g_sConsoleBuf[g_iConsoleBufChunks] = "";
+        } else if ( line > 0 ) {
+            Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+        }
+            
+        // Format the basic stats
+        Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                CONBUFSIZELARGE,
+                "%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |",
+                g_sConsoleBuf[g_iConsoleBufChunks],
+                ( bDivider ) ? "| -------------------- | ------- || ------- | ------- | ------ | ------ | -------- | ------ || ------- |\n" : "",
+                g_sTmpString,
+                strPrint[FFTYPE_TOTAL],
+                strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
+                strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAP], strPrint[FFTYPE_OTHER],
+                strPrint[FFTYPE_SELF]
+            );
+        
+        line++;
+        if ( bDivider ) {
+            line++;
+            bDivider = false;
         }
     }
 }
@@ -3689,11 +3633,11 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
 {
     g_iConsoleBufChunks = 0;
     g_sConsoleBuf[0] = "";
-    g_bLastLineDivider = false;
     
     new const s_len = 15;
     decl String:strPrint[FFTYPE_MAX][s_len];
     new i, j, x, line;
+    new bool: bDivider = false;
     
     // current logical survivor team?
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
@@ -3749,40 +3693,32 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
         // prepare non-unicode string
         stripUnicode( g_sPlayerName[j] );
         
-        // Format the basic stats
-        Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                CONBUFSIZELARGE,
-                "%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |%s",
-                g_sConsoleBuf[g_iConsoleBufChunks],
-                g_sTmpString,
-                strPrint[FFTYPE_TOTAL],
-                strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
-                strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAP], strPrint[FFTYPE_OTHER],
-                strPrint[FFTYPE_SELF],
-                ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-            );
-        
-        line++;
-        
-        if ( line >= DIVIDERINTERVAL ) {
-            Format( g_sConsoleBuf[g_iConsoleBufChunks],
-                    CONBUFSIZELARGE,
-                    "%s%s| -------------------- | ------- || ------- | ------- | ------ | ------ | -------- | ------ || ------- |%s",
-                    g_sConsoleBuf[g_iConsoleBufChunks],
-                    ( line < MAXLINESPERCHUNK ) ? "" : "\n",
-                    ( line < MAXLINESPERCHUNK - 1 ) ? "\n" : ""
-                );
-            g_bLastLineDivider = true;
-            line++;
-        } else {
-            g_bLastLineDivider = false;
-        }
-        
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             line = 0;
             g_iConsoleBufChunks++;
             g_sConsoleBuf[g_iConsoleBufChunks] = "";
+        } else if ( line > 0 ) {
+            Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+        }
+        
+        // Format the basic stats
+        Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                CONBUFSIZELARGE,
+                "%s%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |",
+                g_sConsoleBuf[g_iConsoleBufChunks],
+                ( bDivider ) ? "| -------------------- | ------- || ------- | ------- | ------ | ------ | -------- | ------ || ------- |\n" : "",
+                g_sTmpString,
+                strPrint[FFTYPE_TOTAL],
+                strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
+                strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAP], strPrint[FFTYPE_OTHER],
+                strPrint[FFTYPE_SELF]
+            );
+        
+        line++;
+        if ( bDivider ) {
+            line++;
+            bDivider = false;
         }
     }
 }
@@ -3818,12 +3754,19 @@ stock SortPlayersMVP( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true, 
                 {
                     if ( bRound ) {
                         if ( bTeam ) {
-                            if ( highest == -1 || g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] ) {
+                            if (    highest == -1 || g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] || 
+                                    g_strRoundPlayerData[i][team][plySIDamage] == g_strRoundPlayerData[highest][team][plySIDamage] &&
+                                    g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon]
+                            ) {
                                 highest = i;
                             }
-                        } else {
+                        }
+                        else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plySIDamage] >= g_strRoundPlayerData[i][LTEAM_B][plySIDamage] ) ? LTEAM_A : LTEAM_B;
-                            if ( highest == -1 || g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage] ) {
+                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage] ||
+                                    g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][pickTeam][plySIDamage] &&
+                                    g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon]
+                            ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                             }
@@ -3838,12 +3781,18 @@ stock SortPlayersMVP( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true, 
                 {
                     if ( bRound ) {
                         if ( bTeam ) {
-                            if ( highest == -1 || g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ) {
+                            if (    highest == -1 || g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ||
+                                    g_strRoundPlayerData[i][team][plyCommon] == g_strRoundPlayerData[highest][team][plyCommon] &&
+                                    g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage]
+                            ) {
                                 highest = i;
                             }
                         } else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plyCommon] >= g_strRoundPlayerData[i][LTEAM_B][plyCommon] ) ? LTEAM_A : LTEAM_B;
-                            if ( highest == -1 || g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon] ) {
+                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon] ||
+                                    g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][pickTeam][plyCommon] &&
+                                    g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage]
+                            ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                             }
