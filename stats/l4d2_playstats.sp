@@ -2812,7 +2812,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
         {
             new const s_len = 24;
             new String: strTmp[3][s_len];
-            new fullTime = 0, tankTime = 0, pauseTime = 0;
+            new fullTime, tankTime, pauseTime;
             
             if ( bRound ) {
                 if ( bTeam ) {
@@ -2879,23 +2879,23 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
             }
             
             if ( fullTime )  {
-                FormatTimeAsDuration( strTmp[0], s_len, fullTime );
-                RightPadString( strTmp[0], s_len, 13 );
+                FormatTimeAsDuration( strTmp[0], s_len, fullTime, false  );
+                RightPadString( strTmp[0], s_len, 13);
             } else {
                 FormatEx( strTmp[0], s_len, "(not started)");
             }
             
             if ( tankTime )  {
-                FormatTimeAsDuration( strTmp[1], s_len, tankTime );
-                RightPadString( strTmp[1], s_len, 13 );
+                FormatTimeAsDuration( strTmp[1], s_len, tankTime, false  );
+                RightPadString( strTmp[1], s_len, 13);
             } else {
                 FormatEx( strTmp[1], s_len, "(no tank)    ");
             }
             
             if ( g_bPauseAvailable ) {
                 if ( pauseTime )  {
-                    FormatTimeAsDuration( strTmp[2], s_len, pauseTime );
-                    RightPadString( strTmp[2], s_len, 13 );
+                    FormatTimeAsDuration( strTmp[2], s_len, pauseTime, false  );
+                    RightPadString( strTmp[2], s_len, 13);
                 } else {
                     FormatEx( strTmp[2], s_len, "(no pause)   ");
                 }
@@ -4678,7 +4678,7 @@ stock RightPadString ( String:text[], maxlength, cutOff = 20 )
 }
 
 
-stock FormatTimeAsDuration ( String:text[], maxlength, time )
+stock FormatTimeAsDuration ( String:text[], maxlength, time, bool:bPad = true )
 {
     new String: tmp[maxlength];
     
@@ -4700,16 +4700,21 @@ stock FormatTimeAsDuration ( String:text[], maxlength, time )
             Format( tmp, maxlength, "%s ", tmp );
         }
         new tmpMin = RoundToFloor( float(time) / 60.0 );
-        Format( tmp, maxlength, "%im", tmpMin );
+        Format( tmp, maxlength, "%s%im",
+                ( bPad && tmpMin < 10 ) ? " " : "" ,
+                tmpMin
+            );
         time -= (tmpMin * 60);
     }
     
     if ( time )
     {
-        if ( strlen( tmp ) ) {
-            Format( tmp, maxlength, "%s ", tmp );
-        }
-        Format( tmp, maxlength, "%s%is", tmp, time );
+        Format( tmp, maxlength, "%s%s%s%is",
+                tmp,
+                strlen( tmp ) ? " " : "",
+                ( bPad && time < 10 ) ? " " : "",
+                time
+            );
     }
     
     strcopy( text, maxlength, tmp );
