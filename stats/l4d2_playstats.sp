@@ -311,6 +311,8 @@ new     Handle: g_hCvarMVPBrevityFlags  = INVALID_HANDLE;
 new     Handle: g_hCvarAutoPrintVs      = INVALID_HANDLE;
 new     Handle: g_hCvarAutoPrintCoop    = INVALID_HANDLE;
 new     Handle: g_hCvarShowBots         = INVALID_HANDLE;
+new     Handle: g_hCvarDetailPercent    = INVALID_HANDLE;
+
 
 new     bool:   g_bGameStarted          = false;
 new     bool:   g_bInRound              = false;
@@ -420,19 +422,12 @@ public Plugin: myinfo =
         
         - time fixes:
             - coop:
-                player_bot_replace
-                    short 	player 	user ID of the player
-                    short 	bot 	user ID of the bot
-                bot_player_replace
-                    short 	bot 	user ID of the bot
-                    short 	player 	user ID of the player
+                rescue closets?
                 player_afk
                     short 	player 	user ID of the player 
         
     details:
     --------
-        - left-pad seconds/minutes so they align in tables
-        - cvar for % detail (1 decimal or no decimal option)
         - hide 0 and 0.0% values from tables
         
         - hall of fame print, with only
@@ -512,6 +507,10 @@ public OnPluginStart()
     HookEvent("pills_used",                 Event_PillsUsed,                EventHookMode_Post);
     HookEvent("adrenaline_used",            Event_AdrenUsed,                EventHookMode_Post);
     
+    HookEvent("player_bot_replace",         Event_BotReplacedByPlayer,      EventHookMode_Post);
+    HookEvent("bot_player_replace",         Event_BotReplacesPlayer,        EventHookMode_Post);
+    //player_afk        short 	player 	user ID of the player 
+    
     //HookEvent("player_left_checkpoint",     Event_ExitedSaferoom,           EventHookMode_Post);
     //HookEvent("player_entered_checkpoint",  Event_EnteredSaferoom,          EventHookMode_Post);
     //HookEvent("door_close",                 Event_DoorClose,                EventHookMode_PostNoCopy );
@@ -547,6 +546,12 @@ public OnPluginStart()
             "sm_stats_showbots",
             "1",
             "Show bots in all tables (0 = show them in MVP and FF tables only)",
+            FCVAR_PLUGIN, true, 0.0, false
+        );
+    g_hCvarDetailPercent = CreateConVar(
+            "sm_stats_percentdecimal",
+            "0",
+            "Show the first decimal for (most) MVP percent in console tables.",
             FCVAR_PLUGIN, true, 0.0, false
         );
     
@@ -1092,11 +1097,12 @@ public Action: Cmd_StatsReset ( client, args )
     return Plugin_Handled;
 }
 
+
 /*
-    Tracking
-    --------
+    Team / Bot tracking
+    -------------------
 */
-public Action: Event_PlayerTeam ( Handle:hEvent, const String:name[], bool:dontBroadcast )
+public Action: Event_PlayerTeam ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     if ( !g_bTeamChanged )
     {
@@ -1111,6 +1117,27 @@ public Action: Timer_TeamChanged (Handle:timer)
     UpdatePlayerCurrentTeam();
 }
 
+public Action: Event_BotReplacedByPlayer ( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new human = GetClientOfUserId( GetEventInt(event, "player") );
+    new bot = GetClientOfUserId( GetEventInt(event, "bot") );
+    
+    PrintDebug( 2, "Player replaces bot %i / %i.", human, bot );
+}
+
+public Action: Event_BotReplacesPlayer ( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new human = GetClientOfUserId( GetEventInt(event, "player") );
+    new bot = GetClientOfUserId( GetEventInt(event, "bot") );
+    
+    PrintDebug( 2, "Bot replaces player %i / %i.", bot, human );
+}
+
+
+/*
+    Tracking
+    --------
+*/
 public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     if ( !g_bPlayersLeftStart ) { return Plugin_Continue; }
@@ -3882,6 +3909,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
     {
         // MVP normal
         
+        new bool: bPrcDecimal = GetConVarBool(g_hCvarDetailPercent);
         new bool: bTankUp = bool:( !g_bModeCampaign && IsTankInGame() && g_bInRound );
         
         if ( bRound ) {
@@ -3915,8 +3943,13 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             }
             
             // si damage
-            if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0);
-            } else {        Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plySIDamage] ) / float( g_iMVPSIDamageTotal[team] ) * 100.0); }
+            if ( bPrcDecimal ) {
+                if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0);
+                } else {        Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plySIDamage] ) / float( g_iMVPSIDamageTotal[team] ) * 100.0); }
+            } else {
+                if ( bRound ) { Format( strTmpA, s_len, "%i", RoundFloat( float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0) );
+                } else {        Format( strTmpA, s_len, "%i", RoundFloat( float( g_strPlayerData[i][plySIDamage] ) / float( g_iMVPSIDamageTotal[team] ) * 100.0) ); }
+            }
             LeftPadString( strTmpA, s_len, 5 );
             
             Format( strTmp[0], s_len, "%4d %8d  %5s%%%%",
@@ -3927,8 +3960,13 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             
             
             // commons
-            if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plyCommon] ) / float( g_iMVPRoundCommonTotal[team] ) * 100.0);
-            } else {        Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plyCommon] ) / float( g_iMVPCommonTotal[team] ) * 100.0); }
+            if ( bPrcDecimal ) {
+                if ( bRound ) { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plyCommon] ) / float( g_iMVPRoundCommonTotal[team] ) * 100.0);
+                } else {        Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plyCommon] ) / float( g_iMVPCommonTotal[team] ) * 100.0); }
+            } else {
+                if ( bRound ) { Format( strTmpA, s_len, "%i", RoundFloat( float( g_strRoundPlayerData[i][team][plyCommon] ) / float( g_iMVPRoundCommonTotal[team] ) * 100.0) );
+                } else {        Format( strTmpA, s_len, "%i", RoundFloat( float( g_strPlayerData[i][plyCommon] ) / float( g_iMVPCommonTotal[team] ) * 100.0) ); }
+            }
             LeftPadString( strTmpA, s_len, 5 );
             
             FormatEx( strTmp[1], s_len, "%7d  %5s%%%%",
