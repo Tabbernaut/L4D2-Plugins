@@ -370,6 +370,7 @@ public Plugin: myinfo =
 
 
 /*
+    
 
     todo
     ----
@@ -390,6 +391,11 @@ public Plugin: myinfo =
             - something to do with rescue closets? fix for coop; check for vs
             - but player teamswapping after being spec: goes to 0% alive / upright, even though moving into a living slot...
 
+        - pause time of current pause not removed from round time while paused
+        - plus full time is incorrect during pause
+
+        - freaky names (sab) can still mess the alignment up?
+        
         build:
         ------
         - proper general stats tables
@@ -509,8 +515,8 @@ public OnPluginStart()
     
     HookEvent("player_bot_replace",         Event_BotReplacedByPlayer,      EventHookMode_Post);
     HookEvent("bot_player_replace",         Event_BotReplacesPlayer,        EventHookMode_Post);
-    //player_afk        short 	player 	user ID of the player 
     
+    //player_afk        short 	player 	user ID of the player 
     //HookEvent("player_left_checkpoint",     Event_ExitedSaferoom,           EventHookMode_Post);
     //HookEvent("player_entered_checkpoint",  Event_EnteredSaferoom,          EventHookMode_Post);
     //HookEvent("door_close",                 Event_DoorClose,                EventHookMode_PostNoCopy );
@@ -1162,11 +1168,9 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         {
             if ( g_bTankInGame )
             {
-                g_strPlayerData[attIndex][plySIDamageTankUp] += damage;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plySIDamageTankUp] += damage;
             }
             
-            g_strPlayerData[attIndex][plySIDamage] += damage;
             g_strRoundPlayerData[attIndex][g_iCurTeam][plySIDamage] += damage;
             g_iMVPSIDamageTotal[g_iCurTeam] += damage;
             g_iMVPRoundSIDamageTotal[g_iCurTeam] += damage;
@@ -1177,11 +1181,9 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
             
             if ( type & DMG_CLUB || type & DMG_SLASH )
             {
-                g_strPlayerData[attIndex][plyMeleesOnTank]++;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyMeleesOnTank]++;
             }
             
-            g_strPlayerData[attIndex][plyTankDamage] += damage;
             g_strRoundPlayerData[attIndex][g_iCurTeam][plyTankDamage] += damage;
         }
     }
@@ -1208,67 +1210,50 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         // record amounts
         g_strRoundData[g_iRound][g_iCurTeam][rndFFDamageTotal] += damage;
         
-        g_strPlayerData[attIndex][plyFFGivenTotal] += damage;
         g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenTotal] += damage;
-        g_strPlayerData[vicIndex][plyFFTakenTotal] += damage;
         g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenTotal] += damage;
         
         if ( attIndex == vicIndex ) {
             // damage to self
-            g_strPlayerData[attIndex][plyFFGivenSelf] += damage;
             g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenSelf] += damage;
         }
         else if ( IsPlayerIncapacitated(victim) )
         {
             // don't count incapped damage for 'ffgiven' / 'fftaken'
-            g_strPlayerData[attIndex][plyFFGivenIncap] += damage;
             g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenIncap] += damage;
-            g_strPlayerData[vicIndex][plyFFTakenIncap] += damage;
             g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenIncap] += damage;
         }
         else
         {
-            g_strPlayerData[attIndex][plyFFGiven] += damage;           // only count non-incapped for this
             g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGiven] += damage;
             if ( attIndex != vicIndex ) {
-                g_strPlayerData[vicIndex][plyFFTaken] += damage;
                 g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTaken] += damage;
             }
             
             // which type to save it to?
             if ( type & DMG_BURN )
             {
-                g_strPlayerData[attIndex][plyFFGivenFire] += damage;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenFire] += damage;
-                g_strPlayerData[vicIndex][plyFFTakenFire] += damage;
                 g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenFire] += damage;
             }
             else if ( type & DMG_BUCKSHOT )
             {
-                g_strPlayerData[attIndex][plyFFGivenPellet] += damage;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenPellet] += damage;
-                g_strPlayerData[vicIndex][plyFFTakenPellet] += damage;
                 g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenPellet] += damage;
             }
             else if ( type & DMG_CLUB || type & DMG_SLASH )
             {
-                g_strPlayerData[attIndex][plyFFGivenMelee] += damage;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenMelee] += damage;
-                g_strPlayerData[vicIndex][plyFFTakenMelee] += damage;
                 g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenMelee] += damage;
             }
             else if ( type & DMG_BULLET )
             {
-                g_strPlayerData[attIndex][plyFFGivenBullet] += damage;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenBullet] += damage;
-                g_strPlayerData[vicIndex][plyFFTakenBullet] += damage;
                 g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenBullet] += damage;
             }
             else
             {
-                g_strPlayerData[attIndex][plyFFGivenOther] += damage;
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenOther] += damage;
-                g_strPlayerData[vicIndex][plyFFTakenOther] += damage;
                 g_strRoundPlayerData[vicIndex][g_iCurTeam][plyFFTakenOther] += damage;
             }
         }
@@ -1279,7 +1264,6 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         vicIndex = GetPlayerIndexForClient( victim );
         if ( vicIndex == -1 ) { return Plugin_Continue; }
         
-        g_strPlayerData[vicIndex][plyDmgTaken] += damage;           // only count non-incapped for this
         g_strRoundPlayerData[vicIndex][g_iCurTeam][plyDmgTaken] += damage;
     }
     
@@ -1302,7 +1286,6 @@ public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dont
         
         new damage = GetEventInt(event, "amount");
         
-        g_strPlayerData[attIndex][plyWitchDamage] += damage;
         g_strRoundPlayerData[attIndex][g_iCurTeam][plyWitchDamage] += damage;
     }
 }
@@ -1318,7 +1301,6 @@ public Action: Event_PlayerFallDamage ( Handle:event, const String:name[], bool:
     if ( index == -1 ) { return Plugin_Continue; }
     
     g_strRoundPlayerData[index][g_iCurTeam][plyFallDamage] += damage;
-    g_strPlayerData[index][plyFallDamage] += damage;
     
     return Plugin_Continue;
 }
@@ -1345,7 +1327,6 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         if ( index == -1 ) { return; }
         
         g_strRoundPlayerData[index][g_iCurTeam][plyDied]++;
-        g_strPlayerData[index][plyDied]++;
         
         // store time they died
         new time = GetTime();
@@ -1363,9 +1344,6 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         }
         else
         {
-            g_strRoundData[g_iRound][g_iCurTeam][rndSIKilled]++;
-            //g_iMVPCommonTotal[g_iCurTeam]++;
-            //g_iMVPRoundCommonTotal[g_iCurTeam]++;
             
             attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
             
@@ -1374,15 +1352,15 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
                 index = GetPlayerIndexForClient( attacker );
                 if ( index == -1 ) { return; }
                 
+                g_strRoundData[g_iRound][g_iCurTeam][rndSIKilled]++;
                 g_strRoundPlayerData[index][g_iCurTeam][plySIKilled]++;
-                g_strPlayerData[index][plySIKilled]++;
+                
                 g_iMVPSIKilledTotal[g_iCurTeam]++;
                 g_iMVPRoundSIKilledTotal[g_iCurTeam]++;
                 
                 if ( g_bTankInGame )
                 { 
                     g_strRoundPlayerData[index][g_iCurTeam][plySIKilledTankUp]++;
-                    g_strPlayerData[index][plySIKilledTankUp]++;
                 }
             }
         }
@@ -1396,21 +1374,19 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         
         if ( !IsWitch(common) )
         {
-            g_strRoundData[g_iRound][g_iCurTeam][rndCommon]++;
-            g_iMVPCommonTotal[g_iCurTeam]++;
-            g_iMVPRoundCommonTotal[g_iCurTeam]++;
-            
             if ( IS_VALID_SURVIVOR(attacker) )
             {
                 index = GetPlayerIndexForClient( attacker );
                 if ( index == -1 ) { return; }
                 
+                g_strRoundData[g_iRound][g_iCurTeam][rndCommon]++;
+                g_iMVPCommonTotal[g_iCurTeam]++;
+                g_iMVPRoundCommonTotal[g_iCurTeam]++;
+                
                 g_strRoundPlayerData[index][g_iCurTeam][plyCommon]++;
-                g_strPlayerData[index][plyCommon]++;
                 
                 if ( g_bTankInGame ) {
                     g_strRoundPlayerData[index][g_iCurTeam][plyCommonTankUp]++;
-                    g_strPlayerData[index][plyCommonTankUp]++;
                 }
             }
         }
@@ -1469,7 +1445,6 @@ public Action: Event_PlayerIncapped (Handle:event, const String:name[], bool:don
         if ( index == -1 ) { return; }
         
         g_strRoundPlayerData[index][g_iCurTeam][plyIncaps]++;
-        g_strPlayerData[index][plyIncaps]++;
         
         // store time they incapped (if they weren't already)
         if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = GetTime(); }
@@ -1581,13 +1556,11 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
     if ( weaponId == WP_PISTOL || weaponId == WP_PISTOL_MAGNUM )
     {
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsPistol]++;
-        g_strPlayerData[index][plyShotsPistol]++;
     }
     else if (   weaponId == WP_SMG || weaponId == WP_SMG_SILENCED || weaponId == WP_SMG_MP5 ||
                 weaponId == WP_RIFLE || weaponId == WP_RIFLE_DESERT || weaponId == WP_RIFLE_AK47 || weaponId == WP_RIFLE_SG552
     ) {
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsSmg]++;
-        g_strPlayerData[index][plyShotsSmg]++;
     }
     else if (   weaponId == WP_PUMPSHOTGUN || weaponId == WP_SHOTGUN_CHROME ||
                 weaponId == WP_AUTOSHOTGUN || weaponId == WP_SHOTGUN_SPAS
@@ -1595,18 +1568,16 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
         // get pellets
         new count = GetEventInt(event, "count");
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsShotgun] += count;
-        g_strPlayerData[index][plyShotsShotgun] += count;
     }
     else if (   weaponId == WP_HUNTING_RIFLE || weaponId == WP_SNIPER_MILITARY  ||
                 weaponId == WP_SNIPER_AWP || weaponId == WP_SNIPER_SCOUT
     ) {
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsSniper]++;
-        g_strPlayerData[index][plyShotsSniper]++;
     }
-    else if (weaponId == WP_MELEE)
+    /* else if (weaponId == WP_MELEE)
     {
-        //g_strPlayerData[index][plyShotsPistol]++;
-    }
+        //g_strRoundPlayerData[index][g_iCurTeam][plyShotsMelee]++;
+    } */
     
     // ignore otherwise
 }
@@ -1646,10 +1617,10 @@ public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage
     // count hits
     switch ( weaponType )
     {
-        case WPTYPE_SHOTGUN: {  g_strPlayerData[index][plyHitsShotgun]++; g_strPlayerData[index][plyHitsSIShotgun]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHitsShotgun]++; g_strRoundPlayerData[index][g_iCurTeam][plyHitsSIShotgun]++; }
-        case WPTYPE_SMG: {      g_strPlayerData[index][plyHitsSmg]++;     g_strPlayerData[index][plyHitsSISmg]++;       g_strRoundPlayerData[index][g_iCurTeam][plyHitsSmg]++;     g_strRoundPlayerData[index][g_iCurTeam][plyHitsSISmg]++; }
-        case WPTYPE_SNIPER: {   g_strPlayerData[index][plyHitsSniper]++;  g_strPlayerData[index][plyHitsSISniper]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHitsSniper]++;  g_strRoundPlayerData[index][g_iCurTeam][plyHitsSISniper]++; }
-        case WPTYPE_PISTOL: {   g_strPlayerData[index][plyHitsPistol]++;  g_strPlayerData[index][plyHitsSIPistol]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHitsPistol]++;  g_strRoundPlayerData[index][g_iCurTeam][plyHitsSIPistol]++; }
+        case WPTYPE_SHOTGUN: {  g_strRoundPlayerData[index][g_iCurTeam][plyHitsShotgun]++; g_strRoundPlayerData[index][g_iCurTeam][plyHitsSIShotgun]++; }
+        case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHitsSmg]++;     g_strRoundPlayerData[index][g_iCurTeam][plyHitsSISmg]++; }
+        case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsSniper]++;  g_strRoundPlayerData[index][g_iCurTeam][plyHitsSISniper]++; }
+        case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsPistol]++;  g_strRoundPlayerData[index][g_iCurTeam][plyHitsSIPistol]++; }
     }
     
     // headshots on anything but tank, separately store hits for tank
@@ -1657,10 +1628,10 @@ public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage
     {
         switch ( weaponType )
         {
-            case WPTYPE_SHOTGUN: {  g_strPlayerData[index][plyHitsTankShotgun]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankShotgun]++; }
-            case WPTYPE_SMG: {      g_strPlayerData[index][plyHitsTankSmg]++;       g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankSmg]++; }
-            case WPTYPE_SNIPER: {   g_strPlayerData[index][plyHitsTankSniper]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankSniper]++; }
-            case WPTYPE_PISTOL: {   g_strPlayerData[index][plyHitsTankPistol]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankPistol]++; }
+            case WPTYPE_SHOTGUN: {  g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankShotgun]++; }
+            case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankSmg]++; }
+            case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankSniper]++; }
+            case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankPistol]++; }
         }
     }
     
@@ -1669,9 +1640,9 @@ public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage
     {
         switch ( weaponType )
         {
-            case WPTYPE_SMG: {      g_strPlayerData[index][plyHeadshotsSmg]++;    g_strPlayerData[index][plyHeadshotsSISmg]++;      g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSmg]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSISmg]++; }
-            case WPTYPE_SNIPER: {   g_strPlayerData[index][plyHeadshotsSniper]++; g_strPlayerData[index][plyHeadshotsSISniper]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSniper]++; g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSISniper]++; }
-            case WPTYPE_PISTOL: {   g_strPlayerData[index][plyHeadshotsPistol]++; g_strPlayerData[index][plyHeadshotsSIPistol]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsPistol]++; g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSIPistol]++; }
+            case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSmg]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSISmg]++; }
+            case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSniper]++; g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSISniper]++; }
+            case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsPistol]++; g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSIPistol]++; }
         }
     }
 }
@@ -1708,10 +1679,10 @@ public Action: TraceAttack_Infected (victim, &attacker, &inflictor, &Float:damag
     // count hits
     switch ( weaponType )
     {
-        case WPTYPE_SHOTGUN: {  g_strPlayerData[index][plyHitsShotgun]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHitsShotgun]++;}
-        case WPTYPE_SMG: {      g_strPlayerData[index][plyHitsSmg]++;       g_strRoundPlayerData[index][g_iCurTeam][plyHitsSmg]++; }
-        case WPTYPE_SNIPER: {   g_strPlayerData[index][plyHitsSniper]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHitsSniper]++; }
-        case WPTYPE_PISTOL: {   g_strPlayerData[index][plyHitsPistol]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHitsPistol]++; }
+        case WPTYPE_SHOTGUN: {  g_strRoundPlayerData[index][g_iCurTeam][plyHitsShotgun]++;}
+        case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHitsSmg]++; }
+        case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsSniper]++; }
+        case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsPistol]++; }
     }
     
     // headshots (only bullet-based)
@@ -1719,9 +1690,9 @@ public Action: TraceAttack_Infected (victim, &attacker, &inflictor, &Float:damag
     {
         switch ( weaponType )
         {
-            case WPTYPE_SMG: {      g_strPlayerData[index][plyHeadshotsSmg]++;      g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSmg]++; }
-            case WPTYPE_SNIPER: {   g_strPlayerData[index][plyHeadshotsSniper]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSniper]++; }
-            case WPTYPE_PISTOL: {   g_strPlayerData[index][plyHeadshotsPistol]++;   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsPistol]++; }
+            case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSmg]++; }
+            case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSniper]++; }
+            case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsPistol]++; }
         }
     }
 }
@@ -1772,7 +1743,6 @@ public OnSpecialShoved ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyShoves]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyShoves]++;
 }
 public OnHunterDeadstop ( attacker, victim )
@@ -1782,7 +1752,6 @@ public OnHunterDeadstop ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyDeadStops]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyDeadStops]++;
 }
 
@@ -1794,7 +1763,6 @@ public OnSkeet ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plySkeets]++;
     g_strRoundPlayerData[index][g_iCurTeam][plySkeets]++;
 }
 public OnSkeetHurt ( attacker, victim, damage )
@@ -1804,7 +1772,6 @@ public OnSkeetHurt ( attacker, victim, damage )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plySkeetsHurt]++;
     g_strRoundPlayerData[index][g_iCurTeam][plySkeetsHurt]++;
 }
 public OnSkeetMelee ( attacker, victim )
@@ -1814,14 +1781,13 @@ public OnSkeetMelee ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plySkeetsMelee]++;
     g_strRoundPlayerData[index][g_iCurTeam][plySkeetsMelee]++;
 }
 /* public OnSkeetMeleeHurt ( attacker, victim, damage )
 {
     //new index = GetPlayerIndexForClient( attacker );
     //if ( index == -1 ) { return; }
-    //g_strPlayerData[index][plySkeetsHurt]++;
+    
     //g_strRoundPlayerData[index][g_iCurTeam][plySkeetsHurt]++;
 }
 */
@@ -1832,7 +1798,6 @@ public OnSkeetSniper ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plySkeets]++;
     g_strRoundPlayerData[index][g_iCurTeam][plySkeets]++;
 }
 public OnSkeetSniperHurt ( attacker, victim, damage )
@@ -1842,7 +1807,6 @@ public OnSkeetSniperHurt ( attacker, victim, damage )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plySkeetsHurt]++;
     g_strRoundPlayerData[index][g_iCurTeam][plySkeetsHurt]++;
 }
 
@@ -1854,7 +1818,6 @@ public OnBoomerPop ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyPops]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyPops]++;
 }
 
@@ -1866,7 +1829,6 @@ public OnChargerLevel ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyLevels]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyLevels]++;
 }
 public OnChargerLevelHurt ( attacker, victim, damage )
@@ -1876,7 +1838,6 @@ public OnChargerLevelHurt ( attacker, victim, damage )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyLevelsHurt]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyLevelsHurt]++;
 }
 
@@ -1888,7 +1849,6 @@ public OnTongueCut ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyTongueCuts]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyTongueCuts]++;
 }
 public OnSmokerSelfClear ( attacker, victim, withShove )
@@ -1898,7 +1858,6 @@ public OnSmokerSelfClear ( attacker, victim, withShove )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plySelfClears]++;
     g_strRoundPlayerData[index][g_iCurTeam][plySelfClears]++;
 }
 
@@ -1908,7 +1867,6 @@ public OnWitchCrown ( attacker, damage )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyCrowns]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyCrowns]++;
 }
 public OnWitchDrawCrown ( attacker, damage, chipdamage )
@@ -1916,7 +1874,6 @@ public OnWitchDrawCrown ( attacker, damage, chipdamage )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyCrownsHurt]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyCrownsHurt]++;
 }
 // tank rock
@@ -1927,7 +1884,6 @@ public OnTankRockEaten ( attacker, victim )
     new index = GetPlayerIndexForClient( victim );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyRockEats]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyRockEats]++;
 }
 
@@ -1936,7 +1892,6 @@ public OnTankRockSkeeted ( attacker, victim )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyRockSkeets]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyRockSkeets]++;
 }
 // highpounces
@@ -1945,7 +1900,6 @@ public OnHunterHighPounce ( attacker, victim, Float:damage, Float:height )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyHunterDPs]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyHunterDPs]++;
 }
 public OnJockeyHighPounce ( attacker, victim, Float:height )
@@ -1953,7 +1907,6 @@ public OnJockeyHighPounce ( attacker, victim, Float:height )
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
-    g_strPlayerData[index][plyJockeyDPs]++;
     g_strRoundPlayerData[index][g_iCurTeam][plyJockeyDPs]++;
 }
 
@@ -1987,13 +1940,17 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = LTEAM_A )
         g_iMVPCommonTotal[1] = 0;
         
         // clear rounds
-        for ( i = 0; i < MAXROUNDS; i++ )
-        {
+        for ( i = 0; i < MAXROUNDS; i++ ) {
             g_sMapName[i] = "";
             for ( j = 0; j < 2; j++ ) {
                 for ( k = 0; k <= MAXRNDSTATS; k++ ) {
                     g_strRoundData[i][j][k] = 0;
                 }
+            }
+        }
+        for ( i = 0; i < MAXROUNDS; i++ ) {
+            for ( k = 0; k <= MAXRNDSTATS; k++ ) {
+                g_strAllRoundData[i][k] = 0;
             }
         }
         
@@ -2075,7 +2032,7 @@ stock UpdatePlayerCurrentTeam()
             
             // if player wasn't present, update presence (shift start forward)
             if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] )  {
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent];
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] = time - ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] );
             }
             else if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] ) {
                 // start time is now
@@ -2088,7 +2045,7 @@ stock UpdatePlayerCurrentTeam()
             // if player wasn't alive and is now, update -- if never joined and dead, start = stop
             if ( IsPlayerAlive(client) ) {
                 if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] )  {
-                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive];
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time - ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] );
                 }
                 else {
                     g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time;
@@ -2105,7 +2062,7 @@ stock UpdatePlayerCurrentTeam()
             // if player wasn't upright and is now, update -- if never joined and incapped, start = stop
             if ( !IsPlayerIncapacitatedAtAll(client) ) {
                 if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] )  {
-                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time - ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] );
                 }
                 else {
                     g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time;
@@ -3415,7 +3372,7 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             bDivider = true;
-            line = 0;
+            line = -1;
             g_iConsoleBufChunks++;
             g_sConsoleBuf[g_iConsoleBufChunks] = "";
         } else if ( line > 0 ) {
@@ -3530,7 +3487,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
-                line = 0;
+                line = -1;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
             } else if ( line > 0 ) {
@@ -3640,7 +3597,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
-                line = 0;
+                line = -1;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
             } else if ( line > 0 ) {
@@ -3729,7 +3686,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
-                line = 0;
+                line = -1;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
             } else if ( line > 0 ) {
@@ -3881,7 +3838,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
-                line = 0;
+                line = -1;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
             } else if ( line > 0 ) {
@@ -4021,7 +3978,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
-                line = 0;
+                line = -1;
                 g_iConsoleBufChunks++;
                 g_sConsoleBuf[g_iConsoleBufChunks] = "";
             }
@@ -4117,7 +4074,7 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             bDivider = true;
-            line = 0;
+            line = -1;
             g_iConsoleBufChunks++;
             g_sConsoleBuf[g_iConsoleBufChunks] = "";
         } else if ( line > 0 ) {
@@ -4212,7 +4169,7 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             bDivider = true;
-            line = 0;
+            line = -1;
             g_iConsoleBufChunks++;
             g_sConsoleBuf[g_iConsoleBufChunks] = "";
         } else if ( line > 0 ) {
