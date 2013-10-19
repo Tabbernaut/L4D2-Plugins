@@ -65,7 +65,7 @@
 
 #define SHOTGUN_BLAST_TIME  0.1
 #define POUNCE_CHECK_TIME   0.1
-#define SHOVE_TIME          0.1
+#define SHOVE_TIME          0.05
 
 #define ZC_SMOKER       1
 #define ZC_BOOMER       2
@@ -133,13 +133,7 @@ enum _:strRockData
     rckSkeeter
 };
 
-/*
-    maxplayers+1 = starting health of witch
-    "         +2 = 0 as long as the witch didn't get a slash
-    "         +3 = 0 as long as the witch didn't startle
-    "         +4 = the last survivor that shot the witch
-    +         +5 = the damage done in the last shot alone
-*/
+// witch array entries (maxplayers+index)
 enum _:strWitchArray
 {
     WTCH_NONE,
@@ -173,7 +167,6 @@ new     Handle:         g_hForwardRockEaten                                 = IN
 new     Handle:         g_hForwardHunterDP                                  = INVALID_HANDLE;
 new     Handle:         g_hForwardJockeyDP                                  = INVALID_HANDLE;
 
-
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // getting classname of entity created
 new     Handle:         g_hTrieAbility                                      = INVALID_HANDLE;   // ability check
@@ -184,9 +177,8 @@ new     Handle:         g_hRockTrie                                         = IN
 new                     g_iHunterShotDmgTeam    [MAXPLAYERS + 1];                               // counting shotgun blast damage for hunter, counting entire survivor team's damage
 new                     g_iHunterShotDmg        [MAXPLAYERS + 1][MAXPLAYERS + 1];               // counting shotgun blast damage for hunter / skeeter combo
 new     Float:          g_fHunterShotStart      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when the last shotgun blast on hunter started (if at any time) by an attacker
+new     Float:          g_fHunterTracePouncing  [MAXPLAYERS + 1];                               // time when the hunter was still pouncing (in traceattack) -- used to detect pouncing status
 new     Float:          g_fHunterLastShot       [MAXPLAYERS + 1];                               // when the last shotgun damage was done (by anyone) on a hunter
-new     bool:           g_bHunterPouncing       [MAXPLAYERS + 1];                               // whether the hunter should be considered pouncing with lame onground check (only for snipers)
-new     bool:           g_bHunterPouncingShot   [MAXPLAYERS + 1];                               // whether the shotgun should be considered to be pouncing when damage-checking
 new                     g_iHunterLastHealth     [MAXPLAYERS + 1];                               // last time hunter took any damage, how much health did it have left?
 new                     g_iHunterOverkill       [MAXPLAYERS + 1];                               // how much more damage a hunter would've taken if it wasn't already dead
 new     bool:           g_bHunterKilledPouncing [MAXPLAYERS + 1];                               // whether the hunter was killed when actually pouncing
@@ -253,18 +245,18 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     To do
     -----
     
-    - try a more elegant approach to hunter skeet detection:
-        - traceattack: check that netprop, remember
-        - then in ontakedamage: if less than X time passed since traceattack.. we know it was pouncing still
-    
-    - ? speedcrown detection?
-    - ? bhop (streaks) detection
-    - ? deathcharge detection
-    - ? " assist detection
-    - ? spit-on-cap detection
-    - ? insta-clears?
-    
+    - check for grenadeskeets! (and report separately)
+    - reconsider popping conditions.. distance? if it ever got close?
+        after it boomed?
     - make cvar for optionally removing fake damage: for charger too
+    
+    detect...
+        - ? speedcrown detection?
+        - ? bhop (streaks) detection
+        - ? deathcharge detection
+        - ? " assist detection
+        - ? spit-on-cap detection
+        - ? insta-clears?
 */
 
 public Plugin:myinfo = 
@@ -384,7 +376,7 @@ public OnPluginStart()
     g_hWitchTrie = CreateTrie();
     g_hRockTrie = CreateTrie();
     
-    if (g_bLateLoad)
+    if ( g_bLateLoad )
     {
         for ( new client = 1; client <= MaxClients; client++ )
         {
@@ -458,31 +450,26 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 }
                 
                 /*  
-                    handle old shotgun blast: previous shotgun damage done by a player that was too long ago to be still this (new) blast
-                    g_bHunterPouncingShot[] is used to remember whether the first pellet of a blast did damage while the hunter was
-                    still pouncing: if the last pellet (killing the hunter) reports as not pouncing, it's NOT TRUE. LIES.
-                    this must be reset whenever a new shotgun blast takes place (no matter who shoots this)
+                    handle old shotgun blast: too long ago? not the same blast
                 */
                 if ( g_iHunterShotDmg[victim][attacker] > 0 && FloatSub(GetGameTime(), g_fHunterShotStart[victim][attacker]) > SHOTGUN_BLAST_TIME )
                 {
-                    g_bHunterPouncingShot[victim] = false;
                     g_fHunterShotStart[victim][attacker] = 0.0;
                 }
-                else if ( FloatSub(GetGameTime(), g_fHunterLastShot[victim]) > SHOTGUN_BLAST_TIME )
-                {
-                    // make sure any shotgun damage from other attackers will also reset
-                    g_bHunterPouncingShot[victim] = false;
-                }
-                
-                new bool: isPouncingShotgun = bool: ( g_bHunterPouncingShot[victim] || GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") );
                 
                 /*
-                    handle new hit (only shotgun), and only on pouncing hunters
-                    flag is reset before killing damage is actually recorded, so count the remaining shotgun blast
+                    m_isAttemptingToPounce is set to 0 here if the hunter is actually skeeted
+                    so the g_fHunterTracePouncing[victim] value indicates when the hunter was last seen pouncing in traceattack
+                    (should be DIRECTLY before this event for every shot).
                 */
-                if ( g_bHunterPouncing[victim] || isPouncingShotgun )
+                new bool: isPouncing = bool:(
+                        GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce")     ||
+                        g_fHunterTracePouncing[victim] != 0.0 && FloatSub( GetGameTime(), g_fHunterTracePouncing[victim] ) < 0.001
+                    );
+                
+                if ( isPouncing )
                 {
-                    if ( damagetype & DMG_BUCKSHOT && isPouncingShotgun )
+                    if ( damagetype & DMG_BUCKSHOT )
                     {
                         // first pellet hit?
                         if ( g_fHunterShotStart[victim][attacker] == 0.0 )
@@ -490,7 +477,6 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                             // new shotgun blast
                             g_fHunterShotStart[victim][attacker] = GetGameTime();
                             g_fHunterLastShot[victim] = g_fHunterShotStart[victim][attacker];
-                            g_bHunterPouncingShot[victim] = ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") > 0);
                         }
                         g_iHunterShotDmg[victim][attacker] += damage;
                         g_iHunterShotDmgTeam[victim] += damage;
@@ -564,7 +550,6 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 
                 // store last health seen for next damage event
                 g_iHunterLastHealth[victim] = health;
-        
             }
             
             case ZC_CHARGER:
@@ -654,6 +639,8 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
         }
         case ZC_HUNTER:
         {
+            SDKHook(client, SDKHook_TraceAttack, TraceAttack_Hunter);
+    
             g_fPouncePosition[client][0] = 0.0;
             g_fPouncePosition[client][1] = 0.0;
             g_fPouncePosition[client][2] = 0.0;
@@ -667,6 +654,21 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
     }
     
     return Plugin_Continue;
+}
+
+// trace attacks on hunters
+public Action: TraceAttack_Hunter (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
+{
+    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) ) { return; }
+    
+    if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
+    {
+        g_fHunterTracePouncing[victim] = GetGameTime();
+    }
+    else
+    {
+        g_fHunterTracePouncing[victim] = 0.0;
+    }   
 }
 
 public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontBroadcast )
@@ -742,7 +744,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
     
     if ( g_fVictimLastShove[victim] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim] ) > SHOVE_TIME )
     {
-        if ( g_bHunterPouncing[victim] || GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
+        if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
         {
             HandleDeadstop( attacker, victim );
         }
@@ -863,9 +865,6 @@ public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBro
         {
             // hunter started a pounce
             ResetHunter(client);
-            g_bHunterPouncing[client] = true;
-            CreateTimer( POUNCE_CHECK_TIME, Timer_HunterGroundTouch, client, TIMER_REPEAT );
-            
             GetClientAbsOrigin( client, g_fPouncePosition[client] );
         }
     
@@ -882,36 +881,6 @@ public Action: Event_AbilityUse( Handle:event, const String:name[], bool:dontBro
     return Plugin_Continue;
 }
 
-public Action: Timer_HunterGroundTouch( Handle:timer, any:client )
-{
-    /*
-        note: a new timer gets started every time a hunter pounces
-        but it is only killed once it actually hits the ground again!
-        this might create too many timers when a hunter actually pounces
-        around on walls.. build a safeguard to prevent this?
-    
-        static countTimes = 0;
-        
-        countTimes++;
-        
-        if ( countTimes > 150 ) {
-            // reached the ground or died in mid-air
-            countTimes = 0;
-            KillTimer( timer );
-        }
-        // else...
-    */
-    
-    if (    IS_VALID_INGAME(client) &&
-            (GetEntProp(client, Prop_Data, "m_fFlags") & FL_ONGROUND > 0 ||
-            !IsPlayerAlive(client))
-    ) {
-        // reached the ground or died in mid-air
-        ResetHunter( client );
-        KillTimer( timer );
-    }
-}
-
 stock ResetHunter(client)
 {
     g_iHunterShotDmgTeam[client] = 0;
@@ -921,9 +890,6 @@ stock ResetHunter(client)
         g_iHunterShotDmg[client][i] = 0;
         g_fHunterShotStart[client][i] = 0.0;
     }
-    
-    g_bHunterPouncingShot[client] = false;
-    g_bHunterPouncing[client] = false;
     g_iHunterOverkill[client] = 0;
 }
 
