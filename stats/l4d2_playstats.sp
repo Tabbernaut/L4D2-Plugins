@@ -372,6 +372,10 @@ public Plugin: myinfo =
                 or NOT at end and with 0 stats
         
         - time tracking not working right, for presence
+        - shotgun pellet accuracy seems.. off.. too high values
+            - same for accuracy in general, btw
+
+        - broken output in coop
 
         build:
         ------
@@ -403,7 +407,9 @@ public Plugin: myinfo =
         - add duration of tank fight(s)
         - write CSV files per round -- db-ready
         - fix: some way of 'listening' to CMT?
+        
         - time fixes:
+            - end-of-round => apply round times to strPlayerData()
             - after round ends: add up times to strPlayerData[]
             - coop:
                 player_bot_replace
@@ -556,10 +562,10 @@ public OnPluginStart()
     
     if ( g_bLateLoad )
     {
-        new index;
+        new i, index;
         new time = GetTime();
         
-        for ( new i = 1; i <= MaxClients; i++ )
+        for ( i = 1; i <= MaxClients; i++ )
         {
             if ( IsClientInGame(i) && !IsFakeClient(i) )
             {
@@ -574,6 +580,17 @@ public OnPluginStart()
                 g_strRoundPlayerData[index][1][plyTimeStartAlive] = time;
                 g_strRoundPlayerData[index][1][plyTimeStartUpright] = time;
             }
+        }
+        
+        // set time for bots aswell
+        for ( i = 0; i < FIRST_NON_BOT; i++ )
+        {
+            g_strRoundPlayerData[i][0][plyTimeStartPresent] = time;
+            g_strRoundPlayerData[i][0][plyTimeStartAlive] = time;
+            g_strRoundPlayerData[i][0][plyTimeStartUpright] = time;
+            g_strRoundPlayerData[i][1][plyTimeStartPresent] = time;
+            g_strRoundPlayerData[i][1][plyTimeStartAlive] = time;
+            g_strRoundPlayerData[i][1][plyTimeStartUpright] = time;
         }
         
         // just assume this
@@ -1043,6 +1060,8 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         
         if ( attIndex == vicIndex ) {
             // damage to self
+            g_strPlayerData[attIndex][plyFFGivenSelf] += damage;
+            g_strRoundPlayerData[attIndex][g_iCurTeam][plyFFGivenSelf] += damage;
         }
         else if ( IsPlayerIncapacitated(victim) )
         {
@@ -2583,27 +2602,27 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
     {
         Format( bufBasicHeader,
                 CONBUFSIZE,
-                                           "\n| Survivor MVP Stats -- %10s -- %11s                                                 |\n",
+                                           "\n| Survivor MVP Stats -- %10s -- %11s                                                        |\n",
                 ( bRound ) ? "This Round" : "ALL Rounds",
                 ( bTeam ) ? ( (team == LTEAM_A) ? "Team A     " : "Team B     " ) : "ALL Players"
             );
-        Format(bufBasicHeader, CONBUFSIZE, "%s|-------------------------------------------------------------------------------------------------|\n",   bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Specials   kills/dmg  | Commons         | Tank   | Witch  | FF    | Rcvd |\n",   bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|-----------------------|-----------------|--------|--------|-------|------|",     bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s|--------------------------------------------------------------------------------------------------------|\n",   bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s| Name                 | Specials   kills/dmg  | Commons         | Tank   | Witch  | FF    | Rcvd | Time |\n",   bufBasicHeader);
+        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|-----------------------|-----------------|--------|--------|-------|------|------|",     bufBasicHeader);
         
         if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
         if ( g_iConsoleBufChunks > -1 ) {
             Format( g_sConsoleBuf[g_iConsoleBufChunks],
                     CONBUFSIZELARGE,
-                                         "%s\n|-------------------------------------------------------------------------------------------------|\n",
+                                         "%s\n|--------------------------------------------------------------------------------------------------------|\n",
                     g_sConsoleBuf[g_iConsoleBufChunks]
                 );
         } else {
             Format( bufBasicHeader,
                     CONBUFSIZE,
-                                         "%s\n| (nothing to display)                                                                            |%s",
+                                         "%s\n| (nothing to display)                                                                                   |%s",
                     bufBasicHeader,
-                                           "\n|-------------------------------------------------------------------------------------------------|"
+                                           "\n|--------------------------------------------------------------------------------------------------------|"
                 );
         }
     }
@@ -3326,9 +3345,12 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
     g_sConsoleBuf[0] = "";
     
     new const s_len = 24;
-    new String: strTmp[6][s_len], String: strTmpA[s_len];
+    new String: strTmp[7][s_len], String: strTmpA[s_len];
     new i, x, line;
     new bool: bDivider = false;
+    
+    new time = GetTime();
+    new fullTime = 0, presTime = 0, aliveTime = 0, upTime = 0;
     
     // current logical survivor team?
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
@@ -3407,14 +3429,11 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
     else if ( bMore )
     {
         // MVP - more ( time / pinned )
-        
-        new fullTime = 0, presTime = 0, aliveTime = 0, upTime = 0;
-        
         if ( bRound ) {
-            fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : GetTime() ) - g_strRoundData[g_iRound][team][rndStartTime];
+            fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
         } else {
             // TO DO full time for entire game
-            fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : GetTime() ) - g_strRoundData[g_iRound][team][rndStartTime];
+            fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
         }
         
         for ( x = 0; x < g_iPlayers; x++ )
@@ -3424,9 +3443,6 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             // also skip bots for this list?
             //if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
             
-            //                           ###h ##m ##s     ###%      ###%                     
-            // |----------------------|---------------|--------|---------|--------------------|
-            
             // only show survivors for the round in question
             if ( bTeam ) {
                 if ( g_iPlayerRoundTeam[team][i] != team ) { continue; }
@@ -3435,44 +3451,56 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             }
             
             // time present
-            if ( fullTime && presTime )  {
-                Format( strTmpA, s_len, "%3.0f", float(presTime) / float(fullTime) * 100.0);
-                LeftPadString( strTmpA, s_len, 7 );
+            if ( bRound ) {
+                presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
             } else {
-                Format( strTmpA, s_len, "       ");
+                presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
+            }
+            if ( fullTime && presTime )  {
+                Format( strTmpA, s_len, "%3.0f%%%%", float(presTime) / float(fullTime) * 100.0);
+                LeftPadString( strTmpA, s_len, 9 );
+            } else {
+                Format( strTmpA, s_len, "        ");
             }
             
-            FormatEx( strTmp[0], s_len, "%7s", strTmpA );
+            FormatEx( strTmp[0], s_len, "%8s", strTmpA );
             
-            presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : GetTime() ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
             if ( fullTime && presTime )  {
                 FormatTimeAsDuration( strTmpA, s_len, presTime );
                 LeftPadString( strTmpA, s_len, 13 );
             } else {
                 Format( strTmpA, s_len, "             ");
             }
-            Format( strTmp[0], s_len, "%13s %7s%%%%", strTmpA, strTmp[0] );
+            Format( strTmp[0], s_len, "%13s %8s", strTmpA, strTmp[0] );
             
             // time alive
-            aliveTime = ( (g_strRoundPlayerData[i][team][plyTimeStopAlive]) ? g_strRoundPlayerData[i][team][plyTimeStopAlive] : GetTime() ) - g_strRoundPlayerData[i][team][plyTimeStartAlive];
-            if ( presTime && aliveTime )  {
-                Format( strTmpA, s_len, "%3.0f", float(aliveTime) / float(presTime) * 100.0);
-                LeftPadString( strTmpA, s_len, 5 );
+            if ( bRound ) {
+                aliveTime = ( (g_strRoundPlayerData[i][team][plyTimeStopAlive]) ? g_strRoundPlayerData[i][team][plyTimeStopAlive] : time ) - g_strRoundPlayerData[i][team][plyTimeStartAlive];
             } else {
-                Format( strTmpA, s_len, "     ");
+                aliveTime = ( (g_strPlayerData[i][plyTimeStopAlive]) ? g_strPlayerData[i][plyTimeStopAlive] : time ) - g_strPlayerData[i][plyTimeStartAlive];
+            }
+            if ( presTime && aliveTime )  {
+                Format( strTmpA, s_len, "%3.0f%%%%", float(aliveTime) / float(presTime) * 100.0);
+                LeftPadString( strTmpA, s_len, 7 );
+            } else {
+                Format( strTmpA, s_len, "      ");
             }
             
-            FormatEx( strTmp[1], s_len, "%5s%%%%", strTmpA );
+            FormatEx( strTmp[1], s_len, "%6s", strTmpA );
             
             // time upright
-            upTime = ( (g_strRoundPlayerData[i][team][plyTimeStopUpright]) ? g_strRoundPlayerData[i][team][plyTimeStopUpright] : GetTime() ) - g_strRoundPlayerData[i][team][plyTimeStartUpright];
-            if ( presTime && upTime )  {
-                Format( strTmpA, s_len, "%3.0f", float(upTime) / float(presTime) * 100.0);
-                LeftPadString( strTmpA, s_len, 5 );
+            if ( bRound ) {
+                upTime = ( (g_strRoundPlayerData[i][team][plyTimeStopUpright]) ? g_strRoundPlayerData[i][team][plyTimeStopUpright] : time ) - g_strRoundPlayerData[i][team][plyTimeStartUpright];
             } else {
-                Format( strTmpA, s_len, "     ");
+                upTime = ( (g_strPlayerData[i][plyTimeStopUpright]) ? g_strPlayerData[i][plyTimeStopUpright] : time ) - g_strPlayerData[i][plyTimeStartUpright];
             }
-            FormatEx( strTmp[2], s_len, " %5s%%%%", strTmpA );
+            if ( presTime && upTime )  {
+                Format( strTmpA, s_len, "%3.0f%%%%", float(upTime) / float(presTime) * 100.0);
+                LeftPadString( strTmpA, s_len, 7 );
+            } else {
+                Format( strTmpA, s_len, "      ");
+            }
+            FormatEx( strTmp[2], s_len, " %6s", strTmpA );
             
             
             // prepare non-unicode string
@@ -3510,6 +3538,13 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
         // MVP normal
         
         new bool: bTankUp = bool:( !g_bModeCampaign && IsTankInGame() && g_bInRound );
+        
+        if ( bRound ) {
+            fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
+        } else {
+            // TO DO full time for entire game
+            fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
+        }
         
         for ( x = 0; x < g_iPlayers; x++ )
         {
@@ -3572,6 +3607,22 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     ( (bRound) ? g_strRoundPlayerData[i][team][plyDmgTaken] : g_strPlayerData[i][plyDmgTaken] )
                 );
             
+            // time (%)
+            if ( bRound ) {
+                presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
+            } else {
+                presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
+            }
+            if ( fullTime == presTime ) {
+                Format( strTmpA, s_len, "full");
+            } else if ( fullTime && presTime )  {
+                Format( strTmpA, s_len, "%3.0f%%%%", float(presTime) / float(fullTime) * 100.0);
+                LeftPadString( strTmpA, s_len, 5 );
+            } else {
+                Format( strTmpA, s_len, "    ");
+            }
+            FormatEx( strTmp[6], s_len, "%4s", strTmpA );
+            
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
             
@@ -3589,12 +3640,13 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             // Format the basic stats
             Format( g_sConsoleBuf[g_iConsoleBufChunks],
                     CONBUFSIZELARGE,
-                    "%s%s| %20s | %21s | %15s | %6s | %6s | %5s | %4s |",
+                    "%s%s| %20s | %21s | %15s | %6s | %6s | %5s | %4s | %4s |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
-                    ( bDivider ) ? "| -------------------- | --------------------- | --------------- | ------ | ------ | ----- | ---- |\n" : "",
+                    ( bDivider ) ? "| -------------------- | --------------------- | --------------- | ------ | ------ | ----- | ---- | ---- |\n" : "",
                     g_sTmpString,
                     strTmp[0], strTmp[1], strTmp[2],
-                    strTmp[3], strTmp[4], strTmp[5]
+                    strTmp[3], strTmp[4], strTmp[5],
+                    strTmp[6]
                 );
             
             line++;
@@ -3708,7 +3760,7 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
     
     new const s_len = 15;
     decl String:strPrint[FFTYPE_MAX][s_len];
-    new i, j, x, line;
+    new i, x, line;
     new bool: bDivider = false;
     
     // current logical survivor team?
@@ -3717,8 +3769,8 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
     // TAKEN
     for ( x = 0; x < g_iPlayers; x++ )
     {
-        j = g_iPlayerIndexSorted[SORT_FF][x];
-        
+        i = g_iPlayerIndexSorted[SORT_FF][x];
+                
         // also skip bots for this list?
         //if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
         
@@ -3730,40 +3782,40 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
         }
         
         // skip any row where total of given and taken is 0
-        if ( bRound && !g_strRoundPlayerData[j][team][plyFFGivenTotal] && !g_strRoundPlayerData[j][team][plyFFTakenTotal] ||
-            !bRound && !g_strPlayerData[j][plyFFGivenTotal] && !g_strPlayerData[j][plyFFTakenTotal]
+        if ( bRound && !g_strRoundPlayerData[i][team][plyFFGivenTotal] && !g_strRoundPlayerData[i][team][plyFFTakenTotal] ||
+            !bRound && !g_strPlayerData[i][plyFFGivenTotal] && !g_strPlayerData[i][plyFFTakenTotal]
         ) {
             continue;
         }
         
         // prepare print
-        if ( !bRound && g_strPlayerData[j][plyFFTakenTotal] || bRound && g_strRoundPlayerData[j][team][plyFFTakenTotal] ) {
-                    FormatEx(strPrint[FFTYPE_TOTAL],      s_len, "%7d", (!bRound) ? g_strPlayerData[j][plyFFTakenTotal] : g_strRoundPlayerData[j][team][plyFFTakenTotal] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenTotal] || bRound && g_strRoundPlayerData[i][team][plyFFTakenTotal] ) {
+                    FormatEx(strPrint[FFTYPE_TOTAL],      s_len, "%7d", (!bRound) ? g_strPlayerData[i][plyFFTakenTotal] : g_strRoundPlayerData[i][team][plyFFTakenTotal] );
         } else {    FormatEx(strPrint[FFTYPE_TOTAL],      s_len, "       " ); }
-        if ( !bRound && g_strPlayerData[j][plyFFTakenPellet] || !bRound && g_strRoundPlayerData[j][team][plyFFTakenPellet] ) {
-                    FormatEx(strPrint[FFTYPE_PELLET],     s_len, "%7d", (!bRound) ? g_strPlayerData[j][plyFFTakenPellet] : g_strRoundPlayerData[j][team][plyFFTakenPellet] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenPellet] || !bRound && g_strRoundPlayerData[i][team][plyFFTakenPellet] ) {
+                    FormatEx(strPrint[FFTYPE_PELLET],     s_len, "%7d", (!bRound) ? g_strPlayerData[i][plyFFTakenPellet] : g_strRoundPlayerData[i][team][plyFFTakenPellet] );
         } else {    FormatEx(strPrint[FFTYPE_PELLET],     s_len, "       " ); }
-        if ( !bRound && g_strPlayerData[j][plyFFTakenBullet] || bRound && g_strRoundPlayerData[j][team][plyFFTakenBullet] ) {
-                    FormatEx(strPrint[FFTYPE_BULLET],     s_len, "%7d", (!bRound) ? g_strPlayerData[j][plyFFTakenBullet] : g_strRoundPlayerData[j][team][plyFFTakenBullet] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenBullet] || bRound && g_strRoundPlayerData[i][team][plyFFTakenBullet] ) {
+                    FormatEx(strPrint[FFTYPE_BULLET],     s_len, "%7d", (!bRound) ? g_strPlayerData[i][plyFFTakenBullet] : g_strRoundPlayerData[i][team][plyFFTakenBullet] );
         } else {    FormatEx(strPrint[FFTYPE_BULLET],     s_len, "       " ); }
-        if ( !bRound && g_strPlayerData[j][plyFFTakenMelee] || bRound && g_strRoundPlayerData[j][team][plyFFTakenMelee] ) {
-                    FormatEx(strPrint[FFTYPE_MELEE],      s_len, "%6d", (!bRound) ? g_strPlayerData[j][plyFFTakenMelee] : g_strRoundPlayerData[j][team][plyFFTakenMelee] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenMelee] || bRound && g_strRoundPlayerData[i][team][plyFFTakenMelee] ) {
+                    FormatEx(strPrint[FFTYPE_MELEE],      s_len, "%6d", (!bRound) ? g_strPlayerData[i][plyFFTakenMelee] : g_strRoundPlayerData[i][team][plyFFTakenMelee] );
         } else {    FormatEx(strPrint[FFTYPE_MELEE],      s_len, "      " ); }
-        if ( !bRound && g_strPlayerData[j][plyFFTakenFire] || bRound && g_strRoundPlayerData[j][team][plyFFTakenFire] ) {
-                    FormatEx(strPrint[FFTYPE_FIRE],       s_len, "%6d", (!bRound) ? g_strPlayerData[j][plyFFTakenFire] : g_strRoundPlayerData[j][team][plyFFTakenFire] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenFire] || bRound && g_strRoundPlayerData[i][team][plyFFTakenFire] ) {
+                    FormatEx(strPrint[FFTYPE_FIRE],       s_len, "%6d", (!bRound) ? g_strPlayerData[i][plyFFTakenFire] : g_strRoundPlayerData[i][team][plyFFTakenFire] );
         } else {    FormatEx(strPrint[FFTYPE_FIRE],       s_len, "      " ); }
-        if ( !bRound && g_strPlayerData[j][plyFFTakenIncap] || bRound && g_strRoundPlayerData[j][team][plyFFTakenIncap] ) {
-                    FormatEx(strPrint[FFTYPE_INCAP],      s_len, "%8d", (!bRound) ? g_strPlayerData[j][plyFFTakenIncap] : g_strRoundPlayerData[j][team][plyFFTakenIncap] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenIncap] || bRound && g_strRoundPlayerData[i][team][plyFFTakenIncap] ) {
+                    FormatEx(strPrint[FFTYPE_INCAP],      s_len, "%8d", (!bRound) ? g_strPlayerData[i][plyFFTakenIncap] : g_strRoundPlayerData[i][team][plyFFTakenIncap] );
         } else {    FormatEx(strPrint[FFTYPE_INCAP],      s_len, "        " ); }
-        if ( !bRound && g_strPlayerData[j][plyFFTakenOther] || bRound && g_strRoundPlayerData[j][team][plyFFTakenOther] ) {
-                    FormatEx(strPrint[FFTYPE_OTHER],      s_len, "%6d", (!bRound) ? g_strPlayerData[j][plyFFTakenOther] : g_strRoundPlayerData[j][team][plyFFTakenOther] );
+        if ( !bRound && g_strPlayerData[i][plyFFTakenOther] || bRound && g_strRoundPlayerData[i][team][plyFFTakenOther] ) {
+                    FormatEx(strPrint[FFTYPE_OTHER],      s_len, "%6d", (!bRound) ? g_strPlayerData[i][plyFFTakenOther] : g_strRoundPlayerData[i][team][plyFFTakenOther] );
         } else {    FormatEx(strPrint[FFTYPE_OTHER],      s_len, "      " ); }
-        if ( !bRound && g_strPlayerData[j][plyFallDamage] || bRound && g_strRoundPlayerData[j][team][plyFallDamage] ) {
-                    FormatEx(strPrint[FFTYPE_SELF],       s_len, "%7d", (!bRound) ? g_strRoundPlayerData[j][team][plyFallDamage] : g_strPlayerData[j][plyFallDamage] );
+        if ( !bRound && g_strPlayerData[i][plyFallDamage] || bRound && g_strRoundPlayerData[i][team][plyFallDamage] ) {
+                    FormatEx(strPrint[FFTYPE_SELF],       s_len, "%7d", (!bRound) ? g_strRoundPlayerData[i][team][plyFallDamage] : g_strPlayerData[i][plyFallDamage] );
         } else {    FormatEx(strPrint[FFTYPE_SELF],       s_len, "       " ); }
         
         // prepare non-unicode string
-        stripUnicode( g_sPlayerName[j] );
+        stripUnicode( g_sPlayerName[i] );
         
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
