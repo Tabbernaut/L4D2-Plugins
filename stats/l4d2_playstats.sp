@@ -381,8 +381,6 @@ public Plugin: myinfo =
         - shotgun pellet accuracy seems.. off.. too high values
             - same for accuracy in general, btw
 
-        - broken output in coop
-
         - sorting for 'all' is not right
 
         build:
@@ -408,11 +406,7 @@ public Plugin: myinfo =
                 dps (hunter / jockey),
                 dc's,
                 damage done (to HB/DB?)
-                
-        - mpv more
-            - end-of-round => apply round times to strPlayerData()
-                - player times
-                - g_strAllRoundData
+        
         
         later:
         ------
@@ -2435,7 +2429,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             // only count survivors for the round in question
             if ( bRound && bTeam && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
-            if ( listNumber && ( !IS_VALID_CLIENT(client) || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
+            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
             {
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] Your rank - SI: #\x03%d \x01(\x05%d \x01dmg,\x05 %d \x01kills)",
@@ -2491,7 +2485,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             // only count survivors for the round in question
             if ( bRound && bTeam && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
-            if ( listNumber && ( !IS_VALID_CLIENT(client) || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
+            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
             {
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] Your rank - CI: #\x03%d \x01(\x05 %d \x01kills)",
@@ -2543,7 +2537,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
 
             if ( bRound && !g_strRoundPlayerData[index][team][plyFFGiven] || !bRound && !g_strPlayerData[index][plyFFGiven] ) { continue; }
             
-            if ( listNumber && ( !IS_VALID_CLIENT(client) || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
+            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
             {
                 Format(tmpBuffer, sizeof(tmpBuffer), "[LVP%s] Your rank - FF: #\x03%d \x01(\x05%d \x01dmg)",
                         (bRound) ? "" : " - Game",
@@ -2699,7 +2693,7 @@ String: GetMVPChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 )
 stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRound = true, bool:bTeam = true, iTeam = -1 )
 {
     new i, j;
-    new bool: bFooter;
+    new bool: bFooter = false;
     new time = GetTime();
     
     // get sorted players list
@@ -2815,16 +2809,28 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
             
             if ( bRound ) {
                 if ( bTeam ) {
-                    fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
-                    tankTime = ( (g_strRoundData[g_iRound][team][rndStopTimeTank]) ? g_strRoundData[g_iRound][team][rndStopTimeTank] : time ) - g_strRoundData[g_iRound][team][rndStartTimeTank];
+                    if ( g_strRoundData[g_iRound][team][rndStartTime] ) {
+                        fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
+                    }
+                    if ( g_strRoundData[g_iRound][team][rndStartTimeTank] ) {
+                        tankTime = ( (g_strRoundData[g_iRound][team][rndStopTimeTank]) ? g_strRoundData[g_iRound][team][rndStopTimeTank] : time ) - g_strRoundData[g_iRound][team][rndStartTimeTank];
+                    }
                     if ( g_strRoundData[g_iRound][team][rndStartTimePause] ) { 
                         pauseTime = ( (g_strRoundData[g_iRound][team][rndStopTimePause]) ? g_strRoundData[g_iRound][team][rndStopTimePause] : time ) - g_strRoundData[g_iRound][team][rndStartTimePause];
                     }
                 } else {
-                    fullTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_A][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTime];
-                    fullTime += ( (g_strRoundData[g_iRound][LTEAM_B][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_B][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_B][rndStartTime];
-                    tankTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndStopTimeTank]) ? g_strRoundData[g_iRound][LTEAM_A][rndStopTimeTank] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTimeTank];
-                    tankTime += ( (g_strRoundData[g_iRound][LTEAM_B][rndStopTimeTank]) ? g_strRoundData[g_iRound][LTEAM_B][rndStopTimeTank] : time ) - g_strRoundData[g_iRound][LTEAM_B][rndStartTimeTank];
+                    if ( g_strRoundData[g_iRound][LTEAM_A][rndStartTime] ) {
+                        fullTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_A][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTime];
+                    }
+                    if ( g_strRoundData[g_iRound][LTEAM_B][rndStartTime] ) {
+                        fullTime += ( (g_strRoundData[g_iRound][LTEAM_B][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_B][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_B][rndStartTime];
+                    }
+                    if ( g_strRoundData[g_iRound][LTEAM_A][rndStartTimeTank] ) {
+                        tankTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndStopTimeTank]) ? g_strRoundData[g_iRound][LTEAM_A][rndStopTimeTank] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTimeTank];
+                    }
+                    if ( g_strRoundData[g_iRound][LTEAM_B][rndStartTimeTank] ) {
+                        tankTime += ( (g_strRoundData[g_iRound][LTEAM_B][rndStopTimeTank]) ? g_strRoundData[g_iRound][LTEAM_B][rndStopTimeTank] : time ) - g_strRoundData[g_iRound][LTEAM_B][rndStartTimeTank];
+                    }
                     if ( g_strRoundData[g_iRound][LTEAM_A][rndStartTimePause] ) { 
                         pauseTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndStopTimePause]) ? g_strRoundData[g_iRound][LTEAM_A][rndStopTimePause] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTimePause];
                     }
@@ -2834,16 +2840,28 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
                 }
             } else {
                 if ( bTeam ) {
-                    fullTime = ( (g_strAllRoundData[team][rndEndTime]) ? g_strAllRoundData[team][rndEndTime] : time ) - g_strAllRoundData[team][rndStartTime];
-                    tankTime = ( (g_strAllRoundData[team][rndStopTimeTank]) ? g_strAllRoundData[team][rndStopTimeTank] : time ) - g_strAllRoundData[team][rndStartTimeTank];
+                    if ( g_strAllRoundData[team][rndStartTime] ) {
+                        fullTime = ( (g_strAllRoundData[team][rndEndTime]) ? g_strAllRoundData[team][rndEndTime] : time ) - g_strAllRoundData[team][rndStartTime];
+                    }
+                    if ( g_strAllRoundData[team][rndStartTimeTank] ) {
+                        tankTime = ( (g_strAllRoundData[team][rndStopTimeTank]) ? g_strAllRoundData[team][rndStopTimeTank] : time ) - g_strAllRoundData[team][rndStartTimeTank];
+                    }
                     if ( g_strAllRoundData[team][rndStartTimePause] ) { 
                         pauseTime = ( (g_strAllRoundData[team][rndStopTimePause]) ? g_strAllRoundData[team][rndStopTimePause] : time ) - g_strAllRoundData[team][rndStartTimePause];
                     }
                 } else {
-                    fullTime = ( (g_strAllRoundData[LTEAM_A][rndEndTime]) ? g_strAllRoundData[LTEAM_A][rndEndTime] : time ) - g_strAllRoundData[LTEAM_A][rndStartTime];
-                    fullTime += ( (g_strAllRoundData[LTEAM_B][rndEndTime]) ? g_strAllRoundData[LTEAM_B][rndEndTime] : time ) - g_strAllRoundData[LTEAM_B][rndStartTime];
-                    tankTime = ( (g_strAllRoundData[LTEAM_A][rndStopTimeTank]) ? g_strAllRoundData[LTEAM_A][rndStopTimeTank] : time ) - g_strAllRoundData[LTEAM_A][rndStartTimeTank];
-                    tankTime += ( (g_strAllRoundData[LTEAM_B][rndStopTimeTank]) ? g_strAllRoundData[LTEAM_B][rndStopTimeTank] : time ) - g_strAllRoundData[LTEAM_B][rndStartTimeTank];
+                    if ( g_strAllRoundData[LTEAM_A][rndStartTime] ) {
+                        fullTime = ( (g_strAllRoundData[LTEAM_A][rndEndTime]) ? g_strAllRoundData[LTEAM_A][rndEndTime] : time ) - g_strAllRoundData[LTEAM_A][rndStartTime];
+                    }
+                    if ( g_strAllRoundData[LTEAM_B][rndStartTime] ) {
+                        fullTime += ( (g_strAllRoundData[LTEAM_B][rndEndTime]) ? g_strAllRoundData[LTEAM_B][rndEndTime] : time ) - g_strAllRoundData[LTEAM_B][rndStartTime];
+                    }
+                    if ( g_strAllRoundData[LTEAM_A][rndStartTimeTank] ) {
+                        tankTime = ( (g_strAllRoundData[LTEAM_A][rndStopTimeTank]) ? g_strAllRoundData[LTEAM_A][rndStopTimeTank] : time ) - g_strAllRoundData[LTEAM_A][rndStartTimeTank];
+                    }
+                    if ( g_strAllRoundData[LTEAM_B][rndStartTimeTank] ) {
+                        tankTime += ( (g_strAllRoundData[LTEAM_B][rndStopTimeTank]) ? g_strAllRoundData[LTEAM_B][rndStopTimeTank] : time ) - g_strAllRoundData[LTEAM_B][rndStartTimeTank];
+                    }
                     if ( g_strAllRoundData[LTEAM_A][rndStartTimePause] ) { 
                         pauseTime = ( (g_strAllRoundData[LTEAM_A][rndStopTimePause]) ? g_strAllRoundData[LTEAM_A][rndStopTimePause] : time ) - g_strAllRoundData[LTEAM_A][rndStartTimePause];
                     }
@@ -2853,12 +2871,35 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
                 }
             }
             
-            Format( bufBasicHeader,
+            if ( fullTime )  {
+                FormatTimeAsDuration( strTmp[0], s_len, fullTime );
+                RightPadString( strTmp[0], s_len, 13 );
+            } else {
+                FormatEx( strTmp[0], s_len, "(not started)");
+            }
+            
+            if ( tankTime )  {
+                FormatTimeAsDuration( strTmp[1], s_len, tankTime );
+                RightPadString( strTmp[1], s_len, 13 );
+            } else {
+                FormatEx( strTmp[1], s_len, "(no tank)    ");
+            }
+            
+            if ( g_bPauseAvailable ) {
+                if ( pauseTime )  {
+                    FormatTimeAsDuration( strTmp[2], s_len, pauseTime );
+                    RightPadString( strTmp[2], s_len, 13 );
+                } else {
+                    FormatEx( strTmp[2], s_len, "(no pause)   ");
+                }
+            } else {
+                FormatEx( strTmp[2], s_len, "(unknown)    ");
+            }
+            
+            FormatEx( bufBasicFooter,
                     CONBUFSIZE,
                                             "| Round Duration:  %13s   Tank Fight Duration:  %13s   Pause Duration:  %13s  |\n%s",
-                    strTmp[0],
-                    strTmp[1],
-                    strTmp[2],
+                    strTmp[0], strTmp[1], strTmp[2],
                                             "|--------------------------------------------------------------------------------------------------------|\n"
                 );
             
@@ -3683,17 +3724,29 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
         // MVP - more ( time / pinned )
         if ( bRound ) {
             if ( bTeam ) {
-                fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
+                if ( g_strRoundData[g_iRound][team][rndStartTime] ) {
+                    fullTime = ( (g_strRoundData[g_iRound][team][rndEndTime]) ? g_strRoundData[g_iRound][team][rndEndTime] : time ) - g_strRoundData[g_iRound][team][rndStartTime];
+                }
             } else {
-                fullTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_A][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTime];
-                fullTime += ( (g_strRoundData[g_iRound][LTEAM_B][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_B][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_B][rndStartTime];
+                if ( g_strRoundData[g_iRound][LTEAM_A][rndStartTime] ) {
+                    fullTime = ( (g_strRoundData[g_iRound][LTEAM_A][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_A][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_A][rndStartTime];
+                }
+                if ( g_strRoundData[g_iRound][LTEAM_B][rndStartTime] ) {
+                    fullTime += ( (g_strRoundData[g_iRound][LTEAM_B][rndEndTime]) ? g_strRoundData[g_iRound][LTEAM_B][rndEndTime] : time ) - g_strRoundData[g_iRound][LTEAM_B][rndStartTime];
+                }
             }
         } else {
             if ( bTeam ) {
-                fullTime = ( (g_strAllRoundData[team][rndEndTime]) ? g_strAllRoundData[team][rndEndTime] : time ) - g_strAllRoundData[team][rndStartTime];
+                if ( g_strAllRoundData[team][rndStartTime] ) {
+                    fullTime = ( (g_strAllRoundData[team][rndEndTime]) ? g_strAllRoundData[team][rndEndTime] : time ) - g_strAllRoundData[team][rndStartTime];
+                }
             } else {
-                fullTime = ( (g_strAllRoundData[LTEAM_A][rndEndTime]) ? g_strAllRoundData[LTEAM_A][rndEndTime] : time ) - g_strAllRoundData[LTEAM_A][rndStartTime];
-                fullTime += ( (g_strAllRoundData[LTEAM_B][rndEndTime]) ? g_strAllRoundData[LTEAM_B][rndEndTime] : time ) - g_strAllRoundData[LTEAM_B][rndStartTime];
+                if ( g_strAllRoundData[LTEAM_A][rndStartTime] ) {
+                    fullTime = ( (g_strAllRoundData[LTEAM_A][rndEndTime]) ? g_strAllRoundData[LTEAM_A][rndEndTime] : time ) - g_strAllRoundData[LTEAM_A][rndStartTime];
+                }
+                if ( g_strAllRoundData[LTEAM_B][rndStartTime] ) {
+                    fullTime += ( (g_strAllRoundData[LTEAM_B][rndEndTime]) ? g_strAllRoundData[LTEAM_B][rndEndTime] : time ) - g_strAllRoundData[LTEAM_B][rndStartTime];
+                }
             }
         }
         
@@ -3713,9 +3766,17 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             
             // time present
             if ( bRound ) {
-                presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
+                if ( g_strRoundPlayerData[i][team][plyTimeStartPresent] ) {
+                    presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
+                } else {
+                    presTime = 0;
+                }
             } else {
-                presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
+                if ( g_strPlayerData[i][plyTimeStartPresent] ) {
+                    presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
+                } else {
+                    presTime = 0;
+                }
             }
             if ( fullTime && presTime )  {
                 Format( strTmpA, s_len, "%3.0f%%%%", float(presTime) / float(fullTime) * 100.0);
@@ -3736,9 +3797,17 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             
             // time alive
             if ( bRound ) {
-                aliveTime = ( (g_strRoundPlayerData[i][team][plyTimeStopAlive]) ? g_strRoundPlayerData[i][team][plyTimeStopAlive] : time ) - g_strRoundPlayerData[i][team][plyTimeStartAlive];
+                if ( g_strRoundPlayerData[i][team][plyTimeStartAlive] ) {
+                    aliveTime = ( (g_strRoundPlayerData[i][team][plyTimeStopAlive]) ? g_strRoundPlayerData[i][team][plyTimeStopAlive] : time ) - g_strRoundPlayerData[i][team][plyTimeStartAlive];
+                } else {
+                    aliveTime = 0;
+                }
             } else {
-                aliveTime = ( (g_strPlayerData[i][plyTimeStopAlive]) ? g_strPlayerData[i][plyTimeStopAlive] : time ) - g_strPlayerData[i][plyTimeStartAlive];
+                if ( g_strPlayerData[i][plyTimeStartAlive] ) {
+                    aliveTime = ( (g_strPlayerData[i][plyTimeStopAlive]) ? g_strPlayerData[i][plyTimeStopAlive] : time ) - g_strPlayerData[i][plyTimeStartAlive];
+                } else {
+                    aliveTime = 0;
+                }
             }
             if ( presTime && aliveTime )  {
                 Format( strTmpA, s_len, "%3.0f%%%%", float(aliveTime) / float(presTime) * 100.0);
@@ -3751,9 +3820,17 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             
             // time upright
             if ( bRound ) {
-                upTime = ( (g_strRoundPlayerData[i][team][plyTimeStopUpright]) ? g_strRoundPlayerData[i][team][plyTimeStopUpright] : time ) - g_strRoundPlayerData[i][team][plyTimeStartUpright];
+                if ( g_strRoundPlayerData[i][team][plyTimeStartAlive] ) {
+                    upTime = ( (g_strRoundPlayerData[i][team][plyTimeStopUpright]) ? g_strRoundPlayerData[i][team][plyTimeStopUpright] : time ) - g_strRoundPlayerData[i][team][plyTimeStartUpright];
+                } else {
+                    upTime = 0;
+                }
             } else {
-                upTime = ( (g_strPlayerData[i][plyTimeStopUpright]) ? g_strPlayerData[i][plyTimeStopUpright] : time ) - g_strPlayerData[i][plyTimeStartUpright];
+                if ( g_strPlayerData[i][plyTimeStartAlive] ) {
+                    upTime = ( (g_strPlayerData[i][plyTimeStopUpright]) ? g_strPlayerData[i][plyTimeStopUpright] : time ) - g_strPlayerData[i][plyTimeStartUpright];
+                } else {
+                    upTime = 0;
+                }
             }
             if ( presTime && upTime )  {
                 Format( strTmpA, s_len, "%3.0f%%%%", float(upTime) / float(presTime) * 100.0);
@@ -4576,6 +4653,23 @@ stock LeftPadString ( String:text[], maxlength, cutOff = 20 )
     
     strcopy( text, maxlength, tmp );
 }
+
+stock RightPadString ( String:text[], maxlength, cutOff = 20 )
+{
+    new String: tmp[maxlength];
+    new safe = 0;   // just to make sure we're never stuck in an eternal loop
+    
+    strcopy( tmp, maxlength, text );
+    
+    while ( strlen(tmp) < cutOff && safe < 1000 )
+    {
+        Format( tmp, maxlength, "%s ", tmp );
+        safe++;
+    }
+    
+    strcopy( text, maxlength, tmp );
+}
+
 
 stock FormatTimeAsDuration ( String:text[], maxlength, time )
 {
