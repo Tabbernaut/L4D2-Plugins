@@ -382,6 +382,11 @@ public Plugin: myinfo =
             - same for accuracy in general, btw
 
         - sorting for 'all' is not right
+        - problem with teamswaps during round...
+            - wrong times set for: presence / alive time and upright time
+            - makes bots get 0% alive/upright even if they never swapped, unless they did die
+            - something to do with rescue closets? fix for coop; check for vs
+            - but player teamswapping after being spec: goes to 0% alive / upright, even though moving into a living slot...
 
         build:
         ------
@@ -426,6 +431,7 @@ public Plugin: myinfo =
         
     details:
     --------
+        - left-pad seconds/minutes so they align in tables
         - cvar for % detail (1 decimal or no decimal option)
         - hide 0 and 0.0% values from tables
         
@@ -497,7 +503,7 @@ public OnPluginStart()
     HookEvent("revive_success",             Event_PlayerRevived,            EventHookMode_Post);
     HookEvent("player_falldamage",          Event_PlayerFallDamage,         EventHookMode_Post);
     
-    
+    HookEvent("tank_spawn",                 Event_TankSpawned,              EventHookMode_Post);
     HookEvent("weapon_fire",                Event_WeaponFire,               EventHookMode_Post);
     HookEvent("infected_hurt",              Event_InfectedHurt,             EventHookMode_Post);
     HookEvent("witch_killed",               Event_WitchKilled,              EventHookMode_Post);
@@ -1046,7 +1052,7 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
             // by default: only for round
             DisplayStatsMVP( client, bTank, bMore, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1 );
             // only show chat for non-tank table
-            if ( !bTank ) {
+            if ( !bTank && !bMore ) {
                 DisplayStatsMVPChat( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1 );
             }
         }
@@ -1413,10 +1419,11 @@ public Action: Event_TankSpawned( Handle:hEvent, const String:name[], bool:dontB
     if ( !g_bInRound ) { return; }
     
     // note time
-    if ( g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] && g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] ) {
-        g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] = time - (g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] - g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank]);
-    } else if ( !g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] ) {
+    if ( !g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] ) {
         g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] = time;
+    }
+    else if ( g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] ) {
+        g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] = time - (g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] - g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank]);
     }
     // else, keep starttime, it's two+ tanks at the same time...
 }
@@ -2805,7 +2812,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
         {
             new const s_len = 24;
             new String: strTmp[3][s_len];
-            new fullTime, tankTime, pauseTime;
+            new fullTime = 0, tankTime = 0, pauseTime = 0;
             
             if ( bRound ) {
                 if ( bTeam ) {
