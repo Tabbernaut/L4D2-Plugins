@@ -187,7 +187,7 @@ new     bool:           g_bHunterKilledPouncing [MAXPLAYERS + 1];               
 new     Float:          g_fPouncePosition       [MAXPLAYERS + 1][3];                            // position that a hunter (jockey?) pounced from
 
 // deadstops
-new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1];                               // when was the player shoved last? (to prevent doubles)
+new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when was the player shoved last (by attacker)? (to prevent doubles)
 
 // pops
 new                     g_bBoomerHitSomebody    [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
@@ -742,7 +742,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
     
     if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(victim) ) { return Plugin_Continue; }
     
-    if ( g_fVictimLastShove[victim] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim] ) > SHOVE_TIME )
+    if ( g_fVictimLastShove[victim][attacker] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) > SHOVE_TIME )
     {
         if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
         {
@@ -751,7 +751,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
         
         HandleShove( attacker, victim );
         
-        g_fVictimLastShove[victim] = GetGameTime();
+        g_fVictimLastShove[victim][attacker] = GetGameTime();
     }
     
     
