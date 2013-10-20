@@ -393,6 +393,15 @@ public Plugin: myinfo =
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
             - if the size/s is the problem, force a delay between each table..
+
+        - wrong times with pause / reconnects
+            - wrong fulltime
+            - wrong present etc times for players -- even after pause
+            
+        - game doesn't show stats for team A.. but it does for B, and all players have proper stats in game all..
+            - mvp/more game doesn't show stats even when mvp/game/all does...
+        - looks like stats didn't get cleared..
+            - at second round end? maybe due to error?
         
         build:
         ------
@@ -2535,7 +2544,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
         }
     }
     else {
-        for ( j = 0; j <= MaxClients; j++ ) {
+        for ( j = 1; j <= MaxClients; j++ ) {
             for ( i = 0; i < intPieces; i++ ) {
                 if ( !IS_VALID_INGAME( i ) || g_iCookieValue[i] != 0 ) { continue; }
                 PrintToChat( j, "\x01%s", strLines[i] );
@@ -4316,7 +4325,7 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
 {
     new iStored = 0;
     new i, j;
-    new bool: found, highest, pickTeam;
+    new bool: found, highest, highTeam, pickTeam;
     
     if ( sortCol < SORT_SI || sortCol > SORT_FF ) { return; }
     
@@ -4353,13 +4362,14 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
                         }
                         else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plySIDamage] >= g_strRoundPlayerData[i][LTEAM_B][plySIDamage] ) ? LTEAM_A : LTEAM_B;
-                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage] ||
-                                    g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][pickTeam][plySIDamage] &&
-                                    ( g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon] ||
-                                        ( g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][pickTeam][plyCommon] && highest < FIRST_NON_BOT ) )
+                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][highTeam][plySIDamage] ||
+                                    g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][highTeam][plySIDamage] &&
+                                    ( g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][highTeam][plyCommon] ||
+                                        ( g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][highTeam][plyCommon] && highest < FIRST_NON_BOT ) )
                             ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
+                                highTeam = pickTeam;
                             }
                         }
                     } else {
@@ -4385,13 +4395,14 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
                             }
                         } else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plyCommon] >= g_strRoundPlayerData[i][LTEAM_B][plyCommon] ) ? LTEAM_A : LTEAM_B;
-                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][pickTeam][plyCommon] ||
-                                    g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][pickTeam][plyCommon] &&
-                                    ( g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][pickTeam][plySIDamage] ||
-                                        ( g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][pickTeam][plySIDamage] && highest < FIRST_NON_BOT ) )
+                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][highTeam][plyCommon] ||
+                                    g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][highTeam][plyCommon] &&
+                                    ( g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][highTeam][plySIDamage] ||
+                                        ( g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][highTeam][plySIDamage] && highest < FIRST_NON_BOT ) )
                             ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
+                                highTeam = pickTeam;
                             }
                         }
                     } else {
@@ -4413,9 +4424,10 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
                             }
                         } else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plyFFGiven] >= g_strRoundPlayerData[i][LTEAM_B][plyFFGiven] ) ? LTEAM_A : LTEAM_B;
-                            if ( highest == -1 || g_strRoundPlayerData[i][pickTeam][plyFFGiven] > g_strRoundPlayerData[highest][pickTeam][plyFFGiven] ) {
+                            if ( highest == -1 || g_strRoundPlayerData[i][pickTeam][plyFFGiven] > g_strRoundPlayerData[highest][highTeam][plyFFGiven] ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
+                                highTeam = pickTeam;
                             }
                         }
                         
