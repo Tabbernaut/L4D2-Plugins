@@ -382,16 +382,13 @@ public Plugin: myinfo =
 
         fixes:
         ------
-        - better 'team' checks (in list-building)
-            - rule: don't include anyone who was in the team less than X time with 0 stats,
-                or NOT at end and with 0 stats
-        
         - accuracy seems off too high values
             - test (game/round? both?)
 
         - sorting for 'all' is not right
 
         - freaky names (sab) can still mess the alignment up?
+            - probably some sub-160 character that's still a problem?
 
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
@@ -406,9 +403,6 @@ public Plugin: myinfo =
             - if there were no stats, or the round was never started,
                 survivors never left, or time was too short, reset it
             - listen to !forcematch / !match command and map restart after?
-            
-        - automatic reports
-            - add client-side override
 
         - skill
             - clears / instaclears / average clear time
@@ -423,12 +417,7 @@ public Plugin: myinfo =
         ------
         - write CSV files per round -- db-ready
         - fix: some way of 'listening' to CMT?
-        
-        - time fixes:
-            - coop:
-                rescue closets?
-                player_afk
-                    short 	player 	user ID of the player 
+
         
     details:
     --------
@@ -490,6 +479,7 @@ public OnPluginStart()
     HookEvent("mission_lost",               Event_MissionLostCampaign,      EventHookMode_Post);
     HookEvent("map_transition",             Event_MapTransition,            EventHookMode_PostNoCopy);
     HookEvent("finale_win",                 Event_FinaleWin,                EventHookMode_PostNoCopy);
+    HookEvent("survivor_rescued",           Event_SurvivorRescue,           EventHookMode_Post);
     
     HookEvent("player_team",                Event_PlayerTeam,               EventHookMode_Post);
     HookEvent("player_spawn",               Event_PlayerSpawn,              EventHookMode_Post);
@@ -511,7 +501,6 @@ public OnPluginStart()
     HookEvent("pills_used",                 Event_PillsUsed,                EventHookMode_Post);
     HookEvent("adrenaline_used",            Event_AdrenUsed,                EventHookMode_Post);
     
-    //player_afk        short 	player 	user ID of the player 
     //HookEvent("player_left_checkpoint",     Event_ExitedSaferoom,           EventHookMode_Post);
     //HookEvent("player_entered_checkpoint",  Event_EnteredSaferoom,          EventHookMode_Post);
     //HookEvent("door_close",                 Event_DoorClose,                EventHookMode_PostNoCopy );
@@ -1586,6 +1575,26 @@ public Action: Event_PlayerRevived (Handle:event, const String:name[], bool:dont
             g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += GetTime() - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
             g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = 0;
         }
+    }
+}
+
+// rescue closets in coop
+public Action: Event_SurvivorRescue (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new client = GetClientOfUserId( GetEventInt(event, "victim") );
+    
+    new index = GetPlayerIndexForClient( client );
+    if ( index == -1 ) { return; }
+    
+    // if they were dead, they're alive now! magic.
+    new time = GetTime();
+    if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] )  {
+        g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive];
+        g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] = 0;
+    }
+    if ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] && g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] )  {
+        g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += time - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright];
+        g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = 0;
     }
 }
 
