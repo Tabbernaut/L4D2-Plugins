@@ -192,9 +192,6 @@ new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1]
 // pops
 new                     g_bBoomerHitSomebody    [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
 
-// levels
-new     bool:           g_bChargerCharging      [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
-
 // crowns
 new     Float:          g_fWitchShotStart       [MAXPLAYERS + 1];                               // when the last shotgun blast from a survivor started (on any witch)
 
@@ -250,7 +247,13 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         after it boomed?
     - make cvar for optionally removing fake damage: for charger too
     
+    - sir
+        - add 's since spawn' to onboomerpop forward
+        - add 'm2'd' to onboomerpop forward (bool)
+        - make separate teamskeet forward, with (for now, up to) 4 skeeters + the damage each did
+    
     detect...
+        - ? show meatshots on teammates / report meatshots?
         - ? speedcrown detection?
         - ? bhop (streaks) detection
         - ? deathcharge detection
@@ -311,9 +314,6 @@ public OnPluginStart()
     
     HookEvent("player_now_it",              Event_PlayerBoomed,             EventHookMode_Post);
     HookEvent("boomer_exploded",            Event_BoomerExploded,           EventHookMode_Post);
-    
-    HookEvent("charger_charge_start",       Event_ChargeStart,              EventHookMode_Post);
-    HookEvent("charger_charge_end",         Event_ChargeEnd,                EventHookMode_Post);
     
     //HookEvent("infected_hurt",              Event_InfectedHurt,             EventHookMode_Post);
     HookEvent("witch_spawn",                Event_WitchSpawned,             EventHookMode_Post);
@@ -557,14 +557,18 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
                 
                 // check for levels
-                if ( g_bChargerCharging[victim] && health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
+                if ( health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
                 {
-                    // charger was killed, was it a full level?
-                    if ( damage >= GetConVarInt(g_hCvarChargerHealth) ) {
-                        HandleLevel( attacker, victim );
-                    }
-                    else {
-                        HandleLevelHurt( attacker, victim, damage );
+                    new abilityEnt = GetEntPropEnt( victim, Prop_Send, "m_customAbility" );
+                    if ( IsValidEntity(abilityEnt) && GetEntProp(abilityEnt, Prop_Send, "m_isCharging") )
+                    {
+                        // charger was killed, was it a full level?
+                        if ( damage >= GetConVarInt(g_hCvarChargerHealth) ) {
+                            HandleLevel( attacker, victim );
+                        }
+                        else {
+                            HandleLevelHurt( attacker, victim, damage );
+                        }
                     }
                 }
             }
@@ -626,10 +630,6 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
         case ZC_BOOMER:
         {
             g_bBoomerHitSomebody[client] = false;
-        }
-        case ZC_CHARGER:
-        {
-            g_bChargerCharging[client] = false;
         }
         case ZC_SMOKER:
         {
@@ -1245,18 +1245,6 @@ public OnTouch_Rock ( entity )
     //PrintToChatAll("rock owner: %i", GetEntProp(entity, Prop_Send, "m_owner") );
     
     SDKUnhook(entity, SDKHook_Touch, OnTouch_Rock);
-}
-
-// charge tracking
-public Action: Event_ChargeStart (Handle:event, const String:name[], bool:dontBroadcast)
-{
-    new client = GetClientOfUserId( GetEventInt(event, "userid") );
-    g_bChargerCharging[client] = true;
-}
-public Action: Event_ChargeEnd (Handle:event, const String:name[], bool:dontBroadcast)
-{
-    new client = GetClientOfUserId( GetEventInt(event, "userid") );
-    g_bChargerCharging[client] = false;
 }
 
 // smoker tongue cutting & self clears
