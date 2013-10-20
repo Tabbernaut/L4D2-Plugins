@@ -4,6 +4,7 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <left4downtown>
+#include <clientprefs>
 #undef REQUIRE_PLUGIN
 #include <readyup>
 #define REQUIRE_PLUGIN
@@ -309,6 +310,9 @@ new     bool:   g_bSkillDetectLoaded    = false;
 new     bool:   g_bModeCampaign         = false;
 new     bool:   g_bModeScavenge         = false;
 
+new     Handle: g_hCookiePrint          = INVALID_HANDLE;
+new             g_iCookieValue          [MAXPLAYERS+1];                                 // if a cookie is set for a client, this is its value
+
 new     Handle: g_hCvarDebug            = INVALID_HANDLE;
 new     Handle: g_hCvarMVPBrevityFlags  = INVALID_HANDLE;
 new     Handle: g_hCvarAutoPrintVs      = INVALID_HANDLE;
@@ -401,9 +405,6 @@ public Plugin: myinfo =
             
         - automatic reports
             - add client-side override
-        
-        - survivor
-            - show meatshots on teammates / report meatshots?
 
         - skill
             - clears / instaclears / average clear time
@@ -561,11 +562,15 @@ public OnPluginStart()
     RegConsoleCmd( "sm_ff",         Cmd_StatsDisplayGeneral,    "Prints friendly fire stats stats" );
     RegConsoleCmd( "sm_acc",        Cmd_StatsDisplayGeneral,    "Prints accuracy stats for survivors" );
     
+    RegConsoleCmd( "sm_stats_auto", Cmd_Cookie_SetPrintFlags,   "Sets client-side preference for automatic stats-print at end of round" );
+    
     RegAdminCmd(   "statsreset",    Cmd_StatsReset, ADMFLAG_CHANGEMAP, "Resets the statistics. Admins only." );
     
     RegConsoleCmd( "say",           Cmd_Say );
     RegConsoleCmd( "say_team",      Cmd_Say );
     
+    // cookie
+    g_hCookiePrint = RegClientCookie( "sm_stats_autoprintflags", "Stats Auto Print Flags", CookieAccess_Public );
     
     // tries
     InitTries();
@@ -633,6 +638,8 @@ public OnClientPostAdminCheck( client )
 
 public OnClientDisconnected( client )
 {
+    g_iCookieValue[client] = 0;
+    
     if ( !g_bPlayersLeftStart ) { return; }
     
     new index = GetPlayerIndexForClient( client );
@@ -1097,6 +1104,126 @@ public Action: Cmd_StatsReset ( client, args )
     return Plugin_Handled;
 }
 
+
+/*
+    Cookies and clientprefs
+    -----------------------
+*/
+public Action: Cmd_Cookie_SetPrintFlags ( client, args )
+{
+    if ( args )
+    {
+        decl String: sArg[24];
+        GetCmdArg( 1, sArg, sizeof(sArg) );
+        new iFlags = StringToInt( sArg );
+        
+        if ( StrEqual(sArg, "?", false) || StrEqual(sArg, "help", false) ) 
+        {
+            PrintToChat( client, "\x01Use: \x04/stats_auto <flags>/x01. Flags is an integer that is the sum of all printouts to be displayed at round-end." );
+            PrintToChat( client, "\x01Set flags to 0 to use server autoprint default; set to -1 to not display anything at all." );
+            PrintToChat( client, "\x01See: \x05https://github.com/Tabbernaut/L4D2-Plugins/blob/master/stats/README.md\x01 for a list of flags." );
+            return Plugin_Handled;
+        }
+        else if ( StrEqual(sArg, "test", false) || StrEqual(sArg, "preview", false) )
+        {
+            if ( g_iCookieValue[client] < 1 )
+            {
+                PrintToChat( client, "\x01Stats Printing Preview: No flags set. First set flags with \x04/stats_auto <flags>/x01. Type /x04/stats_auto help/x01 for more info." );
+                return Plugin_Handled;
+            }
+            AutomaticPrintPerClient( g_iCookieValue[client], client );
+        }
+        else if ( iFlags >= -1 )
+        {
+            if ( iFlags == -1 ) {
+                PrintToChat( client, "\x01Stats Printing Preference: \x04no round end prints at all\x01." );
+            }
+            else if ( iFlags == 0 ) {
+                PrintToChat( client, "\x01Stats Printing Preference: \x04server default\x01." );
+            }
+            else {
+                new String: tmpStr[64];
+                
+                if ( iFlags & AUTO_MVPCON_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp(round)" );
+                }
+                if ( iFlags & AUTO_MVPCON_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp(game)" );
+                }
+                if ( iFlags & AUTO_MVPCON_MORE_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp/more(round)" );
+                }
+                if ( iFlags & AUTO_MVPCON_MORE_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp/more(game)" );
+                }
+                if ( iFlags & AUTO_MVPCON_TANK ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp/tankfight" );
+                }
+                if ( iFlags & AUTO_MVPCHAT_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp/chat(round)" );
+                }
+                if ( iFlags & AUTO_MVPCHAT_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "mvp/chat(game)" );
+                }
+                if ( iFlags & AUTO_SKILLCON_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "skill/special(round)" );
+                }
+                if ( iFlags & AUTO_SKILLCON_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "skill/special(game)" );
+                }
+                if ( iFlags & AUTO_FFCON_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "ff(round)" );
+                }
+                if ( iFlags & AUTO_FFCON_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "ff(game)" );
+                }
+                if ( iFlags & AUTO_ACCCON_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "accuracy(round)" );
+                }
+                if ( iFlags & AUTO_ACCCON_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "accuracy(game)" );
+                }
+                if ( iFlags & AUTO_ACCCON_MORE_ROUND ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "acc/more(round)" );
+                }
+                if ( iFlags & AUTO_ACCCON_MORE_GAME ) {
+                    Format( tmpStr, sizeof(tmpStr), "%s%s", (strlen(tmpStr)) ? ", " : "", "acc/more(game)" );
+                }
+                
+                PrintToChat( client, "\x01Stats Printing Preference: Flags set for: \x04%s\x01.\nUse \x04/stats_auto test\x01 to get a report preview.", tmpStr );
+            }
+            
+            g_iCookieValue[client] = iFlags;
+            
+            if ( AreClientCookiesCached(client) )
+            {
+                decl String:sCookieValue[16];
+                IntToString(iFlags, sCookieValue, sizeof(sCookieValue));
+                SetClientCookie( client, g_hCookiePrint, sCookieValue );
+            }
+            else {
+                PrintToChat( client, "Error: cookie not cached yet (try again in a bit)." );
+            }    
+        }
+        else
+        {
+            PrintToChat( client, "Stats Printing Preference: invalid value: '%s'. Type '/stats_auto help' for more info.", sArg );
+        }
+    }
+    else
+    {
+        PrintToChat( client, "\x01Use: \x04/stats_auto <flags>/x01. Type /x04/stats_auto help/x01 for more info." );
+    }
+    
+    return Plugin_Handled;
+}
+
+public OnClientCookiesCached ( client )
+{
+    decl String:sCookieValue[16];
+    GetClientCookie( client, g_hCookiePrint, sCookieValue, sizeof(sCookieValue) );
+    g_iCookieValue[client] = StringToInt( sCookieValue );
+}
 
 /*
     Team / Bot tracking
@@ -2166,11 +2293,9 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
     if ( round != -1 ) { round--; }
     
     decl String:bufBasicHeader[CONBUFSIZE];
-    //decl String:bufBasic[CONBUFSIZELARGE];
     decl String: strTmp[24];
     decl String: strTmpA[40];
-    //decl String: strTmpB[32];
-    new i, j;
+    new i;
     
     g_iConsoleBufChunks = 0;
     
@@ -2216,24 +2341,23 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
         Format(bufBasicHeader, CONBUFSIZE, "%s| Incaps:       %6i |          %6i  tanks    |\n", bufBasicHeader, tmpIncap, tmpTanks );
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
         
-        if ( !client )
-        {
-            for ( i = 1; i <= MaxClients; i++ )
-            {
-                if ( IS_VALID_INGAME( i ) )
+        if ( client == -1 ) {
+            // print to all
+            for ( i = 1; i <= MaxClients; i++ ) {
+                if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
                 {
                     PrintToConsole(i, bufBasicHeader);
-                    //PrintToConsole(i, bufBasic);
                 }
             }
         }
-        else
+        else if ( client == 0 ) {
+            // print to server
+            PrintToServer(bufBasicHeader);
+        }
+        else if ( IS_VALID_INGAME( client ) )
         {
-            if ( IS_VALID_INGAME( client ) )
-            {
-                PrintToConsole(client, bufBasicHeader);
-                //PrintToConsole(client, bufBasic);
-            }
+            PrintToConsole(client, bufBasicHeader);
+            
         }
         
         // round data
@@ -2272,31 +2396,30 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
                 );
             Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|", bufBasicHeader);
             
-            if ( !client )
-            {
-                for ( j = 1; j <= MaxClients; j++ )
-                {
-                    if ( IS_VALID_INGAME( j ) )
+            if ( client == -1 ) {
+                // print to all
+                for ( i = 1; i <= MaxClients; i++ ) {
+                    if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
                     {
-                        PrintToConsole(j, bufBasicHeader);
-                        //PrintToConsole(j, bufBasic);
+                        PrintToConsole(i, bufBasicHeader);
                     }
                 }
             }
-            else
+            else if ( client == 0 ) {
+                // print to server
+                PrintToServer(bufBasicHeader);
+            }
+            else if ( IS_VALID_INGAME( client ) )
             {
-                if ( IS_VALID_INGAME( client ) )
-                {
-                    PrintToConsole(client, bufBasicHeader);
-                    //PrintToConsole(client, bufBasic);
-                }
+                PrintToConsole(client, bufBasicHeader);
+                
             }
         }
     }
     else if ( round > g_iRound )
     {
         // too high
-        if ( IsClientAndInGame( client ) )
+        if ( IS_VALID_INGAME(client) )
         {
             if ( g_iRound == 0 ) {
                 PrintToChat( client, "<round> can only be 1 (for now)." );
@@ -2343,24 +2466,23 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
             );
         Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|", bufBasicHeader);
         
-        if ( !client )
-        {
-            for ( j = 1; j <= MaxClients; j++ )
-            {
-                if ( IS_VALID_INGAME( j ) )
+        if ( client == -1 ) {
+            // print to all
+            for ( i = 1; i <= MaxClients; i++ ) {
+                if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
                 {
-                    PrintToConsole(j, bufBasicHeader);
-                    //PrintToConsole(j, bufBasic);
+                    PrintToConsole(i, bufBasicHeader);
                 }
             }
         }
-        else
+        else if ( client == 0 ) {
+            // print to server
+            PrintToServer(bufBasicHeader);
+        }
+        else if ( IS_VALID_INGAME( client ) )
         {
-            if ( IS_VALID_INGAME( client ) )
-            {
-                PrintToConsole(client, bufBasicHeader);
-                //PrintToConsole(client, bufBasic);
-            }
+            PrintToConsole(client, bufBasicHeader);
+            
         }
     }
 }
@@ -2373,11 +2495,11 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
     decl String:printBuffer[1024];
     decl String:tmpBuffer[512];
     new String:strLines[8][192];
-    new i, x;
+    new i, j, x;
     
     printBuffer = GetMVPChatString( bRound, bTeam, iTeam );
     
-    if ( client != 0 ) {
+    if ( client == -1 ) {
         PrintToServer("\x01%s", printBuffer);
     }
 
@@ -2394,8 +2516,11 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
         }
     }
     else {
-        for ( i = 0; i < intPieces; i++ ) {
-            PrintToChatAll("\x01%s", strLines[i]);
+        for ( j = 0; j <= MaxClients; j++ ) {
+            for ( i = 0; i < intPieces; i++ ) {
+                if ( !IS_VALID_INGAME( i ) || g_iCookieValue[i] != 0 ) { continue; }
+                PrintToChat( j, "\x01%s", strLines[i] );
+            }
         }
     }
     
@@ -2422,7 +2547,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             
             if ( index == -1 ) { break; }
             found = -1;
-            for ( x = 1; x <= MAXPLAYERS; x++ ) {
+            for ( x = 1; x <= MaxClients; x++ ) {
                 if ( IS_VALID_INGAME(x) ) {
                     if ( index == GetPlayerIndexForClient(x) ) { found = x; break; }
                 }
@@ -2432,7 +2557,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             // only count survivors for the round in question
             if ( bRound && bTeam && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
-            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
+            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) && g_iCookieValue[found] == 0 )
             {
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] Your rank - SI: #\x03%d \x01(\x05%d \x01dmg,\x05 %d \x01kills)",
@@ -2488,7 +2613,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
             // only count survivors for the round in question
             if ( bRound && bTeam && g_iPlayerRoundTeam[team][i] != team ) { continue; }
             
-            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
+            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) && g_iCookieValue[found] == 0 )
             {
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] Your rank - CI: #\x03%d \x01(\x05 %d \x01kills)",
@@ -2540,7 +2665,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
 
             if ( bRound && !g_strRoundPlayerData[index][team][plyFFGiven] || !bRound && !g_strPlayerData[index][plyFFGiven] ) { continue; }
             
-            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) )
+            if ( listNumber && ( client == -1 || client == found ) && IS_VALID_CLIENT(found) && !IsFakeClient(found) && g_iCookieValue[found] == 0 )
             {
                 Format(tmpBuffer, sizeof(tmpBuffer), "[LVP%s] Your rank - FF: #\x03%d \x01(\x05%d \x01dmg)",
                         (bRound) ? "" : " - Game",
@@ -2913,7 +3038,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
     if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
-            if ( IS_VALID_INGAME( i ) )
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
             {
                 PrintToConsole(i, bufBasicHeader);
                 for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
@@ -3024,7 +3149,7 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
     if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
-            if ( IS_VALID_INGAME( i ) )
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
             {
                 PrintToConsole(i, bufBasicHeader);
                 for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
@@ -3100,7 +3225,7 @@ stock DisplayStatsSpecial( client, bool:bRound = true, bool:bTeam = true, bool:b
     if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
-            if ( IS_VALID_INGAME( i ) )
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
             {
                 PrintToConsole(i, bufBasicHeader);
                 for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
@@ -3199,7 +3324,7 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
     if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
-            if ( IS_VALID_INGAME( i ) )
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
             {
                 PrintToConsole(i, bufBasicHeader);
                 for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
@@ -3257,7 +3382,7 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
     if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
-            if ( IS_VALID_INGAME( i ) )
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
             {
                 PrintToConsole(i, bufBasicHeader);
                 for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
@@ -4342,36 +4467,47 @@ stock AutomaticRoundEndPrint ( bool:doDelay = true )
 }
 
 public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
-{
-    // what should we display?
-    
-    // check cvar flags
-    // mvp print?
-    // current round stats only .. which tables?
-    
+{   
     new iFlags = GetConVarInt( ( g_bModeCampaign ) ? g_hCvarAutoPrintCoop : g_hCvarAutoPrintVs );
+    
+    // do automatic prints (only for clients that don't have cookie flags set)
+    AutomaticPrintPerClient( iFlags, -1 );
+
+    // for each client that has a cookie set, do the relevant reports
+    for ( new client = 1; client <= MaxClients; client++ )
+    {
+        if ( g_iCookieValue[client] > 0 )
+        {
+            AutomaticPrintPerClient( g_iCookieValue[client], client );
+        }
+    }
+}
+
+stock AutomaticPrintPerClient( iFlags, client = -1 )
+{
+    // prints automatic stuff, optionally for one client only
     
     new bool: bSorted = (iFlags & AUTO_MVPCON_ROUND) || (iFlags & AUTO_MVPCON_GAME) || (iFlags & AUTO_MVPCON_TANK) || (iFlags & AUTO_MVPCON_MORE_ROUND);
     new bool: bSortedForGame = false;
     
     // mvp
     if ( iFlags & AUTO_MVPCON_ROUND ) {
-        DisplayStatsMVP(-1, false, false, true);
+        DisplayStatsMVP(client, false, false, true);
     }
     if ( iFlags & AUTO_MVPCON_GAME ) {
-        DisplayStatsMVP(-1, false, false, false);
+        DisplayStatsMVP(client, false, false, false);
         bSortedForGame = true;
     }
     if ( iFlags & AUTO_MVPCON_MORE_ROUND ) {
-        DisplayStatsMVP(-1, false, true, true);
+        DisplayStatsMVP(client, false, true, true);
     }
     if ( iFlags & AUTO_MVPCON_MORE_GAME ) {
-        DisplayStatsMVP(-1, false, true, false);
+        DisplayStatsMVP(client, false, true, false);
         bSortedForGame = true;
     }
     
     if ( iFlags & AUTO_MVPCON_TANK ) {
-        DisplayStatsMVP(-1, true);
+        DisplayStatsMVP(client, true);
     }
     
     if ( iFlags & AUTO_MVPCHAT_ROUND ) {
@@ -4380,7 +4516,7 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
             SortPlayersMVP( true, SORT_SI );
             bSorted = true;
         }
-        DisplayStatsMVPChat(-1, true);
+        DisplayStatsMVPChat(client, true);
     }
     
     if ( iFlags & AUTO_MVPCHAT_GAME ) {
@@ -4390,43 +4526,42 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
             SortPlayersMVP( false, SORT_SI );
             bSorted = true;
         }
-        DisplayStatsMVPChat(-1, false);
+        DisplayStatsMVPChat(client, false);
     }
     
     // special / skill
     if ( iFlags & AUTO_SKILLCON_ROUND ) {
-        DisplayStatsSpecial(-1, true);
+        DisplayStatsSpecial(client, true);
     }
     if ( iFlags & AUTO_SKILLCON_GAME ) {
-        DisplayStatsSpecial(-1, false);
+        DisplayStatsSpecial(client, false);
     }
     
     // ff
     if ( iFlags & AUTO_FFCON_ROUND ) {
-        DisplayStatsFriendlyFire(-1, true, (bSorted && !bSortedForGame) );
+        DisplayStatsFriendlyFire(client, true, (bSorted && !bSortedForGame) );
     }
     if ( iFlags & AUTO_FFCON_GAME ) {
-        DisplayStatsFriendlyFire(-1, false, (bSorted && bSortedForGame) );
+        DisplayStatsFriendlyFire(client, false, (bSorted && bSortedForGame) );
     }
     
     // accuracy
     if ( iFlags & AUTO_ACCCON_ROUND ) {
-        DisplayStatsAccuracy(-1, false, true, (bSorted && !bSortedForGame) );
+        DisplayStatsAccuracy(client, false, true, (bSorted && !bSortedForGame) );
     }
     if ( iFlags & AUTO_ACCCON_GAME ) {
-        DisplayStatsAccuracy(-1, false, false, (bSorted && bSortedForGame) );
+        DisplayStatsAccuracy(client, false, false, (bSorted && bSortedForGame) );
     }
     if ( iFlags & AUTO_ACCCON_MORE_ROUND ) {
-        DisplayStatsAccuracy(-1, true, true, (bSorted && !bSortedForGame) );
+        DisplayStatsAccuracy(client, true, true, (bSorted && !bSortedForGame) );
     }
     if ( iFlags & AUTO_ACCCON_MORE_GAME ) {
-        DisplayStatsAccuracy(-1, true, false, (bSorted && bSortedForGame) );
+        DisplayStatsAccuracy(client, true, false, (bSorted && bSortedForGame) );
     }
     
     // to do:
     // - inf
     // - fun fact
-    
 }
 
 
