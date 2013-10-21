@@ -6,7 +6,7 @@ Stats
 This plugin replaces survivor_mvp. It adds a lot of (optional) statistics
 that may be of interest:
 
-Relies on <b>l4d2_skill_detect</b> for some of the stats.
+Relies on <b>l4d2_skill_detect</b> for displaying of the stats (though it will otherwise function fine without it).
 
 
 Commands:
