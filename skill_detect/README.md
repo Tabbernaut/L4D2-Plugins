@@ -60,12 +60,15 @@ REP_JOCKEYDP            16384          *
 
 <b>sm_skill_skeet_allowmelee</b><br />
 <b>sm_skill_skeet_allowsniper</b><br />
-[1/0], whether to count melee skeets and sniper/magnum headshots as skeets (if not, doesn't forward either)<br />
+<b>sm_skill_skeet_allowgl</b><br />
+[1/0], whether to count melee skeets, sniper/magnum headshots, and/or grenade launcher air-kills as skeets (if not, doesn't forward either)<br />
+
 
 <b>sm_skill_hunterdp_damage</b><br />
 [15] How much damage a hunter must do in a pounce for it to count as a 'high pounce'<br />
 
 <b>sm_skill_jockeydp_height</b><br />
 [300] The mininum height for a jockey pounce for it to count as a 'high pounce'.<br />
+
 <b>sm_skill_hidefakedamage</b><br />
-[0/1], whether hide any damage on witch that exceeds her maximum health<br />
+[0/1], whether hide any damage on witch or level that exceeds the maximum health (this WILL make it harder to get drawcrowns and full levels!)<br />
