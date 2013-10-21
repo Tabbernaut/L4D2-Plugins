@@ -65,6 +65,8 @@ BREV_RANK               8       // hide "your rank" line
 BREV_PERCENT            32      // hide percentage values (only shows absolutes)
 BREV_ABSOLUTE           64      // hide absolute values (only shows percentages)
 </pre>
+Default: [4].
+
 
 <b>sm_stats_autoprint_vs_round</b><br />
 <b>sm_stats_autoprint_coop_round</b><br />
@@ -89,3 +91,12 @@ AUTO_FUNFACT_GAME       16384
 AUTO_MVPCON_MORE_ROUND  32768   // console table: more mvp stats, time alive, etc
 AUTO_MVPCON_MORE_GAME   65536
 </pre>
+Default: vs: [133], coop: [1289].
+
+
+<b>sm_stats_showbots</b><br />
+[0/1] Show bots in all tables. Default is on. When off, bots are hidden from anywhere but general MVP and friendly fire taken tables.<br />
+
+<b>sm_stats_percentdecimal</b><br />
+[0/1] If enabled, shows (most) percentages with single decimal precision (###.#%). Default is off (rounded to ###%). Percentages in MVP chat prints are not affected by this setting.<br />
+
