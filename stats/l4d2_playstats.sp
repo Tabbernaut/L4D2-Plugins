@@ -385,6 +385,7 @@ public Plugin: myinfo =
         test:
             - sorting on all players
             - round end prints & round addition (errors out for 1 team at least? not anymore?)
+                - 'game' data for both teams .. does it show? (after the round)
 
         - accuracy seems off too high values
             - test (game/round? both?)
@@ -394,29 +395,14 @@ public Plugin: myinfo =
 
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
-            - if the size/s is the problem, force a delay between each table..
-
-        - wrong times with pause / reconnects
-            - wrong fulltime
-            - wrong present etc times for players -- even after pause
-            
-        - game doesn't show stats for team A.. but it does for B, and all players have proper stats in game all..
-            - mvp/more game doesn't show stats even when mvp/game/all does...
-        - looks like stats didn't get cleared..
-            - at second round end? maybe due to error?
         
         build:
         ------
         - proper general stats tables
             - better rounds display (max 3 or so)
-        
-        - make confogl loading not cause round 1 to count...
-            - if there were no stats, or the round was never started,
-                survivors never left, or time was too short, reset it
-            - listen to !forcematch / !match command and map restart after?
 
         - skill
-            - clears / instaclears / average clear time
+            - clears / instaclears / average clear time?
 
         - make infected skills table
                 dps (hunter / jockey),
@@ -428,12 +414,14 @@ public Plugin: myinfo =
         ------
         - write CSV files per round -- db-ready
         - fix: some way of 'listening' to CMT?
+        - make confogl loading not cause round 1 to count...
+            - if there were no stats, or the round was never started,
+                survivors never left, or time was too short, reset it
+            - listen to !forcematch / !match command and map restart after?
 
         
     details:
     --------
-        - hide 0 and 0.0% values from tables
-        
         - hall of fame print, with only
             - most skeets (if any)
             - most levels (if any)
@@ -879,7 +867,7 @@ public OnPause()
     g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] = time - g_strRoundData[g_iRound][g_iCurTeam][rndStopTimePause];
 }
 
-public OnUnPause()
+public OnUnpause()
 {
     g_bPaused = false;
     
@@ -893,31 +881,31 @@ public OnUnPause()
     g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] += pauseTime;
     
     // same for tank, if it's up
-    if ( g_bTankInGame ) {
+    if ( g_bTankInGame )
+    {
         g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] += pauseTime;
     }
     
     // for each player in the current survivor team: substract too
     for ( client = 1; client <= MaxClients; client++ )
     {
-        if ( !IS_VALID_INGAME(client) ) { continue; }
+        if ( !IS_VALID_INGAME(client) || !IS_VALID_SURVIVOR(client) ) { continue; }
         
         index = GetPlayerIndexForClient( client );
         if ( index == -1 ) { continue; }
         
-        if ( IS_VALID_SURVIVOR(client) )
-        {
-            if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] )  {
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] += pauseTime;
-            }
-            if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] )  {
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += pauseTime;
-            }
-            if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] )  {
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += pauseTime;
-            }
+        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] )  {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] += pauseTime;
+        }
+        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] )  {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += pauseTime;
+        }
+        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] )  {
+            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += pauseTime;
         }
     }
+    
+    g_iPauseStart = 0;
 }
 
 /*
@@ -1905,6 +1893,15 @@ public OnSkeet ( attacker, victim )
     
     g_strRoundPlayerData[index][g_iCurTeam][plySkeets]++;
 }
+public OnSkeetGL ( attacker, victim )
+{
+    if ( !g_bPlayersLeftStart ) { return; }
+    
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
+    
+    g_strRoundPlayerData[index][g_iCurTeam][plySkeets]++;
+}
 public OnSkeetHurt ( attacker, victim, damage )
 {
     if ( !g_bPlayersLeftStart ) { return; }
@@ -1923,14 +1920,14 @@ public OnSkeetMelee ( attacker, victim )
     
     g_strRoundPlayerData[index][g_iCurTeam][plySkeetsMelee]++;
 }
-/* public OnSkeetMeleeHurt ( attacker, victim, damage )
+public OnSkeetMeleeHurt ( attacker, victim, damage )
 {
-    //new index = GetPlayerIndexForClient( attacker );
-    //if ( index == -1 ) { return; }
+    new index = GetPlayerIndexForClient( attacker );
+    if ( index == -1 ) { return; }
     
-    //g_strRoundPlayerData[index][g_iCurTeam][plySkeetsHurt]++;
+    g_strRoundPlayerData[index][g_iCurTeam][plySkeetsHurt]++;
 }
-*/
+
 public OnSkeetSniper ( attacker, victim )
 {
     if ( !g_bPlayersLeftStart ) { return; }
