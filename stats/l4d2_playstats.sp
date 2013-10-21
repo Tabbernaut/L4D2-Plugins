@@ -44,6 +44,7 @@
 #define MAXROUNDS               48              // ridiculously high, but just in case players do a marathon or something
 
 #define MAXNAME                 64
+#define MAXNAME_TABLE           20              // name size max in console tables
 #define MAXCHARACTERS           4
 #define MAXMAP                  32
 #define MAXGAME                 24
@@ -357,13 +358,12 @@ new     Handle: g_hTrieWeapons                                      = INVALID_HA
 new     Handle: g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
 
 new     String: g_sPlayerName           [MAXTRACKED][MAXNAME];
+new     String: g_sPlayerNameSafe       [MAXTRACKED][MAXNAME];                          // version of name without unicode characters
 new     String: g_sMapName              [MAXROUNDS][MAXMAP];
 new             g_iPlayers                                          = 0;
 
 new     String: g_sConsoleBuf           [MAXCHUNKS][CONBUFSIZELARGE];
 new             g_iConsoleBufChunks                                 = 0;
-
-new     String: g_sTmpString            [MAXNAME];
 
 
 public Plugin: myinfo =
@@ -918,7 +918,7 @@ public Action: Cmd_Say ( client, args )
     // catch and hide !<command>s
     if (!client) { return Plugin_Continue; }
     
-    decl String:sMessage[MAX_NAME_LENGTH];
+    decl String:sMessage[MAXNAME];
     GetCmdArg(1, sMessage, sizeof(sMessage));
     
     if (    StrEqual(sMessage, "!mvp")   ||
@@ -3531,9 +3531,6 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
             Format( strTmp[5], s_len, "          " );
         }
         
-        // prepare non-unicode string
-        stripUnicode( g_sPlayerName[i] );
-        
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             bDivider = true;
@@ -3550,7 +3547,7 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
                 "%s%s| %20s | %16s | %9s | %9s | %4s | %11s | %10s |",
                 g_sConsoleBuf[g_iConsoleBufChunks],
                 ( bDivider ) ? "| -------------------- | ---------------- | --------- | --------- | ---- | ----------- | ---------- |\n" : "",
-                g_sTmpString,
+                g_sPlayerNameSafe[i],
                 strTmp[0], strTmp[1], strTmp[2],
                 strTmp[3], strTmp[4], strTmp[5]
             );
@@ -3646,9 +3643,6 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
                 Format( strTmp[3], s_len, "                   " );
             }
             
-            // prepare non-unicode string
-            stripUnicode( g_sPlayerName[i] );
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
@@ -3665,7 +3659,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
                     "%s%s| %20s | %19s | %19s | %19s | %19s |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
                     ( bDivider ) ? "| -------------------- | ------------------- | ------------------- | ------------------- | ------------------- |\n" : "",
-                    g_sTmpString,
+                    g_sPlayerNameSafe[i],
                     strTmp[0], strTmp[1], strTmp[2], strTmp[3]
                 );
             
@@ -3756,9 +3750,6 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
                 Format( strTmp[3], s_len, "                   " );
             }
             
-            // prepare non-unicode string
-            stripUnicode( g_sPlayerName[i] );
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
@@ -3775,7 +3766,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
                     "%s%s| %20s | %19s | %19s | %19s | %19s |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
                     ( bDivider ) ? "| -------------------- | ------------------- | ------------------- | ------------------- | ------------------- |\n" : "",
-                    g_sTmpString,
+                    g_sPlayerNameSafe[i],
                     strTmp[0], strTmp[1], strTmp[2], strTmp[3]
                 );
             
@@ -3859,9 +3850,6 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     );
             } else { FormatEx( strTmp[3], s_len, "              " ); }
             
-            // prepare non-unicode string
-            stripUnicode( g_sPlayerName[i] );
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
@@ -3878,7 +3866,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     "%s%s| %20s | %14s | %10s | %6s | %14s |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
                     ( bDivider ) ? "| -------------------- | -------------- | ---------- | ------ | -------------- |\n" : "",
-                    g_sTmpString,
+                    g_sPlayerNameSafe[i],
                     strTmp[0], strTmp[1], strTmp[2], strTmp[3]
                 );
             
@@ -3980,9 +3968,6 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     ( presTime ) ? "%%" : " "
                 );
             
-            // prepare non-unicode string
-            stripUnicode( g_sPlayerName[i] );
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
@@ -3999,7 +3984,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     "%s%s| %20s | %22s | %6s | %7s |                    |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
                     ( bDivider ) ? "| -------------------- | ---------------------- | ------ | ------- |                    |\n" : "",
-                    g_sTmpString,
+                    g_sPlayerNameSafe[i],
                     strTmp[0], strTmp[1], strTmp[2]
                 );
             
@@ -4114,9 +4099,6 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     ( presTime ) ? "%%" : " "
                 );
             
-            // prepare non-unicode string
-            stripUnicode( g_sPlayerName[i] );
-            
             // cut into chunks:
             if ( line >= MAXLINESPERCHUNK ) {
                 bDivider = true;
@@ -4134,7 +4116,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     "%s%s| %20s | %21s | %15s | %6s | %6s | %5s | %4s | %4s |",
                     g_sConsoleBuf[g_iConsoleBufChunks],
                     ( bDivider ) ? "| -------------------- | --------------------- | --------------- | ------ | ------ | ----- | ---- | ---- |\n" : "",
-                    g_sTmpString,
+                    g_sPlayerNameSafe[i],
                     strTmp[0], strTmp[1], strTmp[2],
                     strTmp[3], strTmp[4], strTmp[5],
                     strTmp[6]
@@ -4210,9 +4192,6 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
                     FormatEx(strPrint[FFTYPE_SELF],       s_len, "%7d", (!bRound) ? g_strPlayerData[i][plyFFGivenSelf] : g_strRoundPlayerData[i][team][plyFFGivenSelf] );
         } else {    FormatEx(strPrint[FFTYPE_SELF],       s_len, "       " ); }
         
-        // prepare non-unicode string
-        stripUnicode( g_sPlayerName[i] );
-        
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             bDivider = true;
@@ -4229,7 +4208,7 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
                 "%s%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |",
                 g_sConsoleBuf[g_iConsoleBufChunks],
                 ( bDivider ) ? "| -------------------- | ------- || ------- | ------- | ------ | ------ | -------- | ------ || ------- |\n" : "",
-                g_sTmpString,
+                g_sPlayerNameSafe[i],
                 strPrint[FFTYPE_TOTAL],
                 strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
                 strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAP], strPrint[FFTYPE_OTHER],
@@ -4305,9 +4284,6 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
                     FormatEx(strPrint[FFTYPE_SELF],       s_len, "%7d", (!bRound) ? g_strRoundPlayerData[i][team][plyFallDamage] : g_strPlayerData[i][plyFallDamage] );
         } else {    FormatEx(strPrint[FFTYPE_SELF],       s_len, "       " ); }
         
-        // prepare non-unicode string
-        stripUnicode( g_sPlayerName[i] );
-        
         // cut into chunks:
         if ( line >= MAXLINESPERCHUNK ) {
             bDivider = true;
@@ -4324,7 +4300,7 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
                 "%s%s| %20s | %7s || %7s | %7s | %6s | %6s | %8s | %6s || %7s |",
                 g_sConsoleBuf[g_iConsoleBufChunks],
                 ( bDivider ) ? "| -------------------- | ------- || ------- | ------- | ------ | ------ | -------- | ------ || ------- |\n" : "",
-                g_sTmpString,
+                g_sPlayerNameSafe[i],
                 strPrint[FFTYPE_TOTAL],
                 strPrint[FFTYPE_PELLET], strPrint[FFTYPE_BULLET], strPrint[FFTYPE_MELEE],
                 strPrint[FFTYPE_FIRE], strPrint[FFTYPE_INCAP], strPrint[FFTYPE_OTHER],
@@ -4720,6 +4696,7 @@ stock GetPlayerIndexForClient ( client )
     return GetPlayerIndexForSteamId( sSteamId, client );
 }
 
+// if not found, stores the steamid for a new index, stores the name and safe name too
 stock GetPlayerIndexForSteamId ( const String:steamId[], client=-1 )
 {
     new pIndex = -1;
@@ -4733,6 +4710,8 @@ stock GetPlayerIndexForSteamId ( const String:steamId[], client=-1 )
         // store name
         if ( client != -1 ) {
             GetClientName( client, g_sPlayerName[pIndex], MAXNAME );
+            strcopy( g_sPlayerNameSafe[pIndex], MAXNAME_TABLE, g_sPlayerName[pIndex] );
+            stripUnicode( g_sPlayerNameSafe[pIndex], MAXNAME_TABLE );
         }
         
         //PrintToChatAll("client: %i %N %s", client, client, g_sPlayerName[g_iPlayers] );
@@ -4840,6 +4819,10 @@ stock InitTries()
     g_sPlayerName[2] = "BOT [Coach/Louis]";
     g_sPlayerName[3] = "BOT [Ellis/Francis]";
     g_iPlayers += FIRST_NON_BOT;
+    
+    for ( new i = 0; i < 4; i++ ) {
+        g_sPlayerNameSafe[i] = g_sPlayerName[i];
+    }
     
     // weapon recognition
     g_hTrieWeapons = CreateTrie();
@@ -5001,43 +4984,50 @@ stock CheckGameMode()
 
 stock stripUnicode ( String:testString[MAXNAME], maxLength = 20 )
 {
-    if ( maxLength < 1 ) { maxLength = MAX_NAME_LENGTH; }
+    if ( maxLength < 1 ) { maxLength = MAXNAME; }
     
-    //strcopy(testString, maxLength, sTmpString);
-    g_sTmpString = testString;
+    decl String: tmpString[maxLength];
+    strcopy( tmpString, maxLength, testString );
     
     new uni=0;
     new currentChar;
     new tmpCharLength = 0;
-    //new iReplace[MAX_NAME_LENGTH];      // replace these chars
     
-    for ( new i = 0; i < maxLength - 3 && g_sTmpString[i] != 0; i++ )
+    for ( new i = 0; i < maxLength && tmpString[i] != 0; i++ )
     {
         // estimate current character value
-        if ((g_sTmpString[i]&0x80) == 0) // single byte character?
+        if ( (tmpString[i]&0x80) == 0 ) 
         {
-            currentChar=g_sTmpString[i]; tmpCharLength = 0;
-        } else if (((g_sTmpString[i]&0xE0) == 0xC0) && ((g_sTmpString[i+1]&0xC0) == 0x80)) // two byte character?
+            // single byte character?
+            currentChar = tmpString[i]; tmpCharLength = 0;
+        }
+        else if ( i < maxLength - 1 && ((tmpString[i]&0xE0) == 0xC0) && ((tmpString[i+1]&0xC0) == 0x80) ) 
         {
-            currentChar=(g_sTmpString[i++] & 0x1f); currentChar=currentChar<<6;
-            currentChar+=(g_sTmpString[i] & 0x3f); 
+            // two byte character?
+            currentChar=(tmpString[i++] & 0x1f); currentChar=currentChar<<6;
+            currentChar+=(tmpString[i] & 0x3f); 
             tmpCharLength = 1;
-        } else if (((g_sTmpString[i]&0xF0) == 0xE0) && ((g_sTmpString[i+1]&0xC0) == 0x80) && ((g_sTmpString[i+2]&0xC0) == 0x80)) // three byte character?
+        }
+        else if ( i < maxLength - 2 && ((tmpString[i]&0xF0) == 0xE0) && ((tmpString[i+1]&0xC0) == 0x80) && ((tmpString[i+2]&0xC0) == 0x80) )
         {
-            currentChar=(g_sTmpString[i++] & 0x0f); currentChar=currentChar<<6;
-            currentChar+=(g_sTmpString[i++] & 0x3f); currentChar=currentChar<<6;
-            currentChar+=(g_sTmpString[i] & 0x3f);
+            // three byte character?
+            currentChar=(tmpString[i++] & 0x0f); currentChar=currentChar<<6;
+            currentChar+=(tmpString[i++] & 0x3f); currentChar=currentChar<<6;
+            currentChar+=(tmpString[i] & 0x3f);
             tmpCharLength = 2;
-        } else if (((g_sTmpString[i]&0xF8) == 0xF0) && ((g_sTmpString[i+1]&0xC0) == 0x80) && ((g_sTmpString[i+2]&0xC0) == 0x80) && ((g_sTmpString[i+3]&0xC0) == 0x80)) // four byte character?
+        }
+        else if ( i < maxLength - 3 && ((tmpString[i]&0xF8) == 0xF0) && ((tmpString[i+1]&0xC0) == 0x80) && ((tmpString[i+2]&0xC0) == 0x80) && ((tmpString[i+3]&0xC0) == 0x80) )
         {
-            currentChar=(g_sTmpString[i++] & 0x07); currentChar=currentChar<<6;
-            currentChar+=(g_sTmpString[i++] & 0x3f); currentChar=currentChar<<6;
-            currentChar+=(g_sTmpString[i++] & 0x3f); currentChar=currentChar<<6;
-            currentChar+=(g_sTmpString[i] & 0x3f);
+            // four byte character?
+            currentChar=(tmpString[i++] & 0x07); currentChar=currentChar<<6;
+            currentChar+=(tmpString[i++] & 0x3f); currentChar=currentChar<<6;
+            currentChar+=(tmpString[i++] & 0x3f); currentChar=currentChar<<6;
+            currentChar+=(tmpString[i] & 0x3f);
             tmpCharLength = 3;
-        } else 
+        }
+        else 
         {
-            currentChar=CHARTHRESHOLD + 1; // reaching this may be caused by bug in sourcemod or some kind of bug using by the user - for unicode users I do assume last ...
+            currentChar = CHARTHRESHOLD + 1; // reaching this may be caused by bug in sourcemod or some kind of bug using by the user - for unicode users I do assume last ...
             tmpCharLength = 0;
         }
         
@@ -5045,20 +5035,21 @@ stock stripUnicode ( String:testString[MAXNAME], maxLength = 20 )
         if (currentChar > CHARTHRESHOLD)
         {
             uni++;
-            // replace this character // 95 = _, 32 = space
-            for (new j=tmpCharLength; j >= 0; j--) {
-                g_sTmpString[i - j] = 95; 
+            // replace this character
+            // 95 = _, 32 = space
+            for ( new j = tmpCharLength; j >= 0; j-- )
+            {
+                tmpString[i - j] = 95; 
             }
         }
     }
     
-    if ( strlen(g_sTmpString) > maxLength )
+    if ( strlen(tmpString) > maxLength )
     {
-        g_sTmpString[maxLength] = 0;
+        tmpString[maxLength] = 0;
     }
-    else {
-        RightPadString( g_sTmpString, maxLength, maxLength );
-    }
+    
+    strcopy( testString, maxLength, tmpString );
 }
 
 stock PrintDebug( debugLevel, const String:Message[], any:... )
