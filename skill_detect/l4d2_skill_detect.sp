@@ -16,6 +16,7 @@
  *  This performs global forward calls to:
  *      OnSkeet( survivor, hunter )
  *      OnSkeetMelee( survivor, hunter )
+ *      OnSkeetGL( survivor, hunter )
  *      OnSkeetSniper( survivor, hunter )
  *      OnSkeetHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetMeleeHurt( survivor, hunter, damage, isOverkill )
@@ -106,10 +107,11 @@
 #define REP_DEFAULT             "24629"  //(REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP) -- 1 4 16 32 8192 16384
 
 // trie values: weapon type
-enum _:strWeaponType
+enum strWeaponType
 {
     WPTYPE_SNIPER,
-    WPTYPE_MAGNUM
+    WPTYPE_MAGNUM,
+    WPTYPE_GL
 };
 
 // trie values: OnEntityCreated classname
@@ -153,6 +155,7 @@ new     Handle:         g_hForwardSkeetMelee                                = IN
 new     Handle:         g_hForwardSkeetMeleeHurt                            = INVALID_HANDLE;
 new     Handle:         g_hForwardSkeetSniper                               = INVALID_HANDLE;
 new     Handle:         g_hForwardSkeetSniperHurt                           = INVALID_HANDLE;
+new     Handle:         g_hForwardSkeetGL                                   = INVALID_HANDLE;
 new     Handle:         g_hForwardHunterDeadstop                            = INVALID_HANDLE;
 new     Handle:         g_hForwardSIShove                                   = INVALID_HANDLE;
 new     Handle:         g_hForwardBoomerPop                                 = INVALID_HANDLE;
@@ -189,6 +192,9 @@ new     Float:          g_fPouncePosition       [MAXPLAYERS + 1][3];            
 // deadstops
 new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when was the player shoved last (by attacker)? (to prevent doubles)
 
+// levels
+new                     g_iChargerHealth        [MAXPLAYERS + 1];                               // how much health the charger had the last time it was seen taking damage
+
 // pops
 new                     g_bBoomerHitSomebody    [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
 
@@ -212,6 +218,7 @@ new     Handle:         g_hCvarReportFlags                                  = IN
 
 new     Handle:         g_hCvarAllowMelee                                   = INVALID_HANDLE;   // cvar whether to count melee skeets
 new     Handle:         g_hCvarAllowSniper                                  = INVALID_HANDLE;   // cvar whether to count sniper headshot skeets
+new     Handle:         g_hCvarAllowGLSkeet                                 = INVALID_HANDLE;   // cvar whether to count direct hit GL skeets
 new     Handle:         g_hCvarDrawCrownThresh                              = INVALID_HANDLE;   // cvar damage in final shot for drawcrown-req.
 new     Handle:         g_hCvarSelfClearThresh                              = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
 new     Handle:         g_hCvarHunterDPThresh                               = INVALID_HANDLE;   // cvar damage for hunter highpounce
@@ -238,14 +245,26 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     Does not report people cutting smoker tongues that target players other
     than themselves. Could be done, but would require (too much) tracking.
     
+    Fake Damage
+    -----------
+    Hiding of fake damage has the following consequences:
+        - Drawcrowns are less likely to be registered: if a witch takes too
+          much chip before the crowning shot, the final shot will be considered
+          as doing too little damage for a crown (even if it would have been a crown
+          had the witch had more health).
+        - Charger levels are harder to get on chipped chargers. Any charger that
+          has taken (600 - 390 =) 210 damage or more cannot be leveled (even if
+          the melee swing would've killed the charger (1559 damage) if it'd have
+          had full health).
+    I strongly recommend leaving fakedamage visible: it will offer more feedback on
+    the survivor's action and reward survivors doing (what would be) full crowns and
+    levels on chipped targets.
+    
     
     To do
     -----
-    
-    - check for grenadeskeets! (and report separately)
     - reconsider popping conditions.. distance? if it ever got close?
         after it boomed?
-    - make cvar for optionally removing fake damage: for charger too
     
     - sir
         - add 's since spawn' to onboomerpop forward
@@ -266,7 +285,7 @@ public Plugin:myinfo =
 {
     name = "Skill Detection (skeets, crowns, levels)",
     author = "Tabun",
-    description = "Detects and reports skeets, crowns, levels, highpounces, deathcharges.",
+    description = "Detects and reports skeets, crowns, levels, highpounces, etc.",
     version = PLUGIN_VERSION,
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 }
@@ -282,6 +301,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSkeetMeleeHurt =  CreateGlobalForward("OnSkeetMeleeHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardSkeetSniper =     CreateGlobalForward("OnSkeetSniperHeadshot", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSkeetSniperHurt = CreateGlobalForward("OnSkeetSniperHeadshotHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
+    g_hForwardSkeetGL =         CreateGlobalForward("OnSkeetGL", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSIShove =         CreateGlobalForward("OnSpecialShoved", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardHunterDeadstop =  CreateGlobalForward("OnHunterDeadstop", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardBoomerPop =       CreateGlobalForward("OnBoomerPop", ET_Ignore, Param_Cell, Param_Cell );
@@ -334,6 +354,7 @@ public OnPluginStart()
     
     g_hCvarAllowMelee = CreateConVar(       "sm_skill_skeet_allowmelee",    "1", "Whether to count/forward melee skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarAllowSniper = CreateConVar(      "sm_skill_skeet_allowsniper",   "1", "Whether to count/forward sniper/magnum headshots as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
+    g_hCvarAllowGLSkeet = CreateConVar(     "sm_skill_skeet_allowgl",       "1", "Whether to count/forward direct GL hits as skeets.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarDrawCrownThresh = CreateConVar(  "sm_skill_drawcrown_damage",  "500", "How much damage a survivor must at least do in the final shot for it to count as a drawcrown.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarSelfClearThresh = CreateConVar(  "sm_skill_selfclear_damage",  "200", "How much damage a survivor must at least do to a smoker for him to count as self-clearing.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarHunterDPThresh = CreateConVar(   "sm_skill_hunterdp_damage",    "15", "How much damage a hunter must do for his pounce to count as a DP.", FCVAR_PLUGIN, true, 0.0, false );
@@ -358,19 +379,20 @@ public OnPluginStart()
     
     // tries
     g_hTrieWeapons = CreateTrie();
-    SetTrieValue(g_hTrieWeapons, "hunting_rifle",       WPTYPE_SNIPER);
-    SetTrieValue(g_hTrieWeapons, "sniper_military",     WPTYPE_SNIPER);
-    SetTrieValue(g_hTrieWeapons, "sniper_awp",          WPTYPE_SNIPER);
-    SetTrieValue(g_hTrieWeapons, "sniper_scout",        WPTYPE_SNIPER);
-    SetTrieValue(g_hTrieWeapons, "pistol_magnum",       WPTYPE_MAGNUM);
+    SetTrieValue(g_hTrieWeapons, "hunting_rifle",               WPTYPE_SNIPER);
+    SetTrieValue(g_hTrieWeapons, "sniper_military",             WPTYPE_SNIPER);
+    SetTrieValue(g_hTrieWeapons, "sniper_awp",                  WPTYPE_SNIPER);
+    SetTrieValue(g_hTrieWeapons, "sniper_scout",                WPTYPE_SNIPER);
+    SetTrieValue(g_hTrieWeapons, "pistol_magnum",               WPTYPE_MAGNUM);
+    SetTrieValue(g_hTrieWeapons, "grenade_launcher_projectile", WPTYPE_GL);
     
     g_hTrieEntityCreated = CreateTrie();
-    SetTrieValue(g_hTrieEntityCreated, "tank_rock",     OEC_TANKROCK);
-    SetTrieValue(g_hTrieEntityCreated, "witch",         OEC_WITCH);
+    SetTrieValue(g_hTrieEntityCreated, "tank_rock",             OEC_TANKROCK);
+    SetTrieValue(g_hTrieEntityCreated, "witch",                 OEC_WITCH);
     
     g_hTrieAbility = CreateTrie();
-    SetTrieValue(g_hTrieAbility, "ability_lunge",       ABL_HUNTERLUNGE);
-    SetTrieValue(g_hTrieAbility, "ability_throw",       ABL_ROCKTHROW);
+    SetTrieValue(g_hTrieAbility, "ability_lunge",               ABL_HUNTERLUNGE);
+    SetTrieValue(g_hTrieAbility, "ability_throw",               ABL_ROCKTHROW);
     
     
     g_hWitchTrie = CreateTrie();
@@ -485,20 +507,38 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                             g_bHunterKilledPouncing[victim] = true;
                         }
                     }
+                    else if ( damagetype & (DMG_BLAST | DMG_PLASMA) && health == 0 )
+                    {
+                        // direct GL hit?
+                        /*
+                            direct hit is DMG_BLAST | DMG_PLASMA
+                            indirect hit is DMG_AIRBOAT
+                        */
+                        
+                        decl String: weaponB[32];
+                        new strWeaponType: weaponTypeB;
+                        GetEventString(event, "weapon", weaponB, sizeof(weaponB));
+                        
+                        if ( GetTrieValue(g_hTrieWeapons, weaponB, weaponTypeB) && weaponTypeB == WPTYPE_GL )
+                        {
+                            if ( GetConVarBool(g_hCvarAllowGLSkeet) ) {
+                                HandleSkeet( attacker, victim, false, false, true );
+                            }
+                        }
+                    }
                     else if (   damagetype & DMG_BULLET &&
                                 health == 0 &&
                                 hitgroup == HITGROUP_HEAD
                     ) {
                         // headshot with bullet based weapon (only single shots) -- only snipers
+                        decl String: weaponA[32];
+                        new strWeaponType: weaponTypeA;
+                        GetEventString(event, "weapon", weaponA, sizeof(weaponA));
                         
-                        new String: weapon[32];
-                        GetEventString(event, "weapon", weapon, sizeof(weapon));
-                        
-                        new strWeaponType: weaponType;
-                        if ( GetTrieValue(g_hTrieWeapons, weapon, weaponType) )
-                        {
-                            // no need to check further, only magnum & snipers are in the trie
-                            
+                        if (    GetTrieValue(g_hTrieWeapons, weaponA, weaponTypeA) &&
+                                (   weaponTypeA == WPTYPE_SNIPER ||
+                                    weaponTypeA == WPTYPE_MAGNUM )
+                        ) {
                             if ( damage >= g_iPounceInterrupt )
                             {
                                 g_iHunterShotDmgTeam[victim] = 0;
@@ -554,22 +594,36 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
             
             case ZC_CHARGER:
             {
-                if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
-                
-                // check for levels
-                if ( health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
-                {
-                    new abilityEnt = GetEntPropEnt( victim, Prop_Send, "m_customAbility" );
-                    if ( IsValidEntity(abilityEnt) && GetEntProp(abilityEnt, Prop_Send, "m_isCharging") )
+                if ( IS_VALID_SURVIVOR(attacker) )
+                {                
+                    // check for levels
+                    if ( health == 0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) )
                     {
-                        // charger was killed, was it a full level?
-                        if ( damage >= GetConVarInt(g_hCvarChargerHealth) ) {
-                            HandleLevel( attacker, victim );
-                        }
-                        else {
-                            HandleLevelHurt( attacker, victim, damage );
+                        new iChargeHealth = GetConVarInt(g_hCvarChargerHealth);
+                        new abilityEnt = GetEntPropEnt( victim, Prop_Send, "m_customAbility" );
+                        if ( IsValidEntity(abilityEnt) && GetEntProp(abilityEnt, Prop_Send, "m_isCharging") )
+                        {
+                            // fix fake damage?
+                            if ( GetConVarBool(g_hCvarHideFakeDamage) )
+                            {
+                                damage = iChargeHealth - g_iChargerHealth[victim];
+                            }
+                            
+                            // charger was killed, was it a full level?
+                            if ( damage > (iChargeHealth * 0.65) ) {
+                                HandleLevel( attacker, victim );
+                            }
+                            else {
+                                HandleLevelHurt( attacker, victim, damage );
+                            }
                         }
                     }
+                }
+                
+                // store health for next damage it takes
+                if ( health > 0 )
+                {
+                    g_iChargerHealth[victim] = health;
                 }
             }
             
@@ -650,6 +704,10 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
             g_fPouncePosition[client][0] = 0.0;
             g_fPouncePosition[client][1] = 0.0;
             g_fPouncePosition[client][2] = 0.0;
+        }
+        case ZC_CHARGER:
+        {
+            g_iChargerHealth[client] = GetConVarInt(g_hCvarChargerHealth);
         }
     }
     
@@ -1423,7 +1481,7 @@ stock HandleShove( attacker, victim )
 }
 
 // real skeet
-stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false )
+stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false, bool:bGL = false )
 {
     // report?
     if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_SKEET )
@@ -1439,11 +1497,18 @@ stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false )
         }
         else if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
-            PrintToChatAll( "\x04%N\x01 %sskeeted \x05%N\x01.", attacker, (bMelee) ? "melee-": ((bSniper) ? "headshot-" : ""), victim );
+            PrintToChatAll( "\x04%N\x01 %sskeeted \x05%N\x01.",
+                    attacker,
+                    (bMelee) ? "melee-": ((bSniper) ? "headshot-" : ((bGL) ? "grenade-" : "") ),
+                    victim 
+                );
         }
         else if ( IS_VALID_INGAME(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 %sskeeted a hunter.", attacker, (bMelee) ? "melee-": ((bSniper) ? "headshot-" : "") );
+            PrintToChatAll( "\x04%N\x01 %sskeeted a hunter.",
+                    attacker,
+                    (bMelee) ? "melee-": ((bSniper) ? "headshot-" : ((bGL) ? "grenade-" : "") )
+                );
         }
     }
     
@@ -1451,6 +1516,13 @@ stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false )
     if ( bSniper )
     {
         Call_StartForward(g_hForwardSkeetSniper);
+        Call_PushCell(attacker);
+        Call_PushCell(victim);
+        Call_Finish();
+    }
+    if ( bSniper )
+    {
+        Call_StartForward(g_hForwardSkeetGL);
         Call_PushCell(attacker);
         Call_PushCell(victim);
         Call_Finish();
