@@ -60,6 +60,7 @@ Usage:
    /stats_auto #               set sum of flags for auto-print preference (see table above)
    /stats_auto -1              don't show anything automatically
    /stats_auto 0               use server default [default setting]
+   /stats_auto test            show a preview of what will be auto-printed with current setting
 </pre>
 The autoprint flag value is stored in a Sourcemod cookie (named: 'sm_stats_autoprintflags').
 
