@@ -51,6 +51,23 @@ These commands are shortcuts to the stats command (for the respective type argum
 The same arguments can be passed for these as for /stats.
 
 
+<b>sm_stats_auto</b><br />
+This command can be used to set a client-side preference for automatically showing stats at round end.
+If set, this will override the server default. Set to 0 at any time to use server default.
+Usage:
+<pre>
+   /stats_auto ?               get some more info on how to use this command
+   /stats_auto #               set sum of flags for auto-print preference (see table above)
+   /stats_auto -1              don't show anything automatically
+   /stats_auto 0               use server default [default setting]
+</pre>
+The autoprint flag value is stored in a Sourcemod cookie (named: 'sm_stats_autoprintflags').
+
+
+ADMIN: <b>statsreset</b><br />
+This command resets all stats back to 0. 'change map' admin level required.
+
+
 CVars:
 ------
 
