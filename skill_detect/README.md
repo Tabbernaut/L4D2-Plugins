@@ -9,6 +9,7 @@ Forwards this:
  *      OnSkeet( survivor, hunter )
  *      OnSkeetMelee( survivor, hunter )
  *      OnSkeetSniper( survivor, hunter )
+ *      OnSkeetGL( survivor, hunter )
  *      OnSkeetHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetMeleeHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetSniperHurt( survivor, hunter, damage, isOverkill )
