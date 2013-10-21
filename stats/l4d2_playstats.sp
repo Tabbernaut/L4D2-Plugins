@@ -382,10 +382,12 @@ public Plugin: myinfo =
 
         fixes:
         ------
+        test:
+            - sorting on all players
+            - round end prints & round addition (errors out for 1 team at least? not anymore?)
+
         - accuracy seems off too high values
             - test (game/round? both?)
-
-        - sorting for 'all' is not right
 
         - freaky names (sab) can still mess the alignment up?
             - probably some sub-160 character that's still a problem?
@@ -3795,7 +3797,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
     g_sConsoleBuf[0] = "";
     
     new const s_len = 24;
-    new String: strTmp[7][s_len], String: strTmpA[s_len];
+    new String: strTmp[7][s_len], String: strTmpA[s_len], String: strTmpB[s_len];
     new i, x, line;
     new bool: bDivider = false;
     
@@ -3829,27 +3831,36 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             }
             
             // si damage
-            FormatEx( strTmp[0], s_len, "%5d %8d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plySIKilledTankUp] : g_strPlayerData[i][plySIKilledTankUp] ),
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plySIDamageTankUp] : g_strPlayerData[i][plySIDamageTankUp] ),
-                    strTmpA
-                );
+            if ( bRound && g_strRoundPlayerData[i][team][plySIKilledTankUp] || !bRound && g_strPlayerData[i][plySIKilledTankUp] ) {
+                FormatEx( strTmp[0], s_len, "%5d %8d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plySIKilledTankUp] : g_strPlayerData[i][plySIKilledTankUp] ),
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plySIDamageTankUp] : g_strPlayerData[i][plySIDamageTankUp] )
+                    );
+            } else { FormatEx( strTmp[0], s_len, "              " ); }
             
             // commons
-            FormatEx( strTmp[1], s_len, "  %8d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyCommonTankUp] : g_strPlayerData[i][plyCommonTankUp] )
-                );
+            if ( bRound && g_strRoundPlayerData[i][team][plyCommonTankUp] || !bRound && g_strPlayerData[i][plyCommonTankUp] ) {
+                FormatEx( strTmp[1], s_len, "  %8d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyCommonTankUp] : g_strPlayerData[i][plyCommonTankUp] )
+                    );
+            } else { FormatEx( strTmp[1], s_len, "          " ); }
             
             // melee on tank
-            FormatEx( strTmp[2], s_len, "%6d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyMeleesOnTank] : g_strPlayerData[i][plyMeleesOnTank] )
-                );
+            if ( bRound && g_strRoundPlayerData[i][team][plyMeleesOnTank] || !bRound && g_strPlayerData[i][plyMeleesOnTank] ) {
+                FormatEx( strTmp[2], s_len, "%6d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyMeleesOnTank] : g_strPlayerData[i][plyMeleesOnTank] )
+                    );
+            } else { FormatEx( strTmp[2], s_len, "      " ); }
             
             // rock skeets / eats       ----- / -----
-            FormatEx( strTmp[3], s_len, " %5d /%6d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyRockSkeets] : g_strPlayerData[i][plyRockSkeets] ),
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyRockEats] : g_strPlayerData[i][plyRockEats] )
-                );
+            if ( bRound && (g_strRoundPlayerData[i][team][plyRockSkeets] || g_strRoundPlayerData[i][team][plyRockEats]) ||
+                !bRound && (g_strPlayerData[i][plyRockSkeets] || g_strPlayerData[i][plyRockEats])
+            ) {
+                FormatEx( strTmp[3], s_len, " %5d /%6d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyRockSkeets] : g_strPlayerData[i][plyRockSkeets] ),
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyRockEats] : g_strPlayerData[i][plyRockEats] )
+                    );
+            } else { FormatEx( strTmp[3], s_len, "              " ); }
             
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
@@ -3912,22 +3923,21 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     presTime = 0;
                 }
             }
-            if ( fullTime && presTime )  {
-                Format( strTmpA, s_len, "%3.0f%%%%", float(presTime) / float(fullTime) * 100.0);
-                LeftPadString( strTmpA, s_len, 9 );
-            } else {
-                Format( strTmpA, s_len, "        ");
-            }
             
-            FormatEx( strTmp[0], s_len, "%8s", strTmpA );
+            FormatPercentage( strTmpA, s_len, presTime, fullTime, false );  // never a decimal
+            LeftPadString( strTmpA, s_len, 7 );
+            FormatEx( strTmpA, s_len, "%7s%s",
+                    strTmpA,
+                    ( presTime ) ? "%%" : " "
+                );
             
             if ( fullTime && presTime )  {
-                FormatTimeAsDuration( strTmpA, s_len, presTime );
-                LeftPadString( strTmpA, s_len, 13 );
+                FormatTimeAsDuration( strTmpB, s_len, presTime );
+                LeftPadString( strTmpB, s_len, 13 );
             } else {
-                Format( strTmpA, s_len, "             ");
+                Format( strTmpB, s_len, "             ");
             }
-            Format( strTmp[0], s_len, "%13s %8s", strTmpA, strTmp[0] );
+            Format( strTmp[0], s_len, "%13s %8s", strTmpB, strTmpA );
             
             // time alive
             if ( bRound ) {
@@ -3943,14 +3953,13 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     aliveTime = 0;
                 }
             }
-            if ( presTime && aliveTime )  {
-                Format( strTmpA, s_len, "%3.0f%%%%", float(aliveTime) / float(presTime) * 100.0);
-                LeftPadString( strTmpA, s_len, 7 );
-            } else {
-                Format( strTmpA, s_len, "      ");
-            }
             
-            FormatEx( strTmp[1], s_len, "%6s", strTmpA );
+            FormatPercentage( strTmpA, s_len, aliveTime, presTime, false );  // never a decimal
+            LeftPadString( strTmpA, s_len, 5 );
+            FormatEx( strTmp[1], s_len, "%5s%s",
+                    strTmpA,
+                    ( presTime ) ? "%%" : " "
+                );
             
             // time upright
             if ( bRound ) {
@@ -3966,14 +3975,13 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     upTime = 0;
                 }
             }
-            if ( presTime && upTime )  {
-                Format( strTmpA, s_len, "%3.0f%%%%", float(upTime) / float(presTime) * 100.0);
-                LeftPadString( strTmpA, s_len, 7 );
-            } else {
-                Format( strTmpA, s_len, "      ");
-            }
-            FormatEx( strTmp[2], s_len, " %6s", strTmpA );
             
+            FormatPercentage( strTmpA, s_len, upTime, presTime, false );  // never a decimal
+            LeftPadString( strTmpA, s_len, 6 );
+            FormatEx( strTmp[2], s_len, "%6s%s",
+                    strTmpA,
+                    ( presTime ) ? "%%" : " "
+                );
             
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
@@ -4027,60 +4035,74 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             }
             
             // si damage
-            if ( bPrcDecimal ) {
-                if ( bRound ) { if ( !g_iMVPRoundSIDamageTotal[team]) { Format(strTmpA, s_len, ""); } else { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0); }
-                } else {        if ( !g_iMVPSIDamageTotal[team]) { Format(strTmpA, s_len, ""); } else {      Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plySIDamage] ) / float( g_iMVPSIDamageTotal[team] ) * 100.0); } }
+            if ( bRound && g_strRoundPlayerData[i][team][plySIDamage] || !bRound && g_strPlayerData[i][plySIDamage] ) {
+                FormatPercentage( strTmpA, s_len,
+                        ( bRound ) ? g_strRoundPlayerData[i][team][plySIDamage] : g_iMVPRoundSIDamageTotal[team],
+                        ( bRound ) ? g_strPlayerData[i][plySIDamage] : g_iMVPSIDamageTotal[team],
+                        bPrcDecimal
+                    );
+                LeftPadString( strTmpA, s_len, 5 );
+                
+                Format( strTmp[0], s_len, "%4d %8d  %5s%s",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plySIKilled] : g_strPlayerData[i][plySIKilled] ),
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plySIDamage] : g_strPlayerData[i][plySIDamage] ),
+                        strTmpA,
+                        ( g_strRoundPlayerData[i][team][plySIDamage] ) ? "%%%%" : " "
+                    );
             } else {
-                if ( bRound ) { if ( !g_iMVPRoundSIDamageTotal[team]) { Format(strTmpA, s_len, ""); } else { Format( strTmpA, s_len, "%i", RoundFloat( float( g_strRoundPlayerData[i][team][plySIDamage] ) / float( g_iMVPRoundSIDamageTotal[team] ) * 100.0) ); }
-                } else {        if ( !g_iMVPSIDamageTotal[team]) { Format(strTmpA, s_len, ""); } else {      Format( strTmpA, s_len, "%i", RoundFloat( float( g_strPlayerData[i][plySIDamage] ) / float( g_iMVPSIDamageTotal[team] ) * 100.0) ); } }
+                FormatEx( strTmp[0], s_len, "                     " );
             }
-            LeftPadString( strTmpA, s_len, 5 );
-            
-            Format( strTmp[0], s_len, "%4d %8d  %5s%%%%",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plySIKilled] : g_strPlayerData[i][plySIKilled] ),
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plySIDamage] : g_strPlayerData[i][plySIDamage] ),
-                    strTmpA
-                );
             
             // commons
-            if ( bPrcDecimal ) {
-                if ( bRound ) { if ( !g_iMVPRoundCommonTotal[team]) { Format(strTmpA, s_len, ""); } else { Format( strTmpA, s_len, "%3.1f", float( g_strRoundPlayerData[i][team][plyCommon] ) / float( g_iMVPRoundCommonTotal[team] ) * 100.0); }
-                } else {        if ( !g_iMVPCommonTotal[team]) { Format(strTmpA, s_len, ""); } else {      Format( strTmpA, s_len, "%3.1f", float( g_strPlayerData[i][plyCommon] ) / float( g_iMVPCommonTotal[team] ) * 100.0); } }
+            if ( bRound && g_strRoundPlayerData[i][team][plyCommon] || !bRound && g_strPlayerData[i][plyCommon] ) {
+                FormatPercentage( strTmpA, s_len,
+                        ( bRound ) ? g_strRoundPlayerData[i][team][plyCommon] : g_iMVPRoundCommonTotal[team],
+                        ( bRound ) ? g_strPlayerData[i][plyCommon] : g_iMVPCommonTotal[team],
+                        bPrcDecimal
+                    );
+                LeftPadString( strTmpA, s_len, 5 );
+                
+                FormatEx( strTmp[1], s_len, "%7d  %5s%s",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyCommon] : g_strPlayerData[i][plyCommon] ),
+                        strTmpA,
+                        ( g_strRoundPlayerData[i][team][plyCommon] ) ? "%%%%" : " "
+                    );
             } else {
-                if ( bRound ) { if ( !g_iMVPRoundCommonTotal[team]) { Format(strTmpA, s_len, ""); } else { Format( strTmpA, s_len, "%i", RoundFloat( float( g_strRoundPlayerData[i][team][plyCommon] ) / float( g_iMVPRoundCommonTotal[team] ) * 100.0) ); }
-                } else {        if ( !g_iMVPCommonTotal[team]) { Format(strTmpA, s_len, ""); } else {      Format( strTmpA, s_len, "%i", RoundFloat( float( g_strPlayerData[i][plyCommon] ) / float( g_iMVPCommonTotal[team] ) * 100.0) ); } }
+                FormatEx( strTmp[1], s_len, "               " );
             }
-            LeftPadString( strTmpA, s_len, 5 );
-            
-            FormatEx( strTmp[1], s_len, "%7d  %5s%%%%",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyCommon] : g_strPlayerData[i][plyCommon] ),
-                    strTmpA
-                );
             
             // tank
             if ( bTankUp ) {
                 // hide 
                 FormatEx( strTmp[2], s_len, "%s", "hidden" );
             } else {
-                FormatEx( strTmp[2], s_len, "%6d",
-                        ( (bRound) ? g_strRoundPlayerData[i][team][plyTankDamage] : g_strPlayerData[i][plyTankDamage] )
-                    );
+                if ( bRound && g_strRoundPlayerData[i][team][plyTankDamage] || !bRound && g_strPlayerData[i][plyTankDamage] ) {
+                    FormatEx( strTmp[2], s_len, "%6d",
+                            ( (bRound) ? g_strRoundPlayerData[i][team][plyTankDamage] : g_strPlayerData[i][plyTankDamage] )
+                        );
+                } else { FormatEx( strTmp[2], s_len, "      " ); }
             }
             
             // witch
-            FormatEx( strTmp[3], s_len, "%6d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyWitchDamage] : g_strPlayerData[i][plyWitchDamage] )
-                );
+            if ( bRound && g_strRoundPlayerData[i][team][plyWitchDamage] || !bRound && g_strPlayerData[i][plyWitchDamage] ) {
+                FormatEx( strTmp[3], s_len, "%6d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyWitchDamage] : g_strPlayerData[i][plyWitchDamage] )
+                    );
+            } else { FormatEx( strTmp[3], s_len, "      " ); }
             
             // ff
-            FormatEx( strTmp[4], s_len, "%5d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyFFGiven] : g_strPlayerData[i][plyFFGiven] )
-                );
+            if ( bRound && g_strRoundPlayerData[i][team][plyFFGiven] || !bRound && g_strPlayerData[i][plyFFGiven] ) {
+                FormatEx( strTmp[4], s_len, "%5d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyFFGiven] : g_strPlayerData[i][plyFFGiven] )
+                    );
+            } else { FormatEx( strTmp[4], s_len, "     " ); }
             
             // damage received
-            FormatEx( strTmp[5], s_len, "%4d",
-                    ( (bRound) ? g_strRoundPlayerData[i][team][plyDmgTaken] : g_strPlayerData[i][plyDmgTaken] )
-                );
+            if ( bRound && g_strRoundPlayerData[i][team][plyDmgTaken] || !bRound && g_strPlayerData[i][plyDmgTaken] ) {
+                FormatEx( strTmp[5], s_len, "%4d",
+                        ( (bRound) ? g_strRoundPlayerData[i][team][plyDmgTaken] : g_strPlayerData[i][plyDmgTaken] )
+                    );
+            } else { FormatEx( strTmp[5], s_len, "    " ); }
             
             // time (%)
             if ( bRound ) {
@@ -4088,13 +4110,12 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             } else {
                 presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
             }
-            if ( fullTime && presTime )  {
-                Format( strTmpA, s_len, "%3i%%%%", RoundFloat( float(presTime) / float(fullTime) * 100.0 ) );
-                LeftPadString( strTmpA, s_len, 5 );
-            } else {
-                Format( strTmpA, s_len, "    ");
-            }
-            FormatEx( strTmp[6], s_len, "%4s", strTmpA );
+            FormatPercentage( strTmpA, s_len, presTime, fullTime, false );  // never a decimal
+            LeftPadString( strTmpA, s_len, 3 );
+            FormatEx( strTmp[6], s_len, "%3s%s",
+                    strTmpA,
+                    ( presTime ) ? "%%" : " "
+                );
             
             // prepare non-unicode string
             stripUnicode( g_sPlayerName[i] );
@@ -4931,6 +4952,30 @@ stock FormatTimeAsDuration ( String:text[], maxlength, time, bool:bPad = true )
     strcopy( text, maxlength, tmp );
 }
 
+stock FormatPercentage ( String:text[], maxlength, part, whole, bool: bDecimal = false )
+{
+    new String: strTmp[maxlength];
+    
+    if ( !whole || !part )
+    {
+        FormatEx( strTmp, maxlength, "" );
+        strcopy( text, maxlength, strTmp );
+        return;
+    }
+    
+    if ( bDecimal )
+    {
+        new Float: fValue = float( part ) / float( whole ) * 100.0;
+        FormatEx( strTmp, maxlength, "%3.1f", fValue );
+    }
+    else
+    {
+        new iValue = RoundFloat( float( part ) / float( whole ) * 100.0 );
+        FormatEx( strTmp, maxlength, "%i", iValue );
+    }
+    
+    strcopy( text, maxlength, strTmp );
+}
 stock CheckGameMode()
 {
     // check gamemode for 'coop'
@@ -5013,6 +5058,9 @@ stock stripUnicode ( String:testString[MAXNAME], maxLength = 20 )
     if ( strlen(g_sTmpString) > maxLength )
     {
         g_sTmpString[maxLength] = 0;
+    }
+    else {
+        RightPadString( g_sTmpString, maxLength, maxLength );
     }
 }
 
