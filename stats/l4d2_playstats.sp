@@ -390,14 +390,14 @@ public Plugin: myinfo =
             - sorting on all players
                 - still wonky -- bots appear on it, even when they shouldn't?
             - game stats still not okay ('game (other)' shows players, 'game all' does not..?)
-
-        - accuracy seems off, too high values
-            - test (game/round? both?)
+            - sort order for game
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
+            - it's not the size.. got something to do with the timing?
+            - or delays between prints?
             
-        - sort order for game b0rked (mvp)
+        
         
         
         build:
@@ -691,10 +691,10 @@ public OnMapEnd()
 
 public Event_MissionLostCampaign (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
-    g_bPlayersLeftStart = false;
-    
     g_strGameData[gmFailed]++;
     g_strRoundData[g_iRound][g_iCurTeam][rndRestarts]++;
+    
+    HandleRoundEnd( true );
 }
 
 public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
@@ -730,7 +730,7 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 }
 
 // do something when round ends (including for campaign mode)
-stock HandleRoundEnd()
+stock HandleRoundEnd( bool: bFailed = false )
 {
     // only do once
     if ( !g_bInRound ) { return; }
@@ -752,7 +752,10 @@ stock HandleRoundEnd()
     }
     
     // add stuff to allrounds/game data, for this round
-    HandleRoundAddition();
+    if ( !bFailed )
+    {
+        HandleRoundAddition();
+    }
     
     if ( g_iLastRoundEndPrint == 0 || GetTime() - g_iLastRoundEndPrint > PRINT_REPEAT_DELAY )
     {
@@ -763,10 +766,13 @@ stock HandleRoundEnd()
     // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on)
     if ( g_bSecondHalf && !AreClientsConnected() )
     {
-        ResetStats( false, -1 );
+        ResetStats( true, -1, true );
     }
     
-    g_bSecondHalf = true;
+    if ( !g_bModeCampaign )
+    {
+        g_bSecondHalf = true;
+    }
     g_bPlayersLeftStart = false;
 }
 // add stuff from this round to the game/allround data arrays
@@ -1579,6 +1585,7 @@ public Action: Event_TankSpawned( Handle:hEvent, const String:name[], bool:dontB
     }
     else if ( g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] ) {
         g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank] = time - (g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] - g_strRoundData[g_iRound][g_iCurTeam][rndStartTimeTank]);
+        g_strRoundData[g_iRound][g_iCurTeam][rndStopTimeTank] = 0;
     }
     // else, keep starttime, it's two+ tanks at the same time...
 }
@@ -2102,7 +2109,8 @@ public Action: Timer_ResetStats (Handle:timer, any:roundOnly)
     ResetStats( bool:(roundOnly) );
 }
 
-stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = -1 )
+// team -1 = clear both; failedround = campaign mode only
+stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRound = false )
 {
     new i, j, k;
     
@@ -2146,12 +2154,14 @@ stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = -1 )
     {
         if ( iTeam == -1 ) {
             for ( k = 0; k <= MAXRNDSTATS; k++ ) {
+                if ( bFailedRound && k == rndRestarts ) { continue; }
                 g_strRoundData[g_iRound][LTEAM_A][k] = 0;
                 g_strRoundData[g_iRound][LTEAM_B][k] = 0;
             }
         }
         else {
             for ( k = 0; k <= MAXRNDSTATS; k++ ) {
+                if ( bFailedRound && k == rndRestarts ) { continue; }
                 g_strRoundData[g_iRound][iTeam][k] = 0;
             }
         }
