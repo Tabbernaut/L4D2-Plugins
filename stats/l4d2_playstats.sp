@@ -326,6 +326,7 @@ new     Handle: g_hCvarAutoPrintCoop    = INVALID_HANDLE;
 new     Handle: g_hCvarShowBots         = INVALID_HANDLE;
 new     Handle: g_hCvarDetailPercent    = INVALID_HANDLE;
 new     Handle: g_hCvarWriteStats       = INVALID_HANDLE;
+new     Handle: g_hCvarSkipMap          = INVALID_HANDLE;
 
 new     bool:   g_bGameStarted          = false;
 new     bool:   g_bInRound              = false;
@@ -386,18 +387,23 @@ public Plugin: myinfo =
         test:
             - sorting on all players
                 - still wonky -- bots appear on it, even when they shouldn't?
+            - game stats still not okay ('game (other)' shows players, 'game all' does not..?)
 
-        - accuracy seems off too high values
+        - accuracy seems off, too high values
             - test (game/round? both?)
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
             
         - sort order for game b0rked (mvp)
-        - game stats still not okay ('game (other)' shows players, 'game all' does not..?)
+        
         
         build:
         ------
+        - add detection for game/campaign start and end
+            - for coop (separately)
+            - for vs & with confogl map restart check
+        
         - proper general stats tables
             - better rounds display (max 3 or so)
 
@@ -406,16 +412,16 @@ public Plugin: myinfo =
 
         - make infected skills table
                 dps (hunter / jockey),
-                dc's,
-                damage done (to HB/DB?)
+                dc's, assists,
+                damage done (to upright survivors),
+                commons killed
+                
         
         
         later:
         ------
         - fix: some way of 'listening' to CMT?
         - make confogl loading not cause round 1 to count...
-            - if there were no stats, or the round was never started,
-                survivors never left, or time was too short, reset it
             - listen to !forcematch / !match command and map restart after?
 
         
@@ -548,6 +554,12 @@ public OnPluginStart()
             "Whether to store stats somewhere (1 = write to files in the /logs/ dir).",
             FCVAR_PLUGIN, true, 0.0, false
         );
+    g_hCvarSkipMap = CreateConVar(
+            "sm_stats_resetnextmap",
+            "0",
+            "First round is ignored (for use with confogl/matchvotes - this will be automatically unset after a new map is loaded).",
+            FCVAR_PLUGIN, true, 0.0, false
+        );
     
     g_iTeamSize = 4;
     
@@ -669,8 +681,17 @@ public OnMapStart()
     
     CheckGameMode();
     
-    // reset stats for previous round
-    CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
+    if ( GetConVarBool(g_hCvarSkipMap) )
+    {
+        // reset stats and unset cvar
+        ResetStats( false, -1 );
+        SetConVarInt(g_hCvarSkipMap, 0);
+    }
+    else
+    {
+        // reset stats for previous round
+        CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
+    }
 }
 
 public OnMapEnd()
@@ -3459,7 +3480,7 @@ stock BuildConsoleBufferSpecial ( bool:bRound = false, bool:bTeam = true, iTeam 
         if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
         
         // only show survivors for the round in question
-        if ( !bTeam ) {
+        if ( !bTeam && bRound ) {
             team = g_iPlayerSortedUseTeam[SORT_SI][i];
         }
         if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -3587,7 +3608,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
             
             // only show survivors for the round in question
-            if ( !bTeam ) {
+            if ( !bTeam && bRound ) {
                 team = g_iPlayerSortedUseTeam[SORT_SI][i];
             }
             if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -3680,7 +3701,7 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
             if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
             
             // only show survivors for the round in question
-            if ( !bTeam ) {
+            if ( !bTeam && bRound ) {
                 team = g_iPlayerSortedUseTeam[SORT_SI][i];
             }
             if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -3812,7 +3833,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             //if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
             
             // only show survivors for the round in question
-            if ( !bTeam ) {
+            if ( !bTeam && bRound ) {
                 team = g_iPlayerSortedUseTeam[SORT_SI][i];
             }
             if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -3887,7 +3908,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             //if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
             
             // only show survivors for the round in question
-            if ( !bTeam ) {
+            if ( !bTeam && bRound ) {
                 team = g_iPlayerSortedUseTeam[SORT_SI][i];
             }
             if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -4008,7 +4029,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
             
             // only show survivors for the round in question
-            if ( !bTeam ) {
+            if ( !bTeam && bRound ) {
                 team = g_iPlayerSortedUseTeam[SORT_SI][i];
             }
             if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -4147,10 +4168,10 @@ stock BuildConsoleBufferFriendlyFireGiven ( bool:bRound = true, bool:bTeam = tru
         i = g_iPlayerIndexSorted[SORT_FF][x];
         
         // also skip bots for this list?
-        if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
+        if ( i < FIRST_NON_BOT ) { continue; }  // never show bots here, they never do FF
         
         // only show survivors for the round in question
-        if ( !bTeam ) {
+        if ( !bTeam && bRound ) {
             team = g_iPlayerSortedUseTeam[SORT_FF][i];
         }
         if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -4241,7 +4262,7 @@ stock BuildConsoleBufferFriendlyFireTaken ( bool:bRound = true, bool:bTeam = tru
         //if ( i < FIRST_NON_BOT && !GetConVarBool(g_hCvarShowBots) ) { continue; }
         
         // only show survivors for the round in question
-        if ( !bTeam ) {
+        if ( !bTeam && bRound ) {
             team = g_iPlayerSortedUseTeam[SORT_SI][i];
         }
         if ( !TableIncludePlayer(i, team, bRound) ) { continue; }
@@ -4341,31 +4362,35 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
                 {
                     if ( bRound ) {
                         if ( bTeam ) {
-                            if (    highest == -1 || g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] || 
+                            if (    highest == -1 ||
+                                    g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] || 
                                     g_strRoundPlayerData[i][team][plySIDamage] == g_strRoundPlayerData[highest][team][plySIDamage] &&
-                                    ( g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ||
-                                        ( g_strRoundPlayerData[i][team][plyCommon] == g_strRoundPlayerData[highest][team][plyCommon] && highest < FIRST_NON_BOT ) )
+                                        (   g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ||
+                                            ( g_strRoundPlayerData[i][team][plyCommon] == g_strRoundPlayerData[highest][team][plyCommon] && highest < FIRST_NON_BOT ) )
                             ) {
                                 highest = i;
                             }
                         }
                         else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plySIDamage] >= g_strRoundPlayerData[i][LTEAM_B][plySIDamage] ) ? LTEAM_A : LTEAM_B;
-                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][highTeam][plySIDamage] ||
+                            if (    highest == -1 ||
+                                    g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][highTeam][plySIDamage] ||
                                     g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][highTeam][plySIDamage] &&
-                                    ( g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][highTeam][plyCommon] ||
-                                        ( g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][highTeam][plyCommon] && highest < FIRST_NON_BOT ) )
+                                        (   g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][highTeam][plyCommon] ||
+                                            ( g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][highTeam][plyCommon] && highest < FIRST_NON_BOT ) )
                             ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                                 highTeam = pickTeam;
                             }
                         }
-                    } else {
-                        if (    highest == -1 || g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] &&
+                    }
+                    else {
+                        if (    highest == -1 ||
+                                g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] ||
                                 g_strPlayerData[i][plySIDamage] == g_strPlayerData[highest][plySIDamage] &&
-                                ( g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] ||
-                                    ( g_strPlayerData[i][plyCommon] == g_strPlayerData[highest][plyCommon] && highest < FIRST_NON_BOT ) )
+                                    (   g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] ||
+                                        ( g_strPlayerData[i][plyCommon] == g_strPlayerData[highest][plyCommon] && highest < FIRST_NON_BOT ) )
                         ) {
                             highest = i;
                         }
@@ -4375,30 +4400,34 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
                 {
                     if ( bRound ) {
                         if ( bTeam ) {
-                            if (    highest == -1 || g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ||
+                            if (    highest == -1 ||
+                                    g_strRoundPlayerData[i][team][plyCommon] > g_strRoundPlayerData[highest][team][plyCommon] ||
                                     g_strRoundPlayerData[i][team][plyCommon] == g_strRoundPlayerData[highest][team][plyCommon] &&
-                                    ( g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] ||
-                                        ( g_strRoundPlayerData[i][team][plySIDamage] == g_strRoundPlayerData[highest][team][plySIDamage] && highest < FIRST_NON_BOT ) )
+                                        (   g_strRoundPlayerData[i][team][plySIDamage] > g_strRoundPlayerData[highest][team][plySIDamage] ||
+                                            ( g_strRoundPlayerData[i][team][plySIDamage] == g_strRoundPlayerData[highest][team][plySIDamage] && highest < FIRST_NON_BOT ) )
                             ) {
                                 highest = i;
                             }
                         } else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plyCommon] >= g_strRoundPlayerData[i][LTEAM_B][plyCommon] ) ? LTEAM_A : LTEAM_B;
-                            if (    highest == -1 || g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][highTeam][plyCommon] ||
+                            if (    highest == -1 ||
+                                    g_strRoundPlayerData[i][pickTeam][plyCommon] > g_strRoundPlayerData[highest][highTeam][plyCommon] ||
                                     g_strRoundPlayerData[i][pickTeam][plyCommon] == g_strRoundPlayerData[highest][highTeam][plyCommon] &&
-                                    ( g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][highTeam][plySIDamage] ||
-                                        ( g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][highTeam][plySIDamage] && highest < FIRST_NON_BOT ) )
+                                        (   g_strRoundPlayerData[i][pickTeam][plySIDamage] > g_strRoundPlayerData[highest][highTeam][plySIDamage] ||
+                                            ( g_strRoundPlayerData[i][pickTeam][plySIDamage] == g_strRoundPlayerData[highest][highTeam][plySIDamage] && highest < FIRST_NON_BOT ) )
                             ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                                 highTeam = pickTeam;
                             }
                         }
-                    } else {
-                        if (    highest == -1 || g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] &&
+                    }
+                    else {
+                        if (    highest == -1 ||
+                                g_strPlayerData[i][plyCommon] > g_strPlayerData[highest][plyCommon] ||
                                 g_strPlayerData[i][plyCommon] == g_strPlayerData[highest][plyCommon] &&
-                                ( g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] ||
-                                    ( g_strPlayerData[i][plySIDamage] == g_strPlayerData[highest][plySIDamage] && highest < FIRST_NON_BOT ) )
+                                    (   g_strPlayerData[i][plySIDamage] > g_strPlayerData[highest][plySIDamage] ||
+                                        ( g_strPlayerData[i][plySIDamage] == g_strPlayerData[highest][plySIDamage] && highest < FIRST_NON_BOT ) )
                         ) {
                             highest = i;
                         }
@@ -4408,20 +4437,27 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
                 {
                     if ( bRound ) {
                         if ( bTeam ) {
-                            if ( highest == -1 || g_strRoundPlayerData[i][team][plyFFGiven] > g_strRoundPlayerData[highest][team][plyFFGiven] ) {
+                            if (    highest == -1 ||
+                                    g_strRoundPlayerData[i][team][plyFFGiven] > g_strRoundPlayerData[highest][team][plyFFGiven]
+                            ) {
                                 highest = i;
                             }
                         } else {
                             pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][plyFFGiven] >= g_strRoundPlayerData[i][LTEAM_B][plyFFGiven] ) ? LTEAM_A : LTEAM_B;
-                            if ( highest == -1 || g_strRoundPlayerData[i][pickTeam][plyFFGiven] > g_strRoundPlayerData[highest][highTeam][plyFFGiven] ) {
+                            if (    highest == -1 ||
+                                    g_strRoundPlayerData[i][pickTeam][plyFFGiven] > g_strRoundPlayerData[highest][highTeam][plyFFGiven]
+                            ) {
                                 highest = i;
                                 g_iPlayerSortedUseTeam[sortCol][i] = pickTeam;
                                 highTeam = pickTeam;
                             }
                         }
                         
-                    } else {
-                        if ( highest == -1 || g_strPlayerData[i][plyFFGiven] > g_strPlayerData[highest][plyFFGiven] ) {
+                    }
+                    else {
+                        if (    highest == -1 ||
+                                g_strPlayerData[i][plyFFGiven] > g_strPlayerData[highest][plyFFGiven]
+                        ) {
                             highest = i;
                         }
                     }
