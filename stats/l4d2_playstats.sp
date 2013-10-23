@@ -760,6 +760,12 @@ stock HandleRoundEnd()
         AutomaticRoundEndPrint( false );
     }
     
+    // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on)
+    if ( g_bSecondHalf && !AreClientsConnected() )
+    {
+        ResetStats( false, -1 );
+    }
+    
     g_bSecondHalf = true;
     g_bPlayersLeftStart = false;
 }
@@ -4934,6 +4940,14 @@ stock bool: IsPlayerIncapacitatedAtAll ( client )
     return bool: ( IsPlayerIncapacitated(client) || IsHangingFromLedge(client) );
 }
 
+stock bool: AreClientsConnected()
+{
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if ( IS_VALID_INGAME(i) && !IsFakeClient(i) ) { return true; }
+    }
+    return false;
+}
 /*
     File / DB writing
     -----------------
