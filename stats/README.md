@@ -118,3 +118,9 @@ Default: vs: [133], coop: [1289].
 <b>sm_stats_percentdecimal</b><br />
 [0/1] If enabled, shows (most) percentages with single decimal precision (###.#%). Default is off (rounded to ###%). Percentages in MVP chat prints are not affected by this setting.<br />
 
+<b>sm_stats_writestats</b><br />
+[0/1] If enabled, will write a file to the "sourcemod/logs" dir, named <date>_<time>_<roundno>_<mapname>.txt. CSV data for each round will be written per roundhalf.
+
+<b>sm_stats_resetnextmap</b><br />
+[0/1] If this is set, the stats will be reset to 0 upon loading the next map. After that, this cvar will reset to 0.<br />
+This is useful for config-loading in confogl: just "sm_cvar sm_stats_resetnextmap 1" and stats will only be counted after the game is really ready to be played.
