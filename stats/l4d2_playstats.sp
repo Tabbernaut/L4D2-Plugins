@@ -309,6 +309,7 @@ enum strOEC
 };
 
 new     bool:   g_bLateLoad             = false;
+new     bool:   g_bFirstLoadDone        = false;                                        // true after first onMapStart
 new     bool:   g_bReadyUpAvailable     = false;
 new     bool:   g_bPauseAvailable       = false;
 new     bool:   g_bSkillDetectLoaded    = false;
@@ -675,11 +676,13 @@ public OnMapStart()
         ResetStats( false, -1 );
         SetConVarInt(g_hCvarSkipMap, 0);
     }
-    else
+    else if ( g_bFirstLoadDone )
     {
         // reset stats for previous round
         CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
     }
+    
+    g_bFirstLoadDone = true;
 }
 
 public OnMapEnd()
@@ -691,6 +694,7 @@ public OnMapEnd()
 
 public Event_MissionLostCampaign (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
+    //PrintDebug( 2, "Event: MissionLost (times %i)", g_strGameData[gmFailed] + 1);
     g_strGameData[gmFailed]++;
     g_strRoundData[g_iRound][g_iCurTeam][rndRestarts]++;
     
@@ -704,6 +708,8 @@ public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
 }
 stock HandleRoundStart( bool:bLeftStart = false )
 {
+    PrintDebug( 1, "HandleRoundStart (leftstart: %i): inround: %i", bLeftStart, g_bInRound);
+    
     if ( g_bInRound ) { return; }
     
     g_bInRound = true;
@@ -741,6 +747,8 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 // do something when round ends (including for campaign mode)
 stock HandleRoundEnd( bool: bFailed = false )
 {
+    PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i", bFailed, g_bInRound);
+    
     // only do once
     if ( !g_bInRound ) { return; }
     
@@ -756,6 +764,7 @@ stock HandleRoundEnd( bool: bFailed = false )
     g_bInRound = false;
     
     // write stats for this roundhalf to file
+    // do before addition, because these are round stats
     if ( GetConVarBool(g_hCvarWriteStats) ) {
         WriteStatsToFile( g_iCurTeam );
     }
@@ -773,7 +782,7 @@ stock HandleRoundEnd( bool: bFailed = false )
     }
     
     // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on)
-    if ( g_bSecondHalf && !AreClientsConnected() )
+    if ( (g_bModeCampaign || g_bSecondHalf) && !AreClientsConnected() )
     {
         ResetStats( true, -1, true );
     }
@@ -882,10 +891,9 @@ stock RoundReallyStarting()
         SetStartSurvivorTime(true);
     }
     
-    if ( !g_bModeCampaign || g_strRoundData[g_iRound][g_iCurTeam][rndRestarts] == 0 )
-    {
-        g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] = GetTime();
-    }
+    g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] = GetTime();
+    // the conditional below would allow full round times including fails.. not doing that now
+    //if ( !g_bModeCampaign || g_strRoundData[g_iRound][g_iCurTeam][rndRestarts] == 0 ) { }
     
     //PrintDebug( 2, "RoundReallyStarting (round %i: roundhalf: %i: survivor team: %i)", g_iRound, (g_bSecondHalf) ? 1 : 0, g_iCurTeam );
     
