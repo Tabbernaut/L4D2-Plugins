@@ -403,10 +403,6 @@ public Plugin: myinfo =
         
         build:
         ------
-        - add detection for game/campaign start and end
-            - for coop (separately)
-            - for vs & with confogl map restart check
-        
         - proper general stats tables
             - better rounds display (max 3 or so)
 
@@ -690,6 +686,12 @@ public OnMapEnd()
     //PrintDebug(2, "MapEnd (round %i)", g_iRound);
     g_bInRound = false;
     g_iRound++;
+    
+    // if this was a finale, (and CMT is not loaded), end of game
+    if ( !g_bCMTActive && !g_bModeCampaign && L4D_IsMissionFinalMap() )
+    {
+        HandleGameEnd();
+    }
 }
 
 public Event_MissionLostCampaign (Handle:hEvent, const String:name[], bool:dontBroadcast)
@@ -5113,6 +5115,10 @@ stock InitTries()
     g_sPlayerName[1] = "BOT [Rochelle/Zoey]";
     g_sPlayerName[2] = "BOT [Coach/Louis]";
     g_sPlayerName[3] = "BOT [Ellis/Francis]";
+    g_sPlayerId[0] = "BOT_0";
+    g_sPlayerId[1] = "BOT_1";
+    g_sPlayerId[2] = "BOT_2";
+    g_sPlayerId[3] = "BOT_3";
     g_iPlayers += FIRST_NON_BOT;
     
     for ( new i = 0; i < 4; i++ ) {
