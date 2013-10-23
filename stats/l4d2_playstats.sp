@@ -699,15 +699,24 @@ public Event_MissionLostCampaign (Handle:hEvent, const String:name[], bool:dontB
 
 public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
+    HandleRoundStart();
+    CreateTimer( ROUNDSTART_DELAY, Timer_RoundStart, _, TIMER_FLAG_NO_MAPCHANGE );
+}
+stock HandleRoundStart( bool:bLeftStart = false )
+{
     if ( g_bInRound ) { return; }
     
     g_bInRound = true;
     
-    g_bPlayersLeftStart = false;
+    g_bPlayersLeftStart = bLeftStart;
     g_bTankInGame = false;
     g_bPaused = false;
     
-    CreateTimer( ROUNDSTART_DELAY, Timer_RoundStart, _, TIMER_FLAG_NO_MAPCHANGE );
+    if ( bLeftStart )
+    {
+        g_iCurTeam = ( g_bModeCampaign ) ? 0 : GetCurrentTeamSurvivor();
+        ClearPlayerTeam( g_iCurTeam );
+    }
 }
 
 // delayed, so we can trust GetCurrentTeamSurvivor()
@@ -852,6 +861,9 @@ public OnRoundIsLive()
 
 public Action: L4D_OnFirstSurvivorLeftSafeArea( client )
 {
+    // just as a safeguard (for campaign mode / failed rounds?)
+    HandleRoundStart( true );
+    
     // if no readyup, use this as the starting event
     if ( !g_bReadyUpAvailable )
     {
@@ -3066,7 +3078,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
                 FormatTimeAsDuration( strTmp[1], s_len, tankTime, false  );
                 RightPadString( strTmp[1], s_len, 13);
             } else {
-                FormatEx( strTmp[1], s_len, "(no tank)    ");
+                FormatEx( strTmp[1], s_len, "             ");
             }
             
             if ( g_bPauseAvailable ) {
@@ -3074,16 +3086,20 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
                     FormatTimeAsDuration( strTmp[2], s_len, pauseTime, false  );
                     RightPadString( strTmp[2], s_len, 13);
                 } else {
-                    FormatEx( strTmp[2], s_len, "(no pause)   ");
+                    FormatEx( strTmp[2], s_len, "             ");
                 }
             } else {
-                FormatEx( strTmp[2], s_len, "(unknown)    ");
+                FormatEx( strTmp[2], s_len, "             ");
             }
             
             FormatEx( bufBasicFooter,
                     CONBUFSIZE,
-                                            "| Round Duration:  %13s   Tank Fight Duration:  %13s   Pause Duration:  %13s  |\n%s",
-                    strTmp[0], strTmp[1], strTmp[2],
+                                            "| Round Duration:  %13s   %s  %13s   %s  %13s  |\n%s",
+                    strTmp[0],
+                    (tankTime) ? "Tank Fight Duration:" : "                    ",
+                    strTmp[1],
+                    (g_bPauseAvailable && pauseTime) ? "Pause Duration:" : "               ",
+                    strTmp[2],
                                             "|--------------------------------------------------------------------------------------------------------|\n"
                 );
             
@@ -3093,13 +3109,16 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
     
     if ( client == -2 ) {
         if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
             WriteFileString( g_hStatsFile, bufBasicHeader, false );
             WriteFileString( g_hStatsFile, "\n", false );
             for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                ReplaceString(g_sConsoleBuf[j], CONBUFSIZELARGE, "%%", "%");
                 WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
                 WriteFileString( g_hStatsFile, "\n", false );
             }
             if ( bFooter ) {
+                ReplaceString(bufBasicFooter, CONBUFSIZE, "%%", "%");
                 WriteFileString( g_hStatsFile, bufBasicFooter, false );
                 WriteFileString( g_hStatsFile, "\n", false );
             }
@@ -3219,9 +3238,11 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
     
     if ( client == -2 ) {
         if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
             WriteFileString( g_hStatsFile, bufBasicHeader, false );
             WriteFileString( g_hStatsFile, "\n", false );
             for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                ReplaceString(g_sConsoleBuf[j], CONBUFSIZELARGE, "%%", "%");
                 WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
                 WriteFileString( g_hStatsFile, "\n", false );
             }
@@ -3306,9 +3327,11 @@ stock DisplayStatsSpecial( client, bool:bRound = true, bool:bTeam = true, bool:b
     
     if ( client == -2 ) {
         if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
             WriteFileString( g_hStatsFile, bufBasicHeader, false );
             WriteFileString( g_hStatsFile, "\n", false );
             for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                ReplaceString(g_sConsoleBuf[j], CONBUFSIZELARGE, "%%", "%");
                 WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
                 WriteFileString( g_hStatsFile, "\n", false );
             }
@@ -3416,9 +3439,11 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
 
     if ( client == -2 ) {
         if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
             WriteFileString( g_hStatsFile, bufBasicHeader, false );
             WriteFileString( g_hStatsFile, "\n", false );
             for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                ReplaceString(g_sConsoleBuf[j], CONBUFSIZELARGE, "%%", "%");
                 WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
                 WriteFileString( g_hStatsFile, "\n", false );
             }
@@ -3485,9 +3510,11 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
     
     if ( client == -2 ) {
         if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
             WriteFileString( g_hStatsFile, bufBasicHeader, false );
             WriteFileString( g_hStatsFile, "\n", false );
             for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                ReplaceString(g_sConsoleBuf[j], CONBUFSIZELARGE, "%%", "%");
                 WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
                 WriteFileString( g_hStatsFile, "\n", false );
             }
@@ -4110,7 +4137,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                         (bRound) ? g_strRoundPlayerData[i][team][plySIKilled] : g_strPlayerData[i][plySIKilled],
                         (bRound) ? g_strRoundPlayerData[i][team][plySIDamage] : g_strPlayerData[i][plySIDamage],
                         strTmpA,
-                        ( bRound && g_strRoundPlayerData[i][team][plySIDamage] || !bRound && g_strPlayerData[i][plySIDamage] ) ? "%%%%" : " "
+                        ( bRound && g_strRoundPlayerData[i][team][plySIDamage] || !bRound && g_strPlayerData[i][plySIDamage] ) ? "%%" : " "
                     );
             } else {
                 FormatEx( strTmp[0], s_len, "                     " );
