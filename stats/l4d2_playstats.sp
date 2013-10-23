@@ -4177,7 +4177,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             LeftPadString( strTmpA, s_len, 3 );
             FormatEx( strTmp[6], s_len, "%3s%s",
                     strTmpA,
-                    ( presTime ) ? "%%" : " "
+                    ( presTime && fullTime ) ? "%%" : " "
                 );
             
             // cut into chunks:
@@ -5006,7 +5006,7 @@ stock WriteStatsToFile( iTeam )
     FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;", g_bSecondHalf, (iTeam == LTEAM_A) ? "A" : "B" );
     for ( i = 0; i <= MAXRNDSTATS; i++ )
     {
-        Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, i, g_strRoundData[g_iRound][iTeam][i] );
+        Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundData[g_iRound][iTeam][i] );
     }
     Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
@@ -5026,7 +5026,7 @@ stock WriteStatsToFile( iTeam )
         FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%i;%s;", iPlayerCount, j, g_sPlayerId[j] );
         for ( i = 0; i <= MAXRNDSTATS; i++ )
         {
-            Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, i, g_strRoundPlayerData[j][iTeam][i] );
+            Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundPlayerData[j][iTeam][i] );
         }
         Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
         StrCat( sStats, sizeof(sStats), strTmpLine );
