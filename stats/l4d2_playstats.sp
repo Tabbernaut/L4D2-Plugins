@@ -146,6 +146,7 @@
 // stats
 #define DIR_OUTPUT              "logs/"
 #define MAX_QUERY_SIZE          8192
+#define FILETABLEFLAGS          33460           // AUTO_ flags for what to print to a file automatically
 
 /* new const String: g_cHitgroups[][] =
 {
@@ -366,6 +367,7 @@ new     String: g_sConsoleBuf           [MAXCHUNKS][CONBUFSIZELARGE];
 new             g_iConsoleBufChunks                                 = 0;
 
 new     String: g_sStatsFile            [MAXNAME];                                      // name for the statsfile we should write to
+new     Handle: g_hStatsFile;                                                           // handle for a statsfile that we write tables to
 
 
 public Plugin: myinfo =
@@ -373,7 +375,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.9",
+    version = "0.9.10",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -415,14 +417,6 @@ public Plugin: myinfo =
                 dc's, assists,
                 damage done (to upright survivors),
                 commons killed
-                
-        
-        
-        later:
-        ------
-        - fix: some way of 'listening' to CMT?
-        - make confogl loading not cause round 1 to count...
-            - listen to !forcematch / !match command and map restart after?
 
         
     details:
@@ -505,11 +499,6 @@ public OnPluginStart()
     HookEvent("pills_used",                 Event_PillsUsed,                EventHookMode_Post);
     HookEvent("adrenaline_used",            Event_AdrenUsed,                EventHookMode_Post);
     
-    //HookEvent("player_left_checkpoint",     Event_ExitedSaferoom,           EventHookMode_Post);
-    //HookEvent("player_entered_checkpoint",  Event_EnteredSaferoom,          EventHookMode_Post);
-    //HookEvent("door_close",                 Event_DoorClose,                EventHookMode_PostNoCopy );
-    //HookEvent("finale_vehicle_leaving",     Event_FinaleVehicleLeaving,     EventHookMode_PostNoCopy );
-    
     
     // cvars
     g_hCvarDebug = CreateConVar(
@@ -551,7 +540,7 @@ public OnPluginStart()
     g_hCvarWriteStats = CreateConVar(
             "sm_stats_writestats",
             "0",
-            "Whether to store stats somewhere (1 = write to files in the /logs/ dir).",
+            "Whether to store stats in logs/ dir (1 = write csv; 2 = write csv & pretty tables).",
             FCVAR_PLUGIN, true, 0.0, false
         );
     g_hCvarSkipMap = CreateConVar(
@@ -645,7 +634,7 @@ public OnClientPostAdminCheck( client )
     GetPlayerIndexForClient( client );
 }
 
-public OnClientDisconnected( client )
+public OnClientDisconnect( client )
 {
     g_iCookieValue[client] = 0;
     
@@ -661,8 +650,7 @@ public OnClientDisconnected( client )
     new time = GetTime();
     
     // if paused, substract time so far from player's time in game
-    if ( g_bPaused )
-    {
+    if ( g_bPaused ) {
         time = g_iPauseStart;
     }
     
@@ -842,7 +830,7 @@ stock HandleGameEnd()
     // do automatic game end printing?
     
     // reset all stats
-    //ResetStats( false, -1 );
+    ResetStats( false, -1 );
 }
 public OnRoundIsLive()
 {
@@ -3087,7 +3075,22 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
         }
     }
     
-    if ( client == -1 ) {
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
+            for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
+                WriteFileString( g_hStatsFile, "\n", false );
+            }
+            if ( bFooter ) {
+                WriteFileString( g_hStatsFile, bufBasicFooter, false );
+                WriteFileString( g_hStatsFile, "\n", false );
+            }
+            WriteFileString( g_hStatsFile, "\n", false );
+        }
+    }
+    else if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
             if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
@@ -3198,7 +3201,18 @@ stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, 
 
     }
     
-    if ( client == -1 ) {
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
+            for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
+                WriteFileString( g_hStatsFile, "\n", false );
+            }
+            WriteFileString( g_hStatsFile, "\n", false );
+        }
+    }
+    else if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
             if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
@@ -3274,7 +3288,18 @@ stock DisplayStatsSpecial( client, bool:bRound = true, bool:bTeam = true, bool:b
             );
     }
     
-    if ( client == -1 ) {
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
+            for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
+                WriteFileString( g_hStatsFile, "\n", false );
+            }
+            WriteFileString( g_hStatsFile, "\n", false );
+        }
+    }
+    else if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
             if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
@@ -3373,7 +3398,18 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
         }
     }
 
-    if ( client == -1 ) {
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
+            for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
+                WriteFileString( g_hStatsFile, "\n", false );
+            }
+            WriteFileString( g_hStatsFile, "\n", false );
+        }
+    }
+    else if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
             if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
@@ -3431,7 +3467,18 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
     }
     
     
-    if ( client == -1 ) {
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
+            for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
+                WriteFileString( g_hStatsFile, "\n", false );
+            }
+            WriteFileString( g_hStatsFile, "\n", false );
+        }
+    }
+    else if ( client == -1 ) {
         // print to all
         for ( i = 1; i <= MaxClients; i++ ) {
             if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
@@ -4969,9 +5016,23 @@ stock WriteStatsToFile( iTeam )
         PrintDebug(0, "Error: could not write to file: '%s'.", path);
         return;
     }
-    
     WriteFileString( fh, sStats, false );
     CloseHandle(fh);
+    
+    // write pretty tables?
+    if ( GetConVarInt(g_hCvarWriteStats) > 1 )
+    {
+        g_hStatsFile = OpenFile( path, "a" );
+        if (g_hStatsFile == INVALID_HANDLE) {
+            PrintDebug(0, "Error [table printing]: could not write to file: '%s'.", path);
+            return;
+        }
+        
+        // -2 = print to file (if open)
+        AutomaticPrintPerClient( FILETABLEFLAGS, -2 );
+        
+        CloseHandle(g_hStatsFile);
+    }
 }
 
 /*
