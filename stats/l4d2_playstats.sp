@@ -42,6 +42,7 @@
 
 #define MAXTRACKED              64
 #define MAXROUNDS               48              // ridiculously high, but just in case players do a marathon or something
+#define MAXSHOWROUNDS           10              // how many rounds to show in the general stats table, max
 
 #define MAXNAME                 64
 #define MAXNAME_TABLE           20              // name size max in console tables
@@ -180,7 +181,7 @@ enum _:strStatType
 enum _:strGameData
 {
             gmFailed,               // survivors lost the mission * times
-            gmStartTime            // GetTime() value when starting
+            gmStartTime             // GetTime() value when starting
 };
 
 // information per round
@@ -398,22 +399,18 @@ public Plugin: myinfo =
             - it's not the size.. got something to do with the timing?
             - or delays between prints?
             
-        
-        
-        
         build:
         ------
-        - proper general stats tables
-            - better rounds display (max 3 or so)
+        - add 'my' option to command arguments (for 'my team')
 
         - skill
             - clears / instaclears / average clear time?
 
         - make infected skills table
-                dps (hunter / jockey),
-                dc's, assists,
+                dps (hunter),
                 damage done (to upright survivors),
-                commons killed
+                commons killed,
+                dc's, assists, ?
 
         
     details:
@@ -710,7 +707,7 @@ public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
 }
 stock HandleRoundStart( bool:bLeftStart = false )
 {
-    PrintDebug( 1, "HandleRoundStart (leftstart: %i): inround: %i", bLeftStart, g_bInRound);
+    //PrintDebug( 1, "HandleRoundStart (leftstart: %i): inround: %i", bLeftStart, g_bInRound);
     
     if ( g_bInRound ) { return; }
     
@@ -749,7 +746,7 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 // do something when round ends (including for campaign mode)
 stock HandleRoundEnd( bool: bFailed = false )
 {
-    PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i", bFailed, g_bInRound);
+    //PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i", bFailed, g_bInRound);
     
     // only do once
     if ( !g_bInRound ) { return; }
@@ -2397,8 +2394,8 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
     
     decl String:bufBasicHeader[CONBUFSIZE];
     decl String: strTmp[24];
-    decl String: strTmpA[40];
-    new i;
+    decl String: strTmpA[24];
+    new i, j;
     
     g_iConsoleBufChunks = 0;
     
@@ -2406,186 +2403,146 @@ stock DisplayStats( client = -1, bool:bRound = false, round = -1, bool:bTeam = t
     if ( iTeam != -1 ) { team = iTeam; }
     else if ( g_bSecondHalf && !g_bPlayersLeftStart ) { team = (team) ? 0 : 1; }
     
-    if ( round == -1 )
+    // display all rounds / game summary
+    
+    // game info
+    if ( g_bGameStarted )
     {
-        // display all rounds / game summary
-        
-        // game info
-        if ( g_bGameStarted )
-        {
-            FormatTimeAsDuration( strTmp, sizeof(strTmp), GetTime() - g_strGameData[gmStartTime] );
-            LeftPadString( strTmp, sizeof(strTmp), 14 );
+        FormatTimeAsDuration( strTmp, sizeof(strTmp), GetTime() - g_strGameData[gmStartTime] );
+        LeftPadString( strTmp, sizeof(strTmp), 14 );
+    }
+    else {
+        Format( strTmp, sizeof(strTmp), " (not started)" );
+    }
+    
+    // spawn/kill ratio
+    FormatPercentage( strTmpA, sizeof(strTmpA), g_strAllRoundData[team][rndSIKilled], g_strAllRoundData[team][rndSISpawned], false ); // never a decimal
+    LeftPadString( strTmpA, sizeof(strTmpA), 4 );
+    
+    Format(bufBasicHeader, CONBUFSIZE, "\n");
+    Format(bufBasicHeader, CONBUFSIZE, "%s| General Stats                                    |\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Time: %14s | Rounds/Fails: %4i /%5i |\n", bufBasicHeader,
+            strTmp,
+            g_iRound,
+            g_strGameData[gmFailed]
+        );
+    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Kits/Pills:%3d /%4d | Kills:   %6i  specials |\n", bufBasicHeader,
+            g_strAllRoundData[team][rndKitsUsed],
+            g_strAllRoundData[team][rndPillsUsed],
+            g_strAllRoundData[team][rndSIKilled]
+        );
+    Format(bufBasicHeader, CONBUFSIZE, "%s| SI kill rate:  %4s%s |          %6i  commons  |\n",
+            bufBasicHeader,
+            strTmpA,
+            ( g_strAllRoundData[team][rndSISpawned] ) ? "%%" : " ",
+            g_strAllRoundData[team][rndCommon] 
+        );
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Deaths:       %6i |          %6i  witches  |\n", bufBasicHeader,
+            g_strAllRoundData[team][rndDeaths],
+            g_strAllRoundData[team][rndWitchKilled]
+        );
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Incaps:       %6i |          %6i  tanks    |\n", bufBasicHeader,
+            g_strAllRoundData[team][rndIncaps],
+            g_strAllRoundData[team][rndTankKilled]
+        );
+    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
+    
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
         }
-        else {
-            Format( strTmp, sizeof(strTmp), " (not started)" );
-        }
-        
-        // kill stats
-        new tmpSpecial, tmpCommon, tmpWitches, tmpTanks, tmpIncap, tmpDeath;
-        
-        for ( i = 0; i <= g_iRound; i++ )
-        {
-            tmpSpecial += g_strRoundData[i][team][rndSIKilled];
-            tmpCommon +=  g_strRoundData[i][team][rndCommon];
-            tmpWitches += g_strRoundData[i][team][rndWitchKilled];
-            tmpTanks +=   g_strRoundData[i][team][rndTankKilled];
-            tmpIncap +=   g_strRoundData[i][team][rndIncaps];
-            tmpDeath +=   g_strRoundData[i][team][rndDeaths];
-        }
-        
-        Format(bufBasicHeader, CONBUFSIZE, "\n");
-        Format(bufBasicHeader, CONBUFSIZE, "%s| General Stats                                    |\n", bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Time: %14s | Rounds/Fails: %4i /%5i |\n", bufBasicHeader, strTmp, g_iRound, g_strGameData[gmFailed] );
-        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s|                      | Kills:   %6i  specials |\n", bufBasicHeader, tmpSpecial );
-        Format(bufBasicHeader, CONBUFSIZE, "%s|                      |          %6i  commons  |\n", bufBasicHeader, tmpCommon );
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Deaths:       %6i |          %6i  witches  |\n", bufBasicHeader, tmpDeath, tmpWitches );
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Incaps:       %6i |          %6i  tanks    |\n", bufBasicHeader, tmpIncap, tmpTanks );
-        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-        
-        if ( client == -1 ) {
-            // print to all
-            for ( i = 1; i <= MaxClients; i++ ) {
-                if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
-                {
-                    PrintToConsole(i, bufBasicHeader);
-                }
-            }
-        }
-        else if ( client == 0 ) {
-            // print to server
-            PrintToServer(bufBasicHeader);
-        }
-        else if ( IS_VALID_INGAME( client ) )
-        {
-            PrintToConsole(client, bufBasicHeader);
-            
-        }
-        
-        // round data
-        for ( i = 0; i <= g_iRound; i++ )
-        {
-            // game info
-            if ( g_strRoundData[i][team][rndStartTime] )
+    }
+    else if ( client == -1 ) {
+        // print to all
+        for ( i = 1; i <= MaxClients; i++ ) {
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
             {
-                new tmpInt = 0;
-                if ( g_strRoundData[i][team][rndEndTime] ) {
-                    tmpInt = g_strRoundData[i][team][rndEndTime] - g_strRoundData[i][team][rndStartTime];
-                } else {
-                    tmpInt = GetTime() - g_strRoundData[i][team][rndStartTime];
-                }
-                
-                FormatTimeAsDuration( strTmp, sizeof(strTmp), tmpInt );
-                LeftPadString( strTmp, sizeof(strTmp), 17 );
-            }
-            else {
-                Format( strTmp, sizeof(strTmp), "(not started yet)" );
-            }
-            
-            strcopy(strTmpA, sizeof(strTmpA), g_sMapName[i]);
-            LeftPadString( strTmpA, sizeof(strTmpA), 32 );
-            
-            Format(bufBasicHeader, CONBUFSIZE, "|--------------------------------------------------|\n");
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Round %3i.:     %32s |\n", bufBasicHeader, (i + 1), strTmpA );
-            Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Time spent, attemps: | %17s / %5s |\n", bufBasicHeader, strTmp,
-                    g_strRoundData[i][team][rndRestarts]
-                );
-            Format(bufBasicHeader, CONBUFSIZE, "%s| Kills SI, CI, Witch: |     %5i / %5i / %5i |\n", bufBasicHeader,
-                    g_strRoundData[i][team][rndSIKilled],
-                    g_strRoundData[i][team][rndCommon],
-                    g_strRoundData[i][team][rndWitchKilled]
-                );
-            Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|", bufBasicHeader);
-            
-            if ( client == -1 ) {
-                // print to all
-                for ( i = 1; i <= MaxClients; i++ ) {
-                    if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
-                    {
-                        PrintToConsole(i, bufBasicHeader);
-                    }
-                }
-            }
-            else if ( client == 0 ) {
-                // print to server
-                PrintToServer(bufBasicHeader);
-            }
-            else if ( IS_VALID_INGAME( client ) )
-            {
-                PrintToConsole(client, bufBasicHeader);
-                
+                PrintToConsole(i, bufBasicHeader);
             }
         }
     }
-    else if ( round > g_iRound )
+    else if ( client == 0 ) {
+        // print to server
+        PrintToServer(bufBasicHeader);
+    }
+    else if ( IS_VALID_INGAME( client ) )
     {
-        // too high
-        if ( IS_VALID_INGAME(client) )
-        {
-            if ( g_iRound == 0 ) {
-                PrintToChat( client, "<round> can only be 1 (for now)." );
-            } else {
-                PrintToChat( client, "<round> must be a number between 1 and %i", g_iRound + 1 );
+        PrintToConsole(client, bufBasicHeader);
+        
+    }
+    
+    // round header
+    Format( bufBasicHeader,
+            CONBUFSIZE,
+                                           "\n| General data per game round -- %11s                                                        |\n",
+            ( bTeam ) ? ( (team == LTEAM_A) ? "Team A     " : "Team B     " ) : "ALL Players"
+        );
+    
+    //                                    | ###. ############### | ###h ##m ##s | ##### | ###### |  ##### |  ##### | #### |  ##### |   ###### |
+    Format(bufBasicHeader, CONBUFSIZE, "%s|---------------------------------------------------------------------------------------------------|\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s| Round                | Time         | SI    | Common | Deaths | Incaps | Kits | Pills  | Restarts |\n", bufBasicHeader);
+    Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|--------------|-------|--------|--------|--------|------|--------|----------|", bufBasicHeader);
+    
+    // round data
+    BuildConsoleBufferGeneral( bTeam, iTeam );
+    
+    if ( !strlen(g_sConsoleBuf[g_iConsoleBufChunks]) ) { g_iConsoleBufChunks--; }
+    if ( g_iConsoleBufChunks > -1 ) {
+        Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                CONBUFSIZELARGE,
+                                     "%s\n|---------------------------------------------------------------------------------------------------|",
+                g_sConsoleBuf[g_iConsoleBufChunks]
+            );
+    } else {
+        Format( bufBasicHeader,
+                CONBUFSIZE,
+                                     "%s\n| (nothing to display)                                                                              |%s",
+                bufBasicHeader,
+                                       "\n|---------------------------------------------------------------------------------------------------|"
+            );
+    }
+    
+    if ( client == -2 ) {
+        if ( g_hStatsFile != INVALID_HANDLE ) {
+            ReplaceString(bufBasicHeader, CONBUFSIZE, "%%", "%");
+            WriteFileString( g_hStatsFile, bufBasicHeader, false );
+            WriteFileString( g_hStatsFile, "\n", false );
+            for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                ReplaceString(g_sConsoleBuf[j], CONBUFSIZELARGE, "%%", "%");
+                WriteFileString( g_hStatsFile, g_sConsoleBuf[j], false );
+                WriteFileString( g_hStatsFile, "\n", false );
             }
+            WriteFileString( g_hStatsFile, "\n", false );
         }
     }
-    else
-    {
-        // display round stats
-        i = round;
-        
-        if ( g_strRoundData[i][team][rndStartTime] )
-        {
-            new tmpInt = 0;
-            if ( g_strRoundData[i][team][rndEndTime] ) {
-                tmpInt = g_strRoundData[i][team][rndEndTime] - g_strRoundData[i][team][rndStartTime];
-            } else {
-                tmpInt = GetTime() - g_strRoundData[i][team][rndStartTime];
-            }
-            
-            FormatTimeAsDuration( strTmp, sizeof(strTmp), tmpInt );
-            LeftPadString( strTmp, sizeof(strTmp), 17 );
-        }
-        else {
-            Format( strTmp, sizeof(strTmp), "(not started yet)" );
-        }
-        
-        strcopy(strTmpA, sizeof(strTmpA), g_sMapName[i]);
-        LeftPadString( strTmpA, sizeof(strTmpA), 32 );
-        
-        Format(bufBasicHeader, CONBUFSIZE, "|--------------------------------------------------|\n");
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Round %3i.:     %32s |\n", bufBasicHeader, (i + 1), strTmpA );
-        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|\n", bufBasicHeader);
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Time spent, attemps: | %15s / %5s |\n", bufBasicHeader,
-                strTmp,
-                g_strRoundData[i][team][rndRestarts]
-            );
-        Format(bufBasicHeader, CONBUFSIZE, "%s| Kills SI, CI, Witch: |     %5i / %5i / %5i |\n", bufBasicHeader,
-                g_strRoundData[i][team][rndSIKilled],
-                g_strRoundData[i][team][rndCommon],
-                g_strRoundData[i][team][rndWitchKilled]
-            );
-        Format(bufBasicHeader, CONBUFSIZE, "%s|----------------------|---------------------------|", bufBasicHeader);
-        
-        if ( client == -1 ) {
-            // print to all
-            for ( i = 1; i <= MaxClients; i++ ) {
-                if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
-                {
-                    PrintToConsole(i, bufBasicHeader);
+    else if ( client == -1 ) {
+        // print to all
+        for ( i = 1; i <= MaxClients; i++ ) {
+            if ( IS_VALID_INGAME( i ) && g_iCookieValue[i] == 0 )
+            {
+                PrintToConsole(i, bufBasicHeader);
+                for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+                    PrintToConsole( i, g_sConsoleBuf[j] );
                 }
             }
         }
-        else if ( client == 0 ) {
-            // print to server
-            PrintToServer(bufBasicHeader);
+    }
+    else if ( client == 0 ) {
+        // print to server
+        PrintToServer(bufBasicHeader);
+        for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+            PrintToServer( g_sConsoleBuf[j] );
         }
-        else if ( IS_VALID_INGAME( client ) )
-        {
-            PrintToConsole(client, bufBasicHeader);
-            
+    }
+    else if ( IS_VALID_INGAME( client ) )
+    {
+        PrintToConsole(client, bufBasicHeader);
+        for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
+            PrintToConsole( client, g_sConsoleBuf[j] );
         }
     }
 }
@@ -3555,6 +3512,128 @@ stock DisplayStatsFriendlyFire ( client, bool:bRound = true, bool:bTeam = true, 
         PrintToConsole(client, bufBasicHeader);
         for ( j = 0; j <= g_iConsoleBufChunks; j++ ) {
             PrintToConsole( client, g_sConsoleBuf[j] );
+        }
+    }
+}
+
+stock BuildConsoleBufferGeneral ( bool:bTeam = true, iTeam = -1 )
+{
+    g_iConsoleBufChunks = 0;
+    g_sConsoleBuf[0] = "";
+    
+    new const s_len = 24;
+    new String: strTmp[9][s_len];
+    new i, line;
+    new bool: bDivider = false;
+    new String: strTmpMap[20];
+    
+    new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
+    
+    new tmpRoundTime;
+    new startRound = ( g_iRound > MAXSHOWROUNDS ) ? g_iRound - MAXSHOWROUNDS : 0;
+    
+    //                      | ###. ############### | ###h ##m ##s | ##### | ###### |  ##### |  ##### | #### | ##### |    ###### |
+    
+    // game rounds
+    for ( i = startRound; i <= g_iRound; i++ )
+    {
+        // round header:
+        strcopy( strTmpMap, sizeof(strTmpMap), g_sMapName[i] );
+        RightPadString( strTmpMap, sizeof(strTmpMap), 15 );
+        Format( strTmp[0], s_len, "%3d. %15s", i + 1, strTmpMap );
+        
+        // round time
+        tmpRoundTime = 0;
+        if ( g_strRoundData[i][team][rndStartTime] )
+        {
+            if ( i == g_iRound ) {
+                tmpRoundTime = GetFullRoundTime( true, bTeam, team );
+            } else {
+                tmpRoundTime = g_strRoundData[i][team][rndEndTime] - g_strRoundData[i][team][rndStartTime];
+            }
+            
+            FormatTimeAsDuration( strTmp[1], s_len, tmpRoundTime );
+            LeftPadString( strTmp[1], s_len, 12 );
+        }
+        else {
+            Format( strTmp[1], s_len, "            " );
+        }
+        
+        // si
+        if ( g_strRoundData[i][team][rndSIKilled] ) {
+            Format( strTmp[2], s_len, "%5d", g_strRoundData[i][team][rndSIKilled] );
+        } else {
+            Format( strTmp[2], s_len, "     " );
+        }
+        
+        // common
+        if ( g_strRoundData[i][team][rndCommon] ) {
+            Format( strTmp[3], s_len, "%6d", g_strRoundData[i][team][rndSIKilled] );
+        } else {
+            Format( strTmp[3], s_len, "      " );
+        }
+        
+        // deaths
+        if ( g_strRoundData[i][team][rndDeaths] ) {
+            Format( strTmp[4], s_len, "%6d", g_strRoundData[i][team][rndDeaths] );
+        } else {
+            Format( strTmp[4], s_len, "      " );
+        }
+        
+        // incaps
+        if ( g_strRoundData[i][team][rndIncaps] ) {
+            Format( strTmp[5], s_len, "%6d", g_strRoundData[i][team][rndIncaps] );
+        } else {
+            Format( strTmp[5], s_len, "      " );
+        }
+        
+        // kits
+        if ( g_strRoundData[i][team][rndKitsUsed] ) {
+            Format( strTmp[6], s_len, "%4d", g_strRoundData[i][team][rndKitsUsed] );
+        } else {
+            Format( strTmp[6], s_len, "    " );
+        }
+        
+        // pills
+        if ( g_strRoundData[i][team][rndPillsUsed] ) {
+            Format( strTmp[7], s_len, "%6d", g_strRoundData[i][team][rndPillsUsed] );
+        } else {
+            Format( strTmp[7], s_len, "      " );
+        }
+        
+        // restarts
+        if ( g_strRoundData[i][team][rndRestarts] ) {
+            Format( strTmp[8], s_len, "%8d", g_strRoundData[i][team][rndRestarts] );
+        } else {
+            Format( strTmp[8], s_len, "        " );
+        }
+        
+        // cut into chunks:
+        if ( line >= MAXLINESPERCHUNK ) {
+            bDivider = true;
+            line = -1;
+            g_iConsoleBufChunks++;
+            g_sConsoleBuf[g_iConsoleBufChunks] = "";
+        } else if ( line > 0 ) {
+            Format( g_sConsoleBuf[g_iConsoleBufChunks], CONBUFSIZELARGE, "%s\n", g_sConsoleBuf[g_iConsoleBufChunks] );
+        }
+        
+        
+        // Format the basic stats
+        Format( g_sConsoleBuf[g_iConsoleBufChunks],
+                CONBUFSIZELARGE,
+                "%s%s| %20s | %12s | %5s | %6s | %6s | %6s | %4s | %6s | %8s |",
+                g_sConsoleBuf[g_iConsoleBufChunks],
+                ( bDivider ) ? "| -------------------- | ------------ | ----- | ------ | ------ | ------ | ---- | ----- | --------- |\n" : "",
+                strTmp[0], strTmp[1], strTmp[2],
+                strTmp[3], strTmp[4], strTmp[5],
+                strTmp[6], strTmp[7], strTmp[8]
+            );
+        
+        line++;
+        if ( bDivider ) {
+            line++;
+            bDivider = false;
         }
     }
 }
