@@ -144,7 +144,55 @@
 #define AUTO_MVPCON_MORE_ROUND  (1 << 15)
 #define AUTO_MVPCON_MORE_GAME   (1 << 16)
 
-// stats
+// fun fact
+#define FFACT_MAX_WEIGHT        10
+#define FFACT_TYPE_CROWN        1
+#define FFACT_TYPE_DRAWCROWN    2
+#define FFACT_TYPE_SKEETS       3
+#define FFACT_TYPE_MELEESKEETS  4
+#define FFACT_TYPE_HUNTERDP     5
+#define FFACT_TYPE_JOCKEYDP     6
+#define FFACT_TYPE_M2           7
+#define FFACT_TYPE_MELEETANK    8
+#define FFACT_TYPE_CUT          9
+#define FFACT_TYPE_POP          10
+#define FFACT_TYPE_DEADSTOP     11
+#define FFACT_TYPE_HEADSHOTS    12
+#define FFACT_TYPE_HEADSHOTSSI  13
+#define FFACT_TYPE_LEVELS       14
+#define FFACT_MAXTYPES          14
+
+#define FFACT_MIN_CROWN         1
+#define FFACT_MAX_CROWN         10
+#define FFACT_MIN_DRAWCROWN     1
+#define FFACT_MAX_DRAWCROWN     10
+#define FFACT_MIN_SKEETS        2
+#define FFACT_MAX_SKEETS        20
+#define FFACT_MIN_MELEESKEETS   1
+#define FFACT_MAX_MELEESKEETS   10
+#define FFACT_MIN_HUNTERDP      2
+#define FFACT_MAX_HUNTERDP      10
+#define FFACT_MIN_JOCKEYDP      2
+#define FFACT_MAX_JOCKEYDP      10
+#define FFACT_MIN_M2            15
+#define FFACT_MAX_M2            50
+#define FFACT_MIN_MELEETANK     4
+#define FFACT_MAX_MELEETANK     10
+#define FFACT_MIN_CUT           4
+#define FFACT_MAX_CUT           10
+#define FFACT_MIN_POP           4
+#define FFACT_MAX_POP           10
+#define FFACT_MIN_DEADSTOP      7
+#define FFACT_MAX_DEADSTOP      20
+#define FFACT_MIN_HEADSHOTS     30
+#define FFACT_MAX_HEADSHOTS     70
+#define FFACT_MIN_HEADSHOTSSI   30
+#define FFACT_MAX_HEADSHOTSSI   70
+#define FFACT_MIN_LEVELS        3
+#define FFACT_MAX_LEVELS        10
+
+
+// writing
 #define DIR_OUTPUT              "logs/"
 #define MAX_QUERY_SIZE          8192
 #define FILETABLEFLAGS          33460           // AUTO_ flags for what to print to a file automatically
@@ -311,6 +359,7 @@ enum strOEC
 
 new     bool:   g_bLateLoad             = false;
 new     bool:   g_bFirstLoadDone        = false;                                        // true after first onMapStart
+new     bool:   g_bLoadSkipDone         = false;                                        // true after skipping the _resetnextmap for stats
 new     bool:   g_bReadyUpAvailable     = false;
 new     bool:   g_bPauseAvailable       = false;
 new     bool:   g_bSkillDetectLoaded    = false;
@@ -397,10 +446,13 @@ public Plugin: myinfo =
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
             - it's not the size.. got something to do with the timing?
-            - or delays between prints?
+            - or delays between prints? (<= prolly)
             
         build:
         ------
+        - campaign: keep stats for failed rounds until success
+            - so round time should become total time, minus time spent in saferoom waiting
+            
         - add 'my' option to command arguments (for 'my team')
 
         - skill
@@ -411,21 +463,6 @@ public Plugin: myinfo =
                 damage done (to upright survivors),
                 commons killed,
                 dc's, assists, ?
-
-        
-    details:
-    --------
-        - hall of fame print, with only
-            - most skeets (if any)
-            - most levels (if any)
-            - etc
-        - if something special has triggered, show a single line with a 'fun fact':
-            - skeet count > x
-            - level count > x
-            - crown count > x
-            - ff > x % & absolute value
-            - dp > absolute damage/height
-            - jock dp > abs. height
         
     ideas
     -----
@@ -663,11 +700,15 @@ public OnMapStart()
     
     CheckGameMode();
     
-    if ( GetConVarBool(g_hCvarSkipMap) )
+    if ( !g_bLoadSkipDone && GetConVarBool(g_hCvarSkipMap) )
     {
         // reset stats and unset cvar
         ResetStats( false, -1 );
+        
+        // this might not work (server might be resetting the resetnextmap var every time
+        //  so also using the bool to make sure it only happens once
         SetConVarInt(g_hCvarSkipMap, 0);
+        g_bLoadSkipDone = true;
     }
     else if ( g_bFirstLoadDone )
     {
@@ -756,7 +797,14 @@ stock HandleRoundEnd( bool: bFailed = false )
         HandleTankTimeEnd();
     }
     
-    if ( !g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] ) {
+    // set all 0 times to present
+    if ( !bFailed )
+    {
+        SetRoundEndTimes();
+    }
+    
+    if ( !g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] )
+    {
         g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] = GetTime();
     }
     
@@ -792,11 +840,34 @@ stock HandleRoundEnd( bool: bFailed = false )
     }
     g_bPlayersLeftStart = false;
 }
+// fix all 0-endtime values 
+stock SetRoundEndTimes()
+{
+    new i, j;
+    new time = GetTime();
+    
+    // start-stop times (always pairs)  <, not <=, because per 2!
+    for ( i = rndStartTime; i < MAXRNDSTATS; i += 2 )
+    {
+        // set end
+        if ( g_strRoundData[g_iRound][g_iCurTeam][i] && !g_strRoundData[g_iRound][g_iCurTeam][i+1] ) { g_strRoundData[g_iRound][g_iCurTeam][i+1] = time; }
+    }
+    
+    // player data
+    for ( j = 0; j < MAXTRACKED; j++ )
+    {
+        // start-stop times (always pairs)  <, not <=, because per 2!
+        for ( i = plyTimeStartPresent; i < MAXPLYSTATS; i += 2 )
+        {
+            if ( g_strRoundPlayerData[j][g_iCurTeam][i] && !g_strRoundPlayerData[j][g_iCurTeam][i+1] ) { g_strRoundPlayerData[j][g_iCurTeam][i+1] = time; }
+        }
+    }
+}
+
 // add stuff from this round to the game/allround data arrays
 stock HandleRoundAddition()
 {
     new i, j;
-    new time = GetTime();
     
     PrintDebug( 1, "Handling round addition for round %i, roundhalf %i (team %s).", g_iRound, g_bSecondHalf, (g_iCurTeam == LTEAM_A) ? "A" : "B" );
     
@@ -811,7 +882,6 @@ stock HandleRoundAddition()
     for ( i = rndStartTime; i < MAXRNDSTATS; i += 2 )
     {
         // set end
-        if ( g_strRoundData[g_iRound][g_iCurTeam][i] && !g_strRoundData[g_iRound][g_iCurTeam][i+1] ) { g_strRoundData[g_iRound][g_iCurTeam][i+1] = time; }
         g_strAllRoundData[g_iCurTeam][i+1] += g_strRoundData[g_iRound][g_iCurTeam][i+1] - g_strRoundData[g_iRound][g_iCurTeam][i];
     }
     
@@ -825,7 +895,6 @@ stock HandleRoundAddition()
         // start-stop times (always pairs)  <, not <=, because per 2!
         for ( i = plyTimeStartPresent; i < MAXPLYSTATS; i += 2 )
         {
-            if ( g_strRoundPlayerData[j][g_iCurTeam][i] && !g_strRoundPlayerData[j][g_iCurTeam][i+1] ) { g_strRoundPlayerData[j][g_iCurTeam][i+1] = time; }
             g_strPlayerData[j][i+1] += g_strRoundPlayerData[j][g_iCurTeam][i+1] - g_strRoundPlayerData[j][g_iCurTeam][i];
         }
     }
@@ -3129,6 +3198,198 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
     }
 }
 
+// show 1 (randomly selected, but at least relevant) fact about the game
+stock DisplayStatsFunFactChat( client, bool:bRound = true, bool:bTeam = true, iTeam = -1 )
+{
+    decl String:printBuffer[1024];
+    new String:strLines[8][192];
+    new i, j, x;
+    
+    printBuffer = GetFunFactChatString( bRound, bTeam, iTeam );
+    
+    // only print if we got something
+    if ( !strlen(printBuffer) ) { return; }
+    
+    if ( client == -1 ) {
+        PrintToServer("\x01%s", printBuffer);
+    }
+
+    // PrintToChatAll has a max length. Split it in to individual lines to output separately
+    new intPieces = ExplodeString( printBuffer, "\n", strLines, sizeof(strLines), sizeof(strLines[]) );
+    
+    if ( client > 0 ) {
+        for ( i = 0; i < intPieces; i++ ) {
+            PrintToChat(client, "\x01%s", strLines[i]);
+        }
+    }
+    else if ( client == 0 ) {
+        for ( i = 0; i < intPieces; i++ ) {
+            PrintToServer("\x01%s", strLines[i]);
+        }
+    }
+    else {
+        for ( j = 1; j <= MaxClients; j++ ) {
+            for ( i = 0; i < intPieces; i++ ) {
+                if ( !IS_VALID_INGAME( j ) || g_iCookieValue[j] != 0 ) { continue; }
+                PrintToChat( j, "\x01%s", strLines[i] );
+            }
+        }
+    }
+}
+
+String: GetFunFactChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 )
+{
+    decl String: printBuffer[1024];
+    decl String: tmpBuffer[512];
+    
+    printBuffer = "";
+    
+    new i, j;
+    new wTotal = 0;
+    new wPicks[256];
+    
+    /*
+        fun facts
+        -------------------------------------------
+            #define FFACT_MIN_CROWN         1
+            #define FFACT_MAX_CROWN         10
+            #define FFACT_MIN_DRAWCROWN     1
+            #define FFACT_MAX_DRAWCROWN     10
+            #define FFACT_MIN_SKEETS        2
+            #define FFACT_MAX_SKEETS        20
+            #define FFACT_MIN_MELEESKEETS   1
+            #define FFACT_MAX_MELEESKEETS   10
+            #define FFACT_MIN_HUNTERDP      2
+            #define FFACT_MAX_HUNTERDP      10
+            #define FFACT_MIN_JOCKEYDP      2
+            #define FFACT_MAX_JOCKEYDP      10
+            #define FFACT_MIN_M2            15
+            #define FFACT_MAX_M2            50
+            #define FFACT_MIN_MELEETANK     4
+            #define FFACT_MAX_MELEETANK     10
+            #define FFACT_MIN_CUT           4
+            #define FFACT_MAX_CUT           10
+            #define FFACT_MIN_POP           4
+            #define FFACT_MAX_POP           10
+            #define FFACT_MIN_DEADSTOP      7
+            #define FFACT_MAX_DEADSTOP      20
+            #define FFACT_MIN_HEADSHOTS     30
+            #define FFACT_MAX_HEADSHOTS     70
+            #define FFACT_MIN_HEADSHOTSSI   30
+            #define FFACT_MAX_HEADSHOTSSI   70
+            #define FFACT_MIN_LEVELS        3
+            #define FFACT_MAX_LEVELS        10
+        -------------------------------------------
+        1 - FFACT_MAX_WEIGHT
+    */
+    
+    // use current survivor team -- or previous team in second half before starting
+    new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
+    
+    // for each type, check whether / and how weighted
+    new wTmp = 0;
+    for ( i = 0; i <= FFACT_MAXTYPES; i++ )
+    {
+        wTmp = 0;
+        switch (i)
+        {
+            case FFACT_TYPE_CROWN: {
+                
+            }
+            case FFACT_TYPE_DRAWCROWN: {
+            }
+            case FFACT_TYPE_SKEETS: {
+            }
+            case FFACT_TYPE_MELEESKEETS: {
+            }
+            case FFACT_TYPE_HUNTERDP: {
+            }
+            case FFACT_TYPE_JOCKEYDP: {
+            }
+            case FFACT_TYPE_M2: {
+            }
+            case FFACT_TYPE_MELEETANK: {
+            }
+            case FFACT_TYPE_CUT: {
+            }
+            case FFACT_TYPE_POP: {
+            }
+            case FFACT_TYPE_DEADSTOP: {
+            }
+            case FFACT_TYPE_HEADSHOTS: {
+            }
+            case FFACT_TYPE_HEADSHOTSSI: {
+            }
+            case FFACT_TYPE_LEVELS: {
+            }
+        }
+        
+        if ( wTmp ) {
+            for ( j = 0; j < wTmp; j++ ) { wPicks[wTotal+j] = i; }
+            wTotal += wTmp;
+        }
+    }
+    
+    if ( !wTotal ) { return printBuffer; }
+    
+    // pick one, format it
+    new wPick = GetRandomInt( 0, wTotal-1 );
+    
+    switch (wPick)
+    {
+        case FFACT_TYPE_CROWN: {
+            
+        }
+        case FFACT_TYPE_DRAWCROWN: {
+        }
+        case FFACT_TYPE_SKEETS: {
+        }
+        case FFACT_TYPE_MELEESKEETS: {
+        }
+        case FFACT_TYPE_HUNTERDP: {
+        }
+        case FFACT_TYPE_JOCKEYDP: {
+        }
+        case FFACT_TYPE_M2: {
+        }
+        case FFACT_TYPE_MELEETANK: {
+        }
+        case FFACT_TYPE_CUT: {
+        }
+        case FFACT_TYPE_POP: {
+        }
+        case FFACT_TYPE_DEADSTOP: {
+        }
+        case FFACT_TYPE_HEADSHOTS: {
+        }
+        case FFACT_TYPE_HEADSHOTSSI: {
+        }
+        case FFACT_TYPE_LEVELS: {
+        }
+    }
+    
+    // report
+    /*
+        Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] SI:\x03 %s \x01(\x05%d \x01dmg[\x04%i%%\x01],\x05 %d \x01kills [\x04%i%%\x01])\n",
+                (bRound) ? "" : " - Game",
+                g_sPlayerName[mvp_SI],
+                (bRound) ? g_strRoundPlayerData[mvp_SI][team][plySIDamage] : g_strPlayerData[mvp_SI][plySIDamage],
+                RoundFloat( (bRound) ?
+                        ((float(g_strRoundPlayerData[mvp_SI][team][plySIDamage]) / float(g_strRoundData[g_iRound][team][rndSIDamage])) * 100) :
+                        ((float(g_strPlayerData[mvp_SI][plySIDamage]) / float(g_strAllRoundData[team][rndSIDamage])) * 100) 
+                    ),
+                (bRound) ? g_strRoundPlayerData[mvp_SI][team][plySIKilled] : g_strPlayerData[mvp_SI][plySIKilled],
+                RoundFloat( (bRound) ?
+                        ((float(g_strRoundPlayerData[mvp_SI][team][plySIKilled]) / float(g_strRoundData[g_iRound][team][rndSIKilled])) * 100) :
+                        ((float(g_strPlayerData[mvp_SI][plySIKilled]) / float(g_strAllRoundData[team][rndSIKilled])) * 100) 
+                    )
+            );
+        StrCat(printBuffer, sizeof(printBuffer), tmpBuffer);
+    */
+    
+    return printBuffer;
+}
+
 // display player accuracy stats: details => tank/si/etc
 stock DisplayStatsAccuracy( client, bool:bDetails = false, bool:bRound = false, bool:bTeam = true, bool:bSorted = true, iTeam = -1 )
 {
@@ -5140,8 +5401,9 @@ stock WriteStatsToFile( iTeam )
         
         // player lines, ";"-delimited: <#>;<index>;<steamid>;<plyStat0>;<etc>;\n
         FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%i;%s;", iPlayerCount, j, g_sPlayerId[j] );
-        for ( i = 0; i <= MAXRNDSTATS; i++ )
+        for ( i = 0; i <= MAXPLYSTATS; i++ )
         {
+            
             Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundPlayerData[j][iTeam][i] );
         }
         Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
