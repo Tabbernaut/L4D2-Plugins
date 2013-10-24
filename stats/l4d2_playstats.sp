@@ -3371,6 +3371,7 @@ String: GetFunFactChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 
     
     // pick one, format it
     new wPick = GetRandomInt( 0, wTotal-1 );
+    wPick = wPicks[wPick];
     
     switch (wPick)
     {
@@ -4532,7 +4533,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
         // MVP normal
         
         new bool: bPrcDecimal = GetConVarBool(g_hCvarDetailPercent);
-        new bool: bTankUp = bool:( !g_bModeCampaign && IsTankInGame() && g_bInRound );
+        new bool: bTankUp = bool:( !g_bModeCampaign && (!bTeam || team == g_iCurTeam) && g_bInRound && IsTankInGame() );
         
         for ( x = 0; x < g_iPlayers; x++ )
         {
