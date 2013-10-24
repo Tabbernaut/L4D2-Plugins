@@ -451,8 +451,12 @@ public Plugin: myinfo =
         ------
         - campaign: keep stats for failed rounds until success
             - so round time should become total time, minus time spent in saferoom waiting
-            
+
         - add 'my' option to command arguments (for 'my team')
+        
+        - store scoring data
+            - maximum distance made (per survivor?)
+            - end scores of round & campaign, print to file
 
         - skill
             - clears / instaclears / average clear time?
@@ -1076,6 +1080,7 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
     new bool:bOther = false;
     new bool:bTank = false;
     new bool:bMore = false;
+    new bool:bMy = false;
     new iStart = 1;
     
     new otherTeam = (g_iCurTeam) ? 0 : 1;
@@ -1112,7 +1117,7 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
             Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|   'round' ('r') / 'game' ('g') : for this round; or for entire game so far   |\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|   'team' ('t') / 'all' ('a')   : current survivor team only; or all players  |\n", bufBasic);
-            Format(bufBasic, CONBUFSIZELARGE,  "%s|   'other' ('o')                : for the other team (that is now infected)   |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   'other' ('o') / 'my'         : team that is now infected; or your team NMW |\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|   'tank'          [ MVP only ] : show stats for tank fight                   |\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|   'more'    [ ACC & MVP only ] : show more stats ( MVP time / SI/tank hits ) |", bufBasic);
             if ( IS_VALID_INGAME(client) ) { PrintToConsole( client, bufBasic); } else { PrintToServer( bufBasic); }
@@ -1121,8 +1126,8 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
             Format(bufBasic, CONBUFSIZELARGE,  "%s| examples:                                                                    |\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats skill round all' => shows skeets etc for all players, this round   |\n", bufBasic);
-            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats ff team game'    => shows friendly fire for your team, this round  |\n", bufBasic);
-            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats acc'             => shows accuracy stats (your team, this round)   |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats ff team game'    => shows active team's friendly fire, this round  |\n", bufBasic);
+            Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats acc my'          => shows accuracy stats (your team, this round)   |\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|   '/stats mvp tank'        => shows survivor action while tank is/was up     |\n", bufBasic);
             Format(bufBasic, CONBUFSIZELARGE,  "%s|------------------------------------------------------------------------------|", bufBasic);
             if ( IS_VALID_INGAME(client) ) { PrintToConsole( client, bufBasic); } else { PrintToServer( bufBasic); }
@@ -1162,6 +1167,9 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
             else if ( StrEqual(sArg, "tank", false) ) {
                 bTank = true;
             }
+            else if ( StrEqual(sArg, "my", false) ) {
+                bMy = true;
+            }
             else {
                 if ( IS_VALID_INGAME(client) ) {
                     PrintToChat( client, "Stats command: unknown argument: '%s'. Type '/stats help' for possible arguments.", sArg );
@@ -1172,41 +1180,62 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
         }
     }
     
+    new iTeam = (bOther) ? otherTeam : -1;
+    
+    // what is 'my' team?
+    if ( bMy ) {
+        new index = GetPlayerIndexForClient( client );
+        new curteam = -1;
+        if ( index != -1 ) {
+            curteam = g_iPlayerRoundTeam[LTEAM_CURRENT][index];
+            if ( curteam != -1 ) {
+                bSetAll = true;
+                bAll = false;
+                iTeam = curteam;
+            } else {
+                // fall back to default
+                iTeam = -1;
+            }
+        }
+    }
+    
+    
+    
     switch ( iType )
     {
         case typGeneral:
         {
             // game by default, unless overridden by 'round'
             //  the first -1 == round number (may think about allowing a number input here later)
-            DisplayStats( client, ( bSetRound && bRound ) ? true : false, -1, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1  );
+            DisplayStats( client, ( bSetRound && bRound ) ? true : false, -1, ( bSetAll && bAll ) ? false : true, iTeam );
         }
         
         case typMVP:
         {
             // by default: only for round
-            DisplayStatsMVP( client, bTank, bMore, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1 );
+            DisplayStatsMVP( client, bTank, bMore, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, iTeam );
             // only show chat for non-tank table
             if ( !bTank && !bMore ) {
-                DisplayStatsMVPChat( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1 );
+                DisplayStatsMVPChat( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, iTeam );
             }
         }
         
         case typFF:
         {
             // by default: only for round
-            DisplayStatsFriendlyFire( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, false, (bOther) ? otherTeam : -1 );
+            DisplayStatsFriendlyFire( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, false, iTeam );
         }
         
         case typSkill:
         {
             // by default: only for round
-            DisplayStatsSpecial( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, false, (bOther) ? otherTeam : -1 );
+            DisplayStatsSpecial( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, false, iTeam );
         }
         
         case typAcc:
         {
             // by default: only for round
-            DisplayStatsAccuracy( client, bMore, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, false, (bOther) ? otherTeam : -1 );
+            DisplayStatsAccuracy( client, bMore, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, false, iTeam );
         }
         
         case typInf:
@@ -1217,7 +1246,7 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
         
         case typFact:
         {
-            DisplayStatsFunFactChat( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1 );
+            DisplayStatsFunFactChat( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, iTeam );
         }
     }
     
