@@ -795,7 +795,7 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 }
 
 // do something when round ends (including for campaign mode)
-stock HandleRoundEnd( bool: bFailed = false )
+stock HandleRoundEnd ( bool: bFailed = false )
 {
     PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i, current round: %i", bFailed, g_bInRound, g_iRound);
     
@@ -821,7 +821,11 @@ stock HandleRoundEnd( bool: bFailed = false )
         // do before addition, because these are round stats
         if ( GetConVarBool(g_hCvarWriteStats) )
         {
-            CreateTimer( ROUNDEND_SCORE_DELAY, Timer_WriteStats, g_iCurTeam );
+            if ( g_bSecondHalf )  {
+                CreateTimer( ROUNDEND_SCORE_DELAY, Timer_WriteStats, g_iCurTeam );
+            } else {
+                WriteStatsToFile( g_iCurTeam, false );
+            }
         }
         
         // only add stuff to total time if the round isn't ongoing
@@ -5558,10 +5562,10 @@ stock GetUprightSurvivors()
 // delayed so roundscores can be trusted
 public Action: Timer_WriteStats ( Handle:timer, any:iTeam )
 {
-    WriteStatsToFile( iTeam );
+    WriteStatsToFile( iTeam, true );
 }
 // write round stats to a text file
-stock WriteStatsToFile( iTeam )
+stock WriteStatsToFile( iTeam, bool:bSecondHalf )
 {
     new i, j;
     new bool: bFirstWrite;
@@ -5575,7 +5579,7 @@ stock WriteStatsToFile( iTeam )
     new String: path[128];
     
     // create the file
-    if ( g_bModeCampaign || !g_bSecondHalf || !strlen(g_sStatsFile) )
+    if ( g_bModeCampaign || !bSecondHalf || !strlen(g_sStatsFile) )
     {
         bFirstWrite = true;
         
@@ -5613,11 +5617,11 @@ stock WriteStatsToFile( iTeam )
     
     
     // round data
-    FormatEx( strTmpLine, sizeof(strTmpLine), "[RoundHalf:%i]\n", g_bSecondHalf );
+    FormatEx( strTmpLine, sizeof(strTmpLine), "[RoundHalf:%i]\n", bSecondHalf );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     // round lines, ";"-delimited: <roundhalf>;<team (A/B)>;<rndStat0>;<etc>;\n
-    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;", g_bSecondHalf, (iTeam == LTEAM_A) ? "A" : "B" );
+    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;", bSecondHalf, (iTeam == LTEAM_A) ? "A" : "B" );
     for ( i = 0; i <= MAXRNDSTATS; i++ )
     {
         Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundData[g_iRound][iTeam][i] );
@@ -5628,8 +5632,8 @@ stock WriteStatsToFile( iTeam )
     
     
     // scoring data
-    new score = L4D_GetTeamScore( (g_bSecondHalf) ? 2 : 1 );
-    new scoreCamp = L4D2Direct_GetVSCampaignScore( g_iCurTeam );
+    new score = L4D_GetTeamScore( (bSecondHalf) ? 2 : 1 );
+    new scoreCamp = L4D2Direct_GetVSCampaignScore( iTeam );
     new Float: maxFlowDist = L4D2Direct_GetMapMaxFlowDistance();
     new Float: curFlowDist[MAXPLAYERS+1];
     new clients = 0;
@@ -5675,7 +5679,6 @@ stock WriteStatsToFile( iTeam )
         FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%i;%s;", iPlayerCount, j, g_sPlayerId[j] );
         for ( i = 0; i <= MAXPLYSTATS; i++ )
         {
-            
             Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundPlayerData[j][iTeam][i] );
         }
         Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
