@@ -452,6 +452,10 @@ public Plugin: myinfo =
             - it's not the size.. got something to do with the timing?
             - or delays between prints? (<= prolly)
             
+        - filewrite
+            - round score is 0? check campaign score
+            - flow distance per player is _current_ flowdist.. not max..
+            
         build:
         ------
         - skill
@@ -2256,7 +2260,7 @@ public Action: Timer_ResetStats (Handle:timer, any:roundOnly)
 }
 
 // team -1 = clear both; failedround = campaign mode only
-stock ResetStats( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRound = false )
+stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRound = false )
 {
     new i, j, k;
     
@@ -2464,7 +2468,7 @@ stock UpdatePlayerCurrentTeam()
     }
 }
 
-stock ClearPlayerTeam( iTeam = -1 )
+stock ClearPlayerTeam ( iTeam = -1 )
 {
     new i, j;
     
@@ -2484,7 +2488,7 @@ stock ClearPlayerTeam( iTeam = -1 )
     }
 }
 
-stock SetStartSurvivorTime( bool:bGame = false, bool:bRestart = false )
+stock SetStartSurvivorTime ( bool:bGame = false, bool:bRestart = false )
 {
     new client, index;
     new time = GetTime();
@@ -5253,31 +5257,33 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
     }
 }
 
-stock AutomaticPrintPerClient( iFlags, client = -1 )
+stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1 )
 {
     // prints automatic stuff, optionally for one client only
     
     new bool: bSorted = (iFlags & AUTO_MVPCON_ROUND) || (iFlags & AUTO_MVPCON_GAME) || (iFlags & AUTO_MVPCON_TANK) || (iFlags & AUTO_MVPCON_MORE_ROUND);
     new bool: bSortedForGame = false;
     
+    new bool: bTeam = bool:( iTeam != -1 );
+    
     // mvp
     if ( iFlags & AUTO_MVPCON_ROUND ) {
-        DisplayStatsMVP(client, false, false, true);
+        DisplayStatsMVP(client, false, false, true, bTeam, iTeam );
     }
     if ( iFlags & AUTO_MVPCON_GAME ) {
-        DisplayStatsMVP(client, false, false, false);
+        DisplayStatsMVP(client, false, false, false, bTeam, iTeam );
         bSortedForGame = true;
     }
     if ( iFlags & AUTO_MVPCON_MORE_ROUND ) {
-        DisplayStatsMVP(client, false, true, true);
+        DisplayStatsMVP(client, false, true, true, bTeam, iTeam );
     }
     if ( iFlags & AUTO_MVPCON_MORE_GAME ) {
-        DisplayStatsMVP(client, false, true, false);
+        DisplayStatsMVP(client, false, true, false, bTeam, iTeam );
         bSortedForGame = true;
     }
     
     if ( iFlags & AUTO_MVPCON_TANK ) {
-        DisplayStatsMVP(client, true);
+        DisplayStatsMVP(client, true, false, true, bTeam, iTeam );
     }
     
     if ( iFlags & AUTO_MVPCHAT_ROUND ) {
@@ -5308,32 +5314,32 @@ stock AutomaticPrintPerClient( iFlags, client = -1 )
     
     // special / skill
     if ( iFlags & AUTO_SKILLCON_ROUND ) {
-        DisplayStatsSpecial(client, true);
+        DisplayStatsSpecial(client, true, bTeam, false, iTeam );
     }
     if ( iFlags & AUTO_SKILLCON_GAME ) {
-        DisplayStatsSpecial(client, false);
+        DisplayStatsSpecial(client, false, bTeam, false, iTeam );
     }
     
     // ff
     if ( iFlags & AUTO_FFCON_ROUND ) {
-        DisplayStatsFriendlyFire(client, true, (bSorted && !bSortedForGame) );
+        DisplayStatsFriendlyFire(client, true, bTeam, (bSorted && !bSortedForGame), iTeam );
     }
     if ( iFlags & AUTO_FFCON_GAME ) {
-        DisplayStatsFriendlyFire(client, false, (bSorted && bSortedForGame) );
+        DisplayStatsFriendlyFire(client, false, bTeam, (bSorted && bSortedForGame), iTeam );
     }
     
     // accuracy
     if ( iFlags & AUTO_ACCCON_ROUND ) {
-        DisplayStatsAccuracy(client, false, true, (bSorted && !bSortedForGame) );
+        DisplayStatsAccuracy(client, false, true, bTeam, (bSorted && !bSortedForGame), iTeam );
     }
     if ( iFlags & AUTO_ACCCON_GAME ) {
-        DisplayStatsAccuracy(client, false, false, (bSorted && bSortedForGame) );
+        DisplayStatsAccuracy(client, false, false, bTeam, (bSorted && bSortedForGame), iTeam );
     }
     if ( iFlags & AUTO_ACCCON_MORE_ROUND ) {
-        DisplayStatsAccuracy(client, true, true, (bSorted && !bSortedForGame) );
+        DisplayStatsAccuracy(client, true, true, bTeam, (bSorted && !bSortedForGame), iTeam );
     }
     if ( iFlags & AUTO_ACCCON_MORE_GAME ) {
-        DisplayStatsAccuracy(client, true, false, (bSorted && bSortedForGame) );
+        DisplayStatsAccuracy(client, true, false, bTeam, (bSorted && bSortedForGame), iTeam );
     }
     
     // to do:
@@ -5603,14 +5609,13 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         StrCat( sStats, sizeof(sStats), strTmpLine );
         
         FormatTime( sTmpTime, sizeof(sTmpTime), "%Y-%m-%d;%H:%M" );
-        FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%s;%s;\n",
+        FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%s;%s;\n\n",
                 g_iRound,
                 sTmpTime,
                 g_iTeamSize,
                 g_sConfigName,
                 sTmpMap
             );
-        
         StrCat( sStats, sizeof(sStats), strTmpLine );
     }
     
@@ -5641,7 +5646,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     {
         if ( !IS_VALID_SURVIVOR(i) ) { continue; }
         
-        curFlowDist[clients] = L4D2Direct_GetFlowDistance(i);
+        curFlowDist[clients] = GetEntPropFloat( i, Prop_Send, "m_farthestSurvivorFlowAtDeath" );
         clients++;
     }
     
@@ -5706,7 +5711,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         }
         
         // -2 = print to file (if open)
-        AutomaticPrintPerClient( FILETABLEFLAGS, -2 );
+        AutomaticPrintPerClient( FILETABLEFLAGS, -2, iTeam );
         
         CloseHandle(g_hStatsFile);
     }
