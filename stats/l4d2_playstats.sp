@@ -4,6 +4,7 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <left4downtown>
+#include <l4d2_direct>
 #include <clientprefs>
 #undef REQUIRE_PLUGIN
 #include <readyup>
@@ -52,6 +53,7 @@
 
 #define STATS_RESET_DELAY       5.0
 #define ROUNDSTART_DELAY        3.0
+#define ROUNDEND_SCORE_DELAY    1.0
 #define ROUNDEND_DELAY          3.0
 #define ROUNDEND_DELAY_SCAV     2.0
 #define PRINT_REPEAT_DELAY      15              // how many seconds to wait before re-doing automatic round end prints (opening/closing end door, etc)
@@ -384,6 +386,7 @@ new             g_iRound                = 0;
 new             g_iCurTeam              = LTEAM_A;                                      // current logical team
 new             g_iTeamSize             = 4;
 new             g_iLastRoundEndPrint    = 0;                                            // when the last automatic print was shown
+new             g_iSurvived             [2];                                            // just for stats: how many survivors that round (0 = wipe)
 
 new     bool:   g_bPaused               = false;                                        // whether paused with pause.smx
 new             g_iPauseStart           = 0;                                            // time the current pause started
@@ -451,12 +454,6 @@ public Plugin: myinfo =
         ------
         - campaign: keep stats for failed rounds until success
             - so round time should become total time, minus time spent in saferoom waiting
-
-        - add 'my' option to command arguments (for 'my team')
-        
-        - store scoring data
-            - maximum distance made (per survivor?)
-            - end scores of round & campaign, print to file
 
         - skill
             - clears / instaclears / average clear time?
@@ -797,6 +794,9 @@ stock HandleRoundEnd( bool: bFailed = false )
     // only do once
     if ( !g_bInRound ) { return; }
     
+    // count survivors
+    g_iSurvived[g_iCurTeam] = GetUprightSurvivors();
+    
     // note end of tankfight
     if ( g_bTankInGame ) {
         HandleTankTimeEnd();
@@ -817,8 +817,9 @@ stock HandleRoundEnd( bool: bFailed = false )
     
     // write stats for this roundhalf to file
     // do before addition, because these are round stats
-    if ( GetConVarBool(g_hCvarWriteStats) ) {
-        WriteStatsToFile( g_iCurTeam );
+    if ( GetConVarBool(g_hCvarWriteStats) )
+    {
+        CreateTimer( ROUNDEND_SCORE_DELAY, Timer_WriteStats, g_iCurTeam );
     }
     
     // add stuff to allrounds/game data, for this round
@@ -5479,10 +5480,38 @@ stock bool: AreClientsConnected()
     }
     return false;
 }
+stock GetUprightSurvivors()
+{
+    new count = 0;
+    new incapcount = 0;
+    
+    for ( new client = 1; client <= MaxClients; client++ )
+    {
+        if ( IS_VALID_SURVIVOR(client) && IsPlayerAlive(client) )
+        {
+            if ( IsPlayerIncapacitatedAtAll(client) ) {
+                incapcount++;
+            } else {
+                count++;
+            }
+        }
+    }
+    
+    // if incapped in saferoom with upright survivors, counts as survival
+    if ( count ) { count += incapcount; }
+    
+    return count;
+}
+
 /*
     File / DB writing
     -----------------
 */
+// delayed so roundscores can be trusted
+public Action: Timer_WriteStats ( Handle:timer, any:iTeam )
+{
+    WriteStatsToFile( iTeam );
+}
 // write round stats to a text file
 stock WriteStatsToFile( iTeam )
 {
@@ -5522,7 +5551,12 @@ stock WriteStatsToFile( iTeam )
         StrCat( sStats, sizeof(sStats), strTmpLine );
     }
     
+    
+    
     // round data
+    FormatEx( strTmpLine, sizeof(strTmpLine), "[RoundHalf:%i]\n", g_bSecondHalf );
+    StrCat( sStats, sizeof(sStats), strTmpLine );
+    
     // round lines, ";"-delimited: <roundhalf>;<team (A/B)>;<rndStat0>;<etc>;\n
     FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;", g_bSecondHalf, (iTeam == LTEAM_A) ? "A" : "B" );
     for ( i = 0; i <= MAXRNDSTATS; i++ )
@@ -5531,6 +5565,39 @@ stock WriteStatsToFile( iTeam )
     }
     Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
+    
+    
+    
+    // scoring data
+    new score = L4D_GetTeamScore( (g_bSecondHalf) ? 2 : 1 );
+    new scoreCamp = L4D2Direct_GetVSCampaignScore( g_iCurTeam );
+    new Float: maxFlowDist = L4D2Direct_GetMapMaxFlowDistance();
+    new Float: curFlowDist[MAXPLAYERS+1];
+    new clients = 0;
+    for ( i = 1; i <= MaxClients; i++ )
+    {
+        if ( !IS_VALID_SURVIVOR(i) ) { continue; }
+        
+        curFlowDist[clients] = L4D2Direct_GetFlowDistance(i);
+        clients++;
+    }
+    
+    FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:%i]\n", (iTeam == LTEAM_A) ? "A" : "B" );
+    StrCat( sStats, sizeof(sStats), strTmpLine );
+    
+    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%i;%i;%.2f;",
+            g_bSecondHalf,
+            (iTeam == LTEAM_A) ? "A" : "B",
+            score,
+            scoreCamp,
+            g_iSurvived[iTeam],
+            maxFlowDist
+        );
+    
+    for ( i = 0; i < clients; i++ )
+    {
+        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;", strTmpLine, curFlowDist[i] );
+    }
     
     
     // player data
@@ -5580,6 +5647,7 @@ stock WriteStatsToFile( iTeam )
         CloseHandle(g_hStatsFile);
     }
 }
+
 
 /*
     Tries
