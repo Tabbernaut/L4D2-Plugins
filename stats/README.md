@@ -37,7 +37,7 @@ Commands:
 |------------------------------------------------------------------------------|
 |   '/stats skill round all' => shows skeets etc for all players, this round   |
 |   '/stats ff team game'    => shows friendly fire for your team, this round  |
-|   '/stats acc'             => shows accuracy stats (your team, this round)   |
+|   '/stats acc my'          => shows accuracy stats (your team, this round)   |
 |   '/stats mvp tank'        => shows survivor action while tank is/was up     |
 |------------------------------------------------------------------------------|
 </pre>
