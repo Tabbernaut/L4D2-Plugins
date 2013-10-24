@@ -1,0 +1,113 @@
+
+[RoundHalf: <roundhalf> ]
+
+<roundhalf> ; <team A/B> ; 
+	    rndRestarts,
+            rndPillsUsed,
+            rndKitsUsed,
+            rndDefibsUsed,
+            rndCommon,
+            rndSIKilled,
+            rndSIDamage,
+            rndSISpawned,
+            rndWitchKilled,
+            rndTankKilled,
+            rndIncaps,
+            rndDeaths,
+            rndFFDamageTotal,
+            rndStartTime,
+            rndEndTime,
+            rndStartTimePause,
+            rndStopTimePause,
+            rndStartTimeTank,
+            rndStopTimeTank
+
+
+
+[Scoring: <team A/B> ]
+
+<roundhalf> ; <team A/B> ; <round score> ; <campaign score > ; <survivor count> ;
+	<max flowdist> ; <flowdist 1> ; < .. 2 > ; < .. 3 > ; < .. 4 >
+
+
+
+[players][team: <team A/B> ]
+
+<no.> ; <index> ; <SteamId> ; 
+	    plyShotsShotgun,        // 0 pellets
+            plyShotsSmg,            // all bullets from smg/rifle
+            plyShotsSniper,         // all bullets from snipers
+            plyShotsPistol,         // all bullets from pistol/magnum
+            plyHitsShotgun,
+            plyHitsSmg,
+            plyHitsSniper,
+            plyHitsPistol,
+            plyHeadshotsSmg,        // headshots for everything but on tank
+            plyHeadshotsSniper,
+            plyHeadshotsPistol,     // 10
+            plyHeadshotsSISmg,      // headshots for SI only
+            plyHeadshotsSISniper,
+            plyHeadshotsSIPistol,
+            plyHitsSIShotgun,       // all hits on special infected (not tank)
+            plyHitsSISmg,
+            plyHitsSISniper,
+            plyHitsSIPistol,
+            plyHitsTankShotgun,     // all hits on tank
+            plyHitsTankSmg,         // useful for getting real headshot count (leave tank out of it)
+            plyHitsTankSniper,      // 20
+            plyHitsTankPistol,
+            plyCommon,
+            plyCommonTankUp,
+            plySIKilled,
+            plySIKilledTankUp,
+            plySIDamage,
+            plySIDamageTankUp,
+            plyIncaps,
+            plyDied,
+            plySkeets,              // 30 skeets, full
+            plySkeetsHurt,
+            plySkeetsMelee,
+            plyLevels,              // charger levels, full
+            plyLevelsHurt,
+            plyPops,                // boomer pops (pre puke)
+            plyCrowns,
+            plyCrownsHurt,          // non-full crowns 
+            plyShoves,              // count every shove
+            plyDeadStops,
+            plyTongueCuts,          // 40 only real cuts
+            plySelfClears,
+            plyFallDamage,
+            plyDmgTaken,
+            plyFFGiven,
+            plyFFTaken,
+            plyFFHits,              // total amount of shotgun blasts / bullets / etc
+            plyTankDamage,          // survivor damage to tank
+            plyWitchDamage,
+            plyMeleesOnTank,
+            plyRockSkeets,          // 50
+            plyRockEats,
+            plyFFGivenPellet,
+            plyFFGivenBullet,
+            plyFFGivenSniper,
+            plyFFGivenMelee,
+            plyFFGivenFire,
+            plyFFGivenIncap,
+            plyFFGivenOther,
+            plyFFGivenSelf,
+            plyFFTakenPellet,       // 60
+            plyFFTakenBullet,
+            plyFFTakenSniper,
+            plyFFTakenMelee,
+            plyFFTakenFire,
+            plyFFTakenIncap,
+            plyFFTakenOther,
+            plyFFGivenTotal,
+            plyFFTakenTotal,
+            plyHunterDPs,
+            plyJockeyDPs,           // 70
+            plyTimeStartPresent,    //      time present (on the team)
+            plyTimeStopPresent,     //      if stoptime is 0, then it's NOW, ongoing
+            plyTimeStartAlive,
+            plyTimeStopAlive,
+            plyTimeStartUpright,    //      time not capped
+            plyTimeStopUpright
