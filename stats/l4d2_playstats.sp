@@ -410,6 +410,7 @@ new     String: g_sPlayerName           [MAXTRACKED][MAXNAME];
 new     String: g_sPlayerNameSafe       [MAXTRACKED][MAXNAME];                          // version of name without unicode characters
 new     String: g_sPlayerId             [MAXTRACKED][32];                               // steam id
 new     String: g_sMapName              [MAXROUNDS][MAXMAP];
+new     String: g_sConfigName           [MAXMAP];
 new             g_iPlayers                                          = 0;
 
 new     String: g_sConsoleBuf           [MAXCHUNKS][CONBUFSIZELARGE];
@@ -655,6 +656,15 @@ public OnPluginStart()
 public OnConfigsExecuted()
 {
     g_iTeamSize = GetConVarInt( FindConVar("survivor_limit") );
+    
+    // currently loaded config?
+    g_sConfigName = "";
+    
+    new Handle: tmpHandle = FindConVar("l4d_ready_cfg_name");
+    if ( tmpHandle != INVALID_HANDLE )
+    {
+        GetConVarString( tmpHandle, g_sConfigName, MAXMAP );
+    }
 }
 
 // find a player
@@ -5589,9 +5599,11 @@ stock WriteStatsToFile( iTeam )
         StrCat( sStats, sizeof(sStats), strTmpLine );
         
         FormatTime( sTmpTime, sizeof(sTmpTime), "%Y-%m-%d;%H:%M" );
-        FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%s;\n",
+        FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%s;%s;\n",
                 g_iRound,
                 sTmpTime,
+                g_iTeamSize,
+                g_sConfigName,
                 sTmpMap
             );
         
