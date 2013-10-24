@@ -27,7 +27,7 @@
 [Scoring: <team A/B> ]
 
 <roundhalf> ; <team A/B> ; <round score> ; <campaign score > ; <survivor count> ;
-	<max flowdist> ; <flowdist 1> ; < .. 2 > ; < .. 3 > ; < .. 4 >
+	<max flowdist> ; <furthest flowdist 1> ; <current flowdist 1> ; < .. 2 > ; < .. 3 > ; < .. 4 >
 
 
 

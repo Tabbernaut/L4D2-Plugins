@@ -5641,12 +5641,14 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     new scoreCamp = L4D2Direct_GetVSCampaignScore( iTeam );
     new Float: maxFlowDist = L4D2Direct_GetMapMaxFlowDistance();
     new Float: curFlowDist[MAXPLAYERS+1];
+    new Float: farFlowDist[MAXPLAYERS+1];
     new clients = 0;
     for ( i = 1; i <= MaxClients; i++ )
     {
         if ( !IS_VALID_SURVIVOR(i) ) { continue; }
         
-        curFlowDist[clients] = GetEntPropFloat( i, Prop_Send, "m_farthestSurvivorFlowAtDeath" );
+        farFlowDist[clients] = GetEntPropFloat( i, Prop_Send, "m_farthestSurvivorFlowAtDeath" );
+        curFlowDist[clients] = L4D2Direct_GetFlowDistance( i );
         clients++;
     }
     
@@ -5664,7 +5666,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     
     for ( i = 0; i < clients; i++ )
     {
-        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;", strTmpLine, curFlowDist[i] );
+        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;%.f2;", strTmpLine, farFlowDist[i], curFlowDist[i] );
     }
     Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
