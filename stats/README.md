@@ -29,7 +29,7 @@ Commands:
 |------------------------------------------------------------------------------|
 |   'round' ('r') / 'game' ('g') : for this round; or for entire game so far   |
 |   'team' ('t') / 'all' ('a')   : current survivor team only; or all players  |
-|   'other' ('o')                : for the other team (that is now infected)   |
+|   'other' ('o') / 'my'         : team that is now infected; or your team NMW |
 |   'tank'          [ MVP only ] : show stats for tank fight                   |
 |   'more'    [ ACC & MVP only ] : show more stats ( MVP time / SI/tank hits ) |
 |------------------------------------------------------------------------------|
@@ -37,7 +37,7 @@ Commands:
 |------------------------------------------------------------------------------|
 |   '/stats skill round all' => shows skeets etc for all players, this round   |
 |   '/stats ff team game'    => shows friendly fire for your team, this round  |
-|   '/stats acc'             => shows accuracy stats (your team, this round)   |
+|   '/stats acc my'          => shows accuracy stats (your team, this round)   |
 |   '/stats mvp tank'        => shows survivor action while tank is/was up     |
 |------------------------------------------------------------------------------|
 </pre>
@@ -109,7 +109,7 @@ AUTO_FUNFACT_GAME       16384
 AUTO_MVPCON_MORE_ROUND  32768   // console table: more mvp stats, time alive, etc
 AUTO_MVPCON_MORE_GAME   65536
 </pre>
-Default: vs: [133], coop: [1289].
+Default: vs: [8325], coop: [1289].
 
 
 <b>sm_stats_showbots</b><br />
