@@ -157,19 +157,17 @@
 #define FFACT_TYPE_CUT          9
 #define FFACT_TYPE_POP          10
 #define FFACT_TYPE_DEADSTOP     11
-#define FFACT_TYPE_HEADSHOTS    12
-#define FFACT_TYPE_HEADSHOTSSI  13
-#define FFACT_TYPE_LEVELS       14
-#define FFACT_MAXTYPES          14
+#define FFACT_TYPE_LEVELS       12
+#define FFACT_MAXTYPES          12
 
 #define FFACT_MIN_CROWN         1
 #define FFACT_MAX_CROWN         10
 #define FFACT_MIN_DRAWCROWN     1
 #define FFACT_MAX_DRAWCROWN     10
-#define FFACT_MIN_SKEETS        2
-#define FFACT_MAX_SKEETS        20
-#define FFACT_MIN_MELEESKEETS   1
-#define FFACT_MAX_MELEESKEETS   10
+#define FFACT_MIN_SKEET         2
+#define FFACT_MAX_SKEET         20
+#define FFACT_MIN_MELEESKEET    1
+#define FFACT_MAX_MELEESKEET    10
 #define FFACT_MIN_HUNTERDP      2
 #define FFACT_MAX_HUNTERDP      10
 #define FFACT_MIN_JOCKEYDP      2
@@ -184,12 +182,8 @@
 #define FFACT_MAX_POP           10
 #define FFACT_MIN_DEADSTOP      7
 #define FFACT_MAX_DEADSTOP      20
-#define FFACT_MIN_HEADSHOTS     30
-#define FFACT_MAX_HEADSHOTS     70
-#define FFACT_MIN_HEADSHOTSSI   30
-#define FFACT_MAX_HEADSHOTSSI   70
-#define FFACT_MIN_LEVELS        3
-#define FFACT_MAX_LEVELS        10
+#define FFACT_MIN_LEVEL         3
+#define FFACT_MAX_LEVEL         10
 
 
 // writing
@@ -440,8 +434,13 @@ public Plugin: myinfo =
         test:
             - sorting on all players
                 - still wonky -- bots appear on it, even when they shouldn't?
-            - game stats still not okay ('game (other)' shows players, 'game all' does not..?)
-            - sort order for game
+            - game stats
+                - sort order for game
+
+        - accuracy still shaky..
+            - 174% with pistols..
+            - 103% with sniper..
+                check weaponfire event.. if it doesn't fire always (or sometimes has 'count' too) there is a prob
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
@@ -546,7 +545,7 @@ public OnPluginStart()
         );
     g_hCvarAutoPrintVs = CreateConVar(
             "sm_stats_autoprint_vs_round",
-            "133",                                      // default = 1 (mvpchat) + 4 (mvpcon-round) + 128 (special round) = 133
+            "8325",                                     // default = 1 (mvpchat) + 4 (mvpcon-round) + 128 (special round) = 133 + (funfact round) 8192 = 8325
             "Flags for automatic print [versus round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32,64:FF, 128,256:special, 512,1024,2048,4096:accuracy).",
             FCVAR_PLUGIN, true, 0.0, false
         );
@@ -703,6 +702,7 @@ public OnMapStart()
     if ( !g_bLoadSkipDone && GetConVarBool(g_hCvarSkipMap) )
     {
         // reset stats and unset cvar
+        PrintDebug( 2, "OnMapStart: Resetting all stats (resetnextmap setting)...s " );
         ResetStats( false, -1 );
         
         // this might not work (server might be resetting the resetnextmap var every time
@@ -713,6 +713,7 @@ public OnMapStart()
     else if ( g_bFirstLoadDone )
     {
         // reset stats for previous round
+        PrintDebug( 2, "OnMapStart: Reset stats for round (Timer_ResetStats)" );
         CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
     }
     
@@ -831,6 +832,7 @@ stock HandleRoundEnd( bool: bFailed = false )
     // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on)
     if ( (g_bModeCampaign || g_bSecondHalf) && !AreClientsConnected() )
     {
+        PrintDebug( 2, "HandleRoundEnd: Reset stats for entire round (not game)..." );
         ResetStats( true, -1, true );
     }
     
@@ -1131,6 +1133,7 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
         else if ( StrEqual(sArg, "skill", false) || StrEqual(sArg, "special", false) || StrEqual(sArg, "s", false) ) { iType = typSkill; iStart++; }
         else if ( StrEqual(sArg, "acc", false) || StrEqual(sArg, "accuracy", false) || StrEqual(sArg, "ac", false) ) { iType = typAcc; iStart++; }
         else if ( StrEqual(sArg, "inf", false) || StrEqual(sArg, "i", false) ) { iType = typAcc; iStart++; }
+        else if ( StrEqual(sArg, "fact", false) || StrEqual(sArg, "fun", false) ) { iType = typFact; iStart++; }
         else if ( StrEqual(sArg, "general", false) || StrEqual(sArg, "gen", false) ) { iType = typGeneral; iStart++; }
         
         // check each other argument and see what we find
@@ -1210,6 +1213,11 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
         {
             // To do
             PrintToChat( client, "Work in progress. Not done yet." );
+        }
+        
+        case typFact:
+        {
+            DisplayStatsFunFactChat( client, ( bSetGame && bGame ) ? false : true, ( bSetAll && bAll ) ? false : true, (bOther) ? otherTeam : -1 );
         }
     }
     
@@ -3203,7 +3211,7 @@ stock DisplayStatsFunFactChat( client, bool:bRound = true, bool:bTeam = true, iT
 {
     decl String:printBuffer[1024];
     new String:strLines[8][192];
-    new i, j, x;
+    new i, j;
     
     printBuffer = GetFunFactChatString( bRound, bTeam, iTeam );
     
@@ -3240,87 +3248,116 @@ stock DisplayStatsFunFactChat( client, bool:bRound = true, bool:bTeam = true, iT
 String: GetFunFactChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 )
 {
     decl String: printBuffer[1024];
-    decl String: tmpBuffer[512];
     
     printBuffer = "";
+    
+    // use current survivor team -- or previous team in second half before starting
+    new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
     
     new i, j;
     new wTotal = 0;
     new wPicks[256];
     
-    /*
-        fun facts
-        -------------------------------------------
-            #define FFACT_MIN_CROWN         1
-            #define FFACT_MAX_CROWN         10
-            #define FFACT_MIN_DRAWCROWN     1
-            #define FFACT_MAX_DRAWCROWN     10
-            #define FFACT_MIN_SKEETS        2
-            #define FFACT_MAX_SKEETS        20
-            #define FFACT_MIN_MELEESKEETS   1
-            #define FFACT_MAX_MELEESKEETS   10
-            #define FFACT_MIN_HUNTERDP      2
-            #define FFACT_MAX_HUNTERDP      10
-            #define FFACT_MIN_JOCKEYDP      2
-            #define FFACT_MAX_JOCKEYDP      10
-            #define FFACT_MIN_M2            15
-            #define FFACT_MAX_M2            50
-            #define FFACT_MIN_MELEETANK     4
-            #define FFACT_MAX_MELEETANK     10
-            #define FFACT_MIN_CUT           4
-            #define FFACT_MAX_CUT           10
-            #define FFACT_MIN_POP           4
-            #define FFACT_MAX_POP           10
-            #define FFACT_MIN_DEADSTOP      7
-            #define FFACT_MAX_DEADSTOP      20
-            #define FFACT_MIN_HEADSHOTS     30
-            #define FFACT_MAX_HEADSHOTS     70
-            #define FFACT_MIN_HEADSHOTSSI   30
-            #define FFACT_MAX_HEADSHOTSSI   70
-            #define FFACT_MIN_LEVELS        3
-            #define FFACT_MAX_LEVELS        10
-        -------------------------------------------
-        1 - FFACT_MAX_WEIGHT
-    */
-    
-    // use current survivor team -- or previous team in second half before starting
-    new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
+    new wTypeHighPly[FFACT_MAXTYPES+1];
+    new wTypeHighVal[FFACT_MAXTYPES+1];
+    new wTypeHighTeam[FFACT_MAXTYPES+1];
     
     // for each type, check whether / and how weighted
     new wTmp = 0;
+    new highest, value, property, minval, maxval;
+    
     for ( i = 0; i <= FFACT_MAXTYPES; i++ )
     {
         wTmp = 0;
+        wTypeHighPly[i] = -1;
+        wTypeHighTeam[i] = team;
+        
         switch (i)
         {
             case FFACT_TYPE_CROWN: {
-                
+                property = plyCrowns;
+                minval = FFACT_MIN_CROWN;
+                maxval = FFACT_MAX_CROWN;
             }
             case FFACT_TYPE_DRAWCROWN: {
+                property = plyCrownsHurt;
+                minval = FFACT_MIN_DRAWCROWN;
+                maxval = FFACT_MAX_DRAWCROWN;
             }
             case FFACT_TYPE_SKEETS: {
+                property = plySkeets;
+                minval = FFACT_MIN_SKEET;
+                maxval = FFACT_MAX_SKEET;
             }
             case FFACT_TYPE_MELEESKEETS: {
+                property = plySkeetsMelee;
+                minval = FFACT_MIN_MELEESKEET;
+                maxval = FFACT_MAX_MELEESKEET;
             }
             case FFACT_TYPE_HUNTERDP: {
+                property = plyHunterDPs;
+                minval = FFACT_MIN_HUNTERDP;
+                maxval = FFACT_MAX_HUNTERDP;
             }
             case FFACT_TYPE_JOCKEYDP: {
+                property = plyJockeyDPs;
+                minval = FFACT_MIN_JOCKEYDP;
+                maxval = FFACT_MAX_JOCKEYDP;
             }
             case FFACT_TYPE_M2: {
+                property = plyShoves;
+                minval = FFACT_MIN_M2;
+                maxval = FFACT_MAX_M2;
             }
             case FFACT_TYPE_MELEETANK: {
+                property = plyMeleesOnTank;
+                minval = FFACT_MIN_MELEETANK;
+                maxval = FFACT_MAX_MELEETANK;
             }
             case FFACT_TYPE_CUT: {
+                property = plyTongueCuts;
+                minval = FFACT_MIN_CUT;
+                maxval = FFACT_MAX_CUT;
             }
             case FFACT_TYPE_POP: {
+                property = plyPops;
+                minval = FFACT_MIN_POP;
+                maxval = FFACT_MAX_POP;
             }
             case FFACT_TYPE_DEADSTOP: {
-            }
-            case FFACT_TYPE_HEADSHOTS: {
-            }
-            case FFACT_TYPE_HEADSHOTSSI: {
+                property = plyDeadStops;
+                minval = FFACT_MIN_DEADSTOP;
+                maxval = FFACT_MAX_DEADSTOP;
             }
             case FFACT_TYPE_LEVELS: {
+                property = plyLevels;
+                minval = FFACT_MIN_LEVEL;
+                maxval = FFACT_MAX_LEVEL;
+            }
+        }
+        
+        highest = GetPlayerWithHighestValue( property, bRound, bTeam, iTeam );
+        if ( bRound && bTeam ) {
+            value = g_strRoundPlayerData[highest][team][property];
+        } else {
+            if ( g_strRoundPlayerData[highest][LTEAM_A][property] > g_strRoundPlayerData[highest][LTEAM_B][property] ) {
+                value = g_strRoundPlayerData[highest][LTEAM_A][property];
+                wTypeHighTeam[i] = LTEAM_A;
+            } else {
+                value = g_strRoundPlayerData[highest][LTEAM_B][property];
+                wTypeHighTeam[i] = LTEAM_B;
+            }
+        }
+        
+        if ( value > minval )
+        {
+            wTypeHighPly[i] = highest;
+            wTypeHighVal[i] = value;
+            // weight for this fact
+            if ( value >= maxval ) {
+                wTmp = FFACT_MAX_WEIGHT;
+            } else {
+                wTmp = RoundFloat(  float(value - minval) / float(maxval - minval) * float(FFACT_MAX_WEIGHT) ) + 1;
             }
         }
         
@@ -3338,54 +3375,90 @@ String: GetFunFactChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 
     switch (wPick)
     {
         case FFACT_TYPE_CROWN: {
-            
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01crowned \x05%d \x01witches.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_DRAWCROWN: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01draw-crowned \x05%d \x01witches.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_SKEETS: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01skeeted \x05%d \x01hunters.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_MELEESKEETS: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01skeeted \x05%d \x01hunters with a melee weapon.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_HUNTERDP: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01did \x05%d \x01highpounces with hunters.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_JOCKEYDP: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01did \x05%d \x01highpounces with jockeys.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_M2: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01shoved \x05%d \x01special infected.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_MELEETANK: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01got \x05%d \x01melee swings on the tank.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_CUT: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01cut \x05%d \x01tongue cuts.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_POP: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01popped \x05%d \x01boomers.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_DEADSTOP: {
-        }
-        case FFACT_TYPE_HEADSHOTS: {
-        }
-        case FFACT_TYPE_HEADSHOTSSI: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01deadstopped \x05%d \x01hunters.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
         case FFACT_TYPE_LEVELS: {
+            Format(printBuffer, sizeof(printBuffer), "[%s fact] This,\x04 %s \x01fully leveled \x05%d \x01chargers.\n",
+                (bRound) ? "Round" : "Game",
+                g_sPlayerName[ wTypeHighPly[wPick] ],
+                wTypeHighVal[wPick]
+            );
         }
     }
-    
-    // report
-    /*
-        Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] SI:\x03 %s \x01(\x05%d \x01dmg[\x04%i%%\x01],\x05 %d \x01kills [\x04%i%%\x01])\n",
-                (bRound) ? "" : " - Game",
-                g_sPlayerName[mvp_SI],
-                (bRound) ? g_strRoundPlayerData[mvp_SI][team][plySIDamage] : g_strPlayerData[mvp_SI][plySIDamage],
-                RoundFloat( (bRound) ?
-                        ((float(g_strRoundPlayerData[mvp_SI][team][plySIDamage]) / float(g_strRoundData[g_iRound][team][rndSIDamage])) * 100) :
-                        ((float(g_strPlayerData[mvp_SI][plySIDamage]) / float(g_strAllRoundData[team][rndSIDamage])) * 100) 
-                    ),
-                (bRound) ? g_strRoundPlayerData[mvp_SI][team][plySIKilled] : g_strPlayerData[mvp_SI][plySIKilled],
-                RoundFloat( (bRound) ?
-                        ((float(g_strRoundPlayerData[mvp_SI][team][plySIKilled]) / float(g_strRoundData[g_iRound][team][rndSIKilled])) * 100) :
-                        ((float(g_strPlayerData[mvp_SI][plySIKilled]) / float(g_strAllRoundData[team][rndSIKilled])) * 100) 
-                    )
-            );
-        StrCat(printBuffer, sizeof(printBuffer), tmpBuffer);
-    */
     
     return printBuffer;
 }
@@ -4910,6 +4983,41 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
     }
 }
 
+// return the player index for the player with the highest value for a given prop
+stock GetPlayerWithHighestValue ( property, bool:bRound = true, bool:bTeam = true, iTeam = -1 )
+{
+    new i, highest, highTeam, pickTeam;
+    
+    new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1) : g_iCurTeam );
+    
+    highest = -1;
+    
+    for ( i = 0; i < g_iPlayers; i++ )
+    {
+        // if the index is the highest, take it
+        if ( bRound ) {
+            if ( bTeam ) {
+                if ( highest == -1 || g_strRoundPlayerData[i][team][property] > g_strRoundPlayerData[highest][team][property] ) {
+                    highest = i;
+                }
+            }
+            else {
+                pickTeam = ( g_strRoundPlayerData[i][LTEAM_A][property] >= g_strRoundPlayerData[i][LTEAM_B][property] ) ? LTEAM_A : LTEAM_B;
+                if ( highest == -1 || g_strRoundPlayerData[i][pickTeam][property] > g_strRoundPlayerData[highest][highTeam][property] ) {
+                    highest = i;
+                    highTeam = pickTeam;
+                }
+            }
+        }
+        else {
+            if ( highest == -1 || g_strPlayerData[i][property] > g_strPlayerData[highest][property] ) {
+                highest = i;
+            }
+        }
+    }
+    
+    return highest;
+}
 stock TableIncludePlayer ( index, team, bool:bRound = true, statA = plySIDamage, statB = plyCommon )
 {
     // not on team at all: don't show
@@ -5110,7 +5218,6 @@ stock AutomaticPrintPerClient( iFlags, client = -1 )
         }
         DisplayStatsMVPChat(client, true);
     }
-    
     if ( iFlags & AUTO_MVPCHAT_GAME ) {
         if ( !bSorted || !bSortedForGame ) {
             // not sorted yet, sort for SI
@@ -5119,6 +5226,14 @@ stock AutomaticPrintPerClient( iFlags, client = -1 )
             bSorted = true;
         }
         DisplayStatsMVPChat(client, false);
+    }
+    
+    // fun fact
+    if ( iFlags & AUTO_FUNFACT_ROUND ) {
+        DisplayStatsFunFactChat( client, true, false );
+    }
+    if ( iFlags & AUTO_FUNFACT_GAME ) {
+        DisplayStatsFunFactChat( client, false, false );
     }
     
     // special / skill
@@ -5153,7 +5268,6 @@ stock AutomaticPrintPerClient( iFlags, client = -1 )
     
     // to do:
     // - inf
-    // - fun fact
 }
 
 
