@@ -382,6 +382,7 @@ new     bool:   g_bTeamChanged          = false;                                
 new     bool:   g_bTankInGame           = false;
 new     bool:   g_bPlayersLeftStart     = false;
 new     bool:   g_bSecondHalf           = false;                                        // second roundhalf in a versus round
+new     bool:   g_bFailedPrevious       = false;                                        // whether the previous attempt was a failed campaign mode round
 new             g_iRound                = 0;
 new             g_iCurTeam              = LTEAM_A;                                      // current logical team
 new             g_iTeamSize             = 4;
@@ -452,9 +453,6 @@ public Plugin: myinfo =
             
         build:
         ------
-        - campaign: keep stats for failed rounds until success
-            - so round time should become total time, minus time spent in saferoom waiting
-
         - skill
             - clears / instaclears / average clear time?
 
@@ -803,38 +801,30 @@ stock HandleRoundEnd( bool: bFailed = false )
     }
     
     // set all 0 times to present
-    if ( !bFailed )
-    {
-        SetRoundEndTimes();
-    }
-    
-    if ( !g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] )
-    {
-        g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] = GetTime();
-    }
+    SetRoundEndTimes();
     
     g_bInRound = false;
     
-    // write stats for this roundhalf to file
-    // do before addition, because these are round stats
-    if ( GetConVarBool(g_hCvarWriteStats) )
+    if ( !g_bModeCampaign || !bFailed )
     {
-        CreateTimer( ROUNDEND_SCORE_DELAY, Timer_WriteStats, g_iCurTeam );
-    }
-    
-    // add stuff to allrounds/game data, for this round
-    if ( !bFailed )
-    {
+        // write stats for this roundhalf to file
+        // do before addition, because these are round stats
+        if ( GetConVarBool(g_hCvarWriteStats) )
+        {
+            CreateTimer( ROUNDEND_SCORE_DELAY, Timer_WriteStats, g_iCurTeam );
+        }
+        
+        // only add stuff to total time if the round isn't ongoing
         HandleRoundAddition();
+        
+        if ( g_iLastRoundEndPrint == 0 || GetTime() - g_iLastRoundEndPrint > PRINT_REPEAT_DELAY )
+        {
+            // false == no delay
+            AutomaticRoundEndPrint( false );
+        }
     }
     
-    if ( g_iLastRoundEndPrint == 0 || GetTime() - g_iLastRoundEndPrint > PRINT_REPEAT_DELAY )
-    {
-        // false == no delay
-        AutomaticRoundEndPrint( false );
-    }
-    
-    // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on)
+    // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on) [safeguard]
     if ( (g_bModeCampaign || g_bSecondHalf) && !AreClientsConnected() )
     {
         PrintDebug( 2, "HandleRoundEnd: Reset stats for entire round (not game)..." );
@@ -845,6 +835,11 @@ stock HandleRoundEnd( bool: bFailed = false )
     {
         g_bSecondHalf = true;
     }
+    else
+    {
+        g_bFailedPrevious = bFailed;
+    }
+    
     g_bPlayersLeftStart = false;
 }
 // fix all 0-endtime values 
@@ -958,15 +953,26 @@ public Action: L4D_OnFirstSurvivorLeftSafeArea( client )
 stock RoundReallyStarting()
 {
     g_bPlayersLeftStart = true;
+    new time = GetTime();
     
     if ( !g_bGameStarted )
     {
         g_bGameStarted = true;
-        g_strGameData[gmStartTime] = GetTime();
-        SetStartSurvivorTime(true);
+        g_strGameData[gmStartTime] = time;
+        // set start survivor time -- and tell this if we should take a round-failed-restart into account
+        SetStartSurvivorTime( true, g_bFailedPrevious );
     }
     
-    g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] = GetTime();
+    if ( g_bFailedPrevious && g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] )
+    {
+        g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] = time - ( g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] - g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] );
+        g_strRoundData[g_iRound][g_iCurTeam][rndEndTime] = 0;
+        g_bFailedPrevious = false;
+    }
+    else
+    {
+        g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] = time;
+    }
     // the conditional below would allow full round times including fails.. not doing that now
     //if ( !g_bModeCampaign || g_strRoundData[g_iRound][g_iCurTeam][rndRestarts] == 0 ) { }
     
@@ -2464,7 +2470,7 @@ stock ClearPlayerTeam( iTeam = -1 )
     }
 }
 
-stock SetStartSurvivorTime( bool:bGame = false )
+stock SetStartSurvivorTime( bool:bGame = false, bool:bRestart = false )
 {
     new client, index;
     new time = GetTime();
@@ -2478,14 +2484,25 @@ stock SetStartSurvivorTime( bool:bGame = false )
         
         if ( IS_VALID_SURVIVOR(client) )
         {
-            if ( bGame ) {
+            if ( bGame )
+            {
                 g_strPlayerData[index][plyTimeStartPresent] = time;
                 g_strPlayerData[index][plyTimeStartAlive] = time;
                 g_strPlayerData[index][plyTimeStartUpright] = time;
-            } else {
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] = time;
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time;
-                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time;
+            }
+            else
+            {
+                if ( bRestart )
+                {
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] = time - ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] );
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time - ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] );
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time - ( g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] - g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] );
+                }
+                else {
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] = time;
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time;
+                    g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time;
+                }
             }
         }
     }
