@@ -5557,6 +5557,9 @@ stock WriteStatsToFile( iTeam )
     new bool: bFirstWrite;
     new String: sStats[MAX_QUERY_SIZE];
     new String: strTmpLine[512];
+    decl String: sTmpTime[20];
+    decl String: sTmpRoundNo[6];
+    decl String: sTmpMap[64];
     
     // filename: <dir/> <date>_<time>_<roundno>_<mapname>.txt
     new String: path[128];
@@ -5565,9 +5568,6 @@ stock WriteStatsToFile( iTeam )
     if ( g_bModeCampaign || !g_bSecondHalf || !strlen(g_sStatsFile) )
     {
         bFirstWrite = true;
-        decl String: sTmpTime[20];
-        decl String: sTmpRoundNo[6];
-        decl String: sTmpMap[64];
         
         FormatTime( sTmpTime, sizeof(sTmpTime), "%Y-%m-%d_%H-%M" );
         IntToString( g_iRound, sTmpRoundNo, sizeof(sTmpRoundNo) );
@@ -5586,6 +5586,15 @@ stock WriteStatsToFile( iTeam )
     if ( bFirstWrite )
     {
         FormatEx( strTmpLine, sizeof(strTmpLine), "[Gameround:%i]\n", g_iRound );
+        StrCat( sStats, sizeof(sStats), strTmpLine );
+        
+        FormatTime( sTmpTime, sizeof(sTmpTime), "%Y-%m-%d;%H:%M" );
+        FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%s;\n",
+                g_iRound,
+                sTmpTime,
+                sTmpMap
+            );
+        
         StrCat( sStats, sizeof(sStats), strTmpLine );
     }
     
@@ -5641,7 +5650,7 @@ stock WriteStatsToFile( iTeam )
     
     
     // player data
-    FormatEx( strTmpLine, sizeof(strTmpLine), "[players][team:%s]:\n", (iTeam == LTEAM_A) ? "A" : "B" );
+    FormatEx( strTmpLine, sizeof(strTmpLine), "[Players:%s]:\n", (iTeam == LTEAM_A) ? "A" : "B" );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     new iPlayerCount;
