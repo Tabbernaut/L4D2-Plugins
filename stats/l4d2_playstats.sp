@@ -787,7 +787,7 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 // do something when round ends (including for campaign mode)
 stock HandleRoundEnd( bool: bFailed = false )
 {
-    //PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i", bFailed, g_bInRound);
+    PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i, current round: %i", bFailed, g_bInRound, g_iRound);
     
     // only do once
     if ( !g_bInRound ) { return; }
@@ -827,8 +827,8 @@ stock HandleRoundEnd( bool: bFailed = false )
     // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on) [safeguard]
     if ( (g_bModeCampaign || g_bSecondHalf) && !AreClientsConnected() )
     {
-        PrintDebug( 2, "HandleRoundEnd: Reset stats for entire round (not game)..." );
-        ResetStats( true, -1, true );
+        PrintDebug( 2, "HandleRoundEnd: Reset stats for entire game (no players on server)..." );
+        ResetStats( false, -1 );
     }
     
     if ( !g_bModeCampaign )
@@ -4274,7 +4274,6 @@ stock BuildConsoleBufferAccuracy ( bool:details = false, bool:bRound = false, bo
                 while (strlen(strTmpA) < 5) { Format(strTmpA, s_len, " %s", strTmpA); }
                 Format( strTmp[0], s_len, "%7d      %5s%%%%",
                         ( (bRound) ? g_strRoundPlayerData[i][team][plyHitsShotgun] : g_strPlayerData[i][plyHitsShotgun] ),
-                        //( (bRound) ? g_strRoundPlayerData[i][team][plyShotsShotgun] : g_strPlayerData[i][plyShotsShotgun] ),
                         strTmpA
                     );
             } else {
@@ -5071,8 +5070,17 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, statA = plySIDamage,
     // not on team at all: don't show
     if ( g_iPlayerRoundTeam[team][index] != team ) { return false; }
     
-    // if on team right now, always show
-    if ( team == g_iCurTeam && g_iPlayerRoundTeam[LTEAM_CURRENT][index] == team ) { return true; }
+    // if on team right now, always show (or was last round?)
+    if ( g_bPlayersLeftStart ) {
+        if ( team == g_iCurTeam && g_iPlayerRoundTeam[LTEAM_CURRENT][index] == team ) { return true; }
+    } else {
+        // just allow it if he is currently a survivor
+        if ( !IsIndexSurvivor(index) ) {
+            if ( team == g_iCurTeam ) { return false; }
+        } else { 
+            if ( team != g_iCurTeam ) { return false; }
+        }
+    }
     
     // has positive relevant scores? show
     if ( bRound ) {
@@ -5442,6 +5450,19 @@ stock GetPlayerCharacter ( client )
 }
 
 
+stock IsIndexSurvivor ( index )
+{
+    new tmpind;
+    for ( new client = 1; client <= MaxClients; client++ )
+    {
+        if ( !IS_VALID_SURVIVOR(client) ) { continue; }
+        
+        tmpind = GetPlayerIndexForClient( client );
+        if ( tmpind == index ) { return true; }
+    }
+    
+    return false;
+}
 stock bool: IsClientAndInGame ( index )
 {
     if (index > 0 && index <= MaxClients)
@@ -5599,7 +5620,7 @@ stock WriteStatsToFile( iTeam )
         clients++;
     }
     
-    FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:%i]\n", (iTeam == LTEAM_A) ? "A" : "B" );
+    FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:%s]\n", (iTeam == LTEAM_A) ? "A" : "B" );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%i;%i;%.2f;",
@@ -5615,6 +5636,8 @@ stock WriteStatsToFile( iTeam )
     {
         Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;", strTmpLine, curFlowDist[i] );
     }
+    Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
+    StrCat( sStats, sizeof(sStats), strTmpLine );
     
     
     // player data
