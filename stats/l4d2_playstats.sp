@@ -392,6 +392,9 @@ new             g_iSurvived             [2];                                    
 new     bool:   g_bPaused               = false;                                        // whether paused with pause.smx
 new             g_iPauseStart           = 0;                                            // time the current pause started
 
+new             g_iScores               [2];                                            // scores for both teams, as currently known
+new             g_iOldScores            [2];                                            // scores for both teams, as in previous round
+
 new             g_iPlayerIndexSorted    [MAXSORTS][MAXTRACKED];                         // used to create a sorted list
 new             g_iPlayerSortedUseTeam  [MAXSORTS][MAXTRACKED];                         // after sorting: which team to use as the survivor team for player
 new             g_iPlayerRoundTeam      [3][MAXTRACKED];                                // which team is the player 0 = A, 1 = B, -1 = no team; [2] = current survivor round; [0]/[1] = team A / B (anyone who was ever on it)
@@ -436,16 +439,14 @@ public Plugin: myinfo =
 
         fixes:
         ------
-        test:
-            - sorting on all players
-                - still wonky -- bots appear on it, even when they shouldn't?
-            - game stats
-                - sort order for game
+        - game data doesn't show (even when it should, after a round is done)
+        - pause time is incorrect, sometimes?
 
         - accuracy still shaky..
             - 174% with pistols..
             - 103% with sniper..
                 check weaponfire event.. if it doesn't fire always (or sometimes has 'count' too) there is a prob
+                maybe it's got to do with tank-spawning + passing? 
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
@@ -453,8 +454,7 @@ public Plugin: myinfo =
             - or delays between prints? (<= prolly)
             
         - filewrite
-            - round score is 0? check campaign score
-            - flow distance per player is _current_ flowdist.. not max..
+            - get reliable max flowdist per survivor -- how?
             
         build:
         ------
@@ -574,7 +574,7 @@ public OnPluginStart()
     g_hCvarWriteStats = CreateConVar(
             "sm_stats_writestats",
             "0",
-            "Whether to store stats in logs/ dir (1 = write csv; 2 = write csv & pretty tables).",
+            "Whether to store stats in logs/ dir (1 = write csv; 2 = write csv & pretty tables). Versus only.",
             FCVAR_PLUGIN, true, 0.0, false
         );
     g_hCvarSkipMap = CreateConVar(
@@ -731,6 +731,12 @@ public OnMapStart()
     }
     
     g_bFirstLoadDone = true;
+    
+    if ( !g_bModeCampaign )
+    {
+        g_iOldScores[LTEAM_A] = g_iScores[LTEAM_A];
+        g_iOldScores[LTEAM_B] = g_iScores[LTEAM_B];
+    }
 }
 
 public OnMapEnd()
@@ -1061,6 +1067,15 @@ public OnUnpause()
     g_iPauseStart = 0;
 }
 
+public Action: L4D_OnSetCampaignScores ( &scoreA, &scoreB )
+{
+    PrintDebug( 2, "OnSetCampaignScores: A: %i -- B: %i (secondround: %i)", scoreA, scoreB, g_bSecondHalf );
+    
+    g_iScores[LTEAM_A] = scoreA;
+    g_iScores[LTEAM_B] = scoreB;
+    
+    return Plugin_Continue;
+}
 /*
     Commands
     --------
@@ -1280,7 +1295,7 @@ public Action: Cmd_StatsDisplayGeneral ( client, args )
 
 public Action: Cmd_StatsReset ( client, args )
 {
-    ResetStats();
+    ResetStats( false, -1 );
     PrintToChatAll( "Player statistics reset." );
     return Plugin_Handled;
 }
@@ -1875,7 +1890,7 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
     if ( !g_bPlayersLeftStart ) { return; }
     
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
-    if ( !IS_VALID_SURVIVOR(client) || !g_bPlayersLeftStart ) { return; }
+    if ( !IS_VALID_SURVIVOR(client) || IsPlayerIncapacitated(client) ) { return; }
     
     new index = GetPlayerIndexForClient( client );
     if ( index == -1 ) { return; }
@@ -1917,7 +1932,7 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
 public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
 {
     if ( !g_bPlayersLeftStart ) { return; }
-    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) ) { return; }
+    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) || IsPlayerIncapacitated(attacker) ) { return; }
     
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
@@ -1980,7 +1995,7 @@ public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage
 public Action: TraceAttack_Infected (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
 {
     if ( !g_bPlayersLeftStart ) { return; }
-    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) ) { return; }
+    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) || IsPlayerIncapacitated(attacker) ) { return; }
     
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
@@ -2273,6 +2288,7 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
         DisplayStats( );
         
         // clear game
+        g_iRound = 0;
         g_bGameStarted = false;
         g_strGameData[gmFailed] = 0;
         
@@ -2298,7 +2314,10 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
             }
         }
         
-        g_iRound = 0;
+        for ( j = 0; j < 2; j++ ) {
+            g_iScores[j] = 0;
+            g_iOldScores[j] = 0;
+        }
     }
     else
     {
@@ -5573,6 +5592,8 @@ public Action: Timer_WriteStats ( Handle:timer, any:iTeam )
 // write round stats to a text file
 stock WriteStatsToFile( iTeam, bool:bSecondHalf )
 {
+    if ( g_bModeCampaign ) { return; }
+    
     new i, j;
     new bool: bFirstWrite;
     new String: sStats[MAX_QUERY_SIZE];
@@ -5631,14 +5652,12 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     {
         Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundData[g_iRound][iTeam][i] );
     }
-    Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
+    Format( strTmpLine, sizeof(strTmpLine), "%s\n\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     
     
-    // scoring data
-    new score = L4D_GetTeamScore( (bSecondHalf) ? 2 : 1 );
-    new scoreCamp = L4D2Direct_GetVSCampaignScore( iTeam );
+    // progress data
     new Float: maxFlowDist = L4D2Direct_GetMapMaxFlowDistance();
     new Float: curFlowDist[MAXPLAYERS+1];
     new Float: farFlowDist[MAXPLAYERS+1];
@@ -5647,19 +5666,17 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     {
         if ( !IS_VALID_SURVIVOR(i) ) { continue; }
         
-        farFlowDist[clients] = GetEntPropFloat( i, Prop_Send, "m_farthestSurvivorFlowAtDeath" );
+        farFlowDist[clients] = 0.0;                                 //GetEntPropFloat( i, Prop_Data, "m_farthestSurvivorFlowAtDeath" );     // this doesn't work/exist
         curFlowDist[clients] = L4D2Direct_GetFlowDistance( i );
         clients++;
     }
     
-    FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:%s]\n", (iTeam == LTEAM_A) ? "A" : "B" );
+    FormatEx( strTmpLine, sizeof(strTmpLine), "[Progress:%s]\n", (iTeam == LTEAM_A) ? "A" : "B" );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
-    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%i;%i;%.2f;",
+    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%.2f;",
             g_bSecondHalf,
             (iTeam == LTEAM_A) ? "A" : "B",
-            score,
-            scoreCamp,
             g_iSurvived[iTeam],
             maxFlowDist
         );
@@ -5668,7 +5685,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     {
         Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;%.f2;", strTmpLine, farFlowDist[i], curFlowDist[i] );
     }
-    Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
+    Format( strTmpLine, sizeof(strTmpLine), "%s\n\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     
@@ -5689,6 +5706,22 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
             Format( strTmpLine, sizeof(strTmpLine), "%s%i;", strTmpLine, g_strRoundPlayerData[j][iTeam][i] );
         }
         Format( strTmpLine, sizeof(strTmpLine), "%s\n", strTmpLine );
+        StrCat( sStats, sizeof(sStats), strTmpLine );
+    }
+    StrCat( sStats, sizeof(sStats), "\n" );
+    
+    // scores (both rounds)
+    if ( !bFirstWrite )
+    {
+        FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:]\n" );
+        StrCat( sStats, sizeof(sStats), strTmpLine );
+
+        FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
+                g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
+                g_iScores[LTEAM_A],
+                g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
+                g_iScores[LTEAM_B]
+            );
         StrCat( sStats, sizeof(sStats), strTmpLine );
     }
     

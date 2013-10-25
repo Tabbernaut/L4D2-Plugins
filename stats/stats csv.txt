@@ -24,9 +24,9 @@
 
 
 
-[Scoring: <team A/B> ]
+[Progress: <team A/B> ]
 
-<roundhalf> ; <team A/B> ; <round score> ; <campaign score > ; <survivor count> ;
+<roundhalf> ; <team A/B> ; <survivor count> ;
 	<max flowdist> ; <furthest flowdist 1> ; <current flowdist 1> ; < .. 2 > ; < .. 3 > ; < .. 4 >
 
 
@@ -111,3 +111,7 @@
             plyTimeStopAlive,
             plyTimeStartUpright,    //      time not capped
             plyTimeStopUpright
+
+[scoring:]
+	"A" ; <round score A> ; <campaign score A>
+	"B" ; <round score B> ; <campaign score B>
