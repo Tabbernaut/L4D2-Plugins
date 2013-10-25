@@ -449,8 +449,7 @@ public Plugin: myinfo =
         fixes:
         ------
         - game data doesn't show (even when it should, after a round is done)
-        - pause time is incorrect, sometimes?
-        - test accuracy with new code
+        - test accuracy with new code [ still weird with pistols.. only bots? ]
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
@@ -1051,12 +1050,14 @@ public OnUnpause()
     new client, index;
     
     // adjust remembered pause time
-    if ( g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] && g_strRoundData[g_iRound][g_iCurTeam][rndStopTimePause] ) {
-        g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] = time - (g_strRoundData[g_iRound][g_iCurTeam][rndStopTimePause] - g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause]) - g_iPauseStart;
-    } else {
-        g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] = time - g_iPauseStart;
+    if ( !g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] || !g_strRoundData[g_iRound][g_iCurTeam][rndStopTimePause] ) {
+        g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] = g_iPauseStart;
+    }
+    else {
+        g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause] = g_iPauseStart - (g_strRoundData[g_iRound][g_iCurTeam][rndStopTimePause] - g_strRoundData[g_iRound][g_iCurTeam][rndStartTimePause]);
     }
     g_strRoundData[g_iRound][g_iCurTeam][rndStopTimePause] = time;
+    
     
     // when unpausing, substract the pause duration from round time -- can assume that round isn't over yet
     g_strRoundData[g_iRound][g_iCurTeam][rndStartTime] += pauseTime;
@@ -3164,7 +3165,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
             
             fullTime = GetFullRoundTime( bRound, bTeam, team );
             tankTime = GetFullRoundTime( bRound, bTeam, team, true );
-            pauseTime = GetFullRoundTime( bRound, bTeam, team, false, true );
+            pauseTime = GetPauseTime( bRound, bTeam, team );
             
             if ( fullTime )  {
                 FormatTimeAsDuration( strTmp[0], s_len, fullTime, false  );
@@ -4379,7 +4380,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
     new bool: bDivider = false;
     
     new time = GetTime();
-    new fullTime, presTime, aliveTime, upTime;
+    new fullTime, presTime, aliveTime, upTime, pauseTime;
     
     // current logical survivor team?
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1 ) : g_iCurTeam );
@@ -4387,6 +4388,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
     // prepare time for comparison to full round
     if ( !bTank ) {
         fullTime = GetFullRoundTime( bRound, bTeam, team );
+        pauseTime = GetPauseTime( bRound, bTeam, team, true );
     }
     
     if ( bTank )
@@ -4495,6 +4497,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     presTime = 0;
                 }
             }
+            presTime -= pauseTime;
             if (presTime < 0 ) { presTime = 0; }
             
             FormatPercentage( strTmpA, s_len, presTime, fullTime, false );  // never a decimal
@@ -4526,6 +4529,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     aliveTime = 0;
                 }
             }
+            aliveTime -= pauseTime;
             if (aliveTime < 0 ) { aliveTime = 0; }
             
             FormatPercentage( strTmpA, s_len, aliveTime, presTime, false );  // never a decimal
@@ -4549,6 +4553,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     upTime = 0;
                 }
             }
+            upTime -= pauseTime;
             if (upTime < 0 ) { upTime = 0; }
             
             FormatPercentage( strTmpA, s_len, upTime, presTime, false );  // never a decimal
@@ -4689,6 +4694,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     presTime = 0;
                 }
             }
+            presTime -= pauseTime;
             if (presTime < 0 ) { presTime = 0; }
             
             FormatPercentage( strTmpA, s_len, presTime, fullTime, false );  // never a decimal
@@ -5132,7 +5138,7 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, statA = plySIDamage,
 }
 
 // get full, tank or pause time for this round, taking into account the time for a current/ongoing pause
-stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = false )
+stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false )
 {
     new start = rndStartTime;
     new stop = rndEndTime;
@@ -5140,9 +5146,6 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
     if ( bTank ) {
         start = rndStartTimeTank;
         stop = rndStopTimeTank;
-    } else if ( bPause ) {
-        start = rndStartTimePause;
-        stop = rndStopTimePause;
     }
     
     // get full time of this round (or both roundhalves) / or game
@@ -5155,10 +5158,7 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
             if ( g_strRoundData[g_iRound][team][start] ) {
                 fullTime = ( (g_strRoundData[g_iRound][team][stop]) ? g_strRoundData[g_iRound][team][stop] : time ) - g_strRoundData[g_iRound][team][start];
                 if ( g_bPaused && team == g_iCurTeam ) {
-                    if ( bPause ) {
-                        fullTime += time - g_iPauseStart;
-                    }
-                    else if ( !bTank || g_bTankInGame ) {
+                    if ( !bTank || g_bTankInGame ) {
                         fullTime -= time - g_iPauseStart;
                     }
                 }
@@ -5168,10 +5168,7 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
             if ( g_strRoundData[g_iRound][LTEAM_A][start] ) {
                 fullTime = ( (g_strRoundData[g_iRound][LTEAM_A][stop]) ? g_strRoundData[g_iRound][LTEAM_A][stop] : time ) - g_strRoundData[g_iRound][LTEAM_A][start];
                 if ( g_bPaused && LTEAM_A == g_iCurTeam ) {
-                    if ( bPause ) {
-                        fullTime += time - g_iPauseStart;
-                    }
-                    else if ( !bTank || g_bTankInGame ) {
+                    if ( !bTank || g_bTankInGame ) {
                         fullTime -= time - g_iPauseStart;
                     }
                 }
@@ -5179,10 +5176,7 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
             if ( g_strRoundData[g_iRound][LTEAM_B][start] ) {
                 fullTime += ( (g_strRoundData[g_iRound][LTEAM_B][stop]) ? g_strRoundData[g_iRound][LTEAM_B][stop] : time ) - g_strRoundData[g_iRound][LTEAM_B][start];
                 if ( g_bPaused && LTEAM_B == g_iCurTeam ) {
-                    if ( bPause ) {
-                        fullTime += time - g_iPauseStart;
-                    }
-                    else if ( !bTank || g_bTankInGame ) {
+                    if ( !bTank || g_bTankInGame ) {
                         fullTime -= time - g_iPauseStart;
                     }
                 }
@@ -5195,10 +5189,7 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
             if ( g_strAllRoundData[team][start] ) {
                 fullTime = ( (g_strAllRoundData[team][stop]) ? g_strAllRoundData[team][stop] : time ) - g_strAllRoundData[team][start];
                 if ( g_bPaused && team == g_iCurTeam ) {
-                    if ( bPause ) {
-                        fullTime += time - g_iPauseStart;
-                    }
-                    else if ( !bTank || g_bTankInGame ) {
+                    if ( !bTank || g_bTankInGame ) {
                         fullTime -= time - g_iPauseStart;
                     }
                 }
@@ -5208,10 +5199,7 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
             if ( g_strAllRoundData[LTEAM_A][start] ) {
                 fullTime = ( (g_strAllRoundData[LTEAM_A][stop]) ? g_strAllRoundData[LTEAM_A][stop] : time ) - g_strAllRoundData[LTEAM_A][start];
                 if ( g_bPaused && LTEAM_A == g_iCurTeam ) {
-                    if ( bPause ) {
-                        fullTime += time - g_iPauseStart;
-                    }
-                    else if ( !bTank || g_bTankInGame ) {
+                    if ( !bTank || g_bTankInGame ) {
                         fullTime -= time - g_iPauseStart;
                     }
                 }
@@ -5219,14 +5207,82 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
             if ( g_strAllRoundData[LTEAM_B][start] ) {
                 fullTime += ( (g_strAllRoundData[LTEAM_B][stop]) ? g_strAllRoundData[LTEAM_B][stop] : time ) - g_strAllRoundData[LTEAM_B][start];
                 if ( g_bPaused && LTEAM_B == g_iCurTeam ) {
-                    if ( bPause ) {
-                        fullTime += time - g_iPauseStart;
-                    }
-                    else if ( !bTank || g_bTankInGame ) {
+                    if ( !bTank || g_bTankInGame ) {
                         fullTime -= time - g_iPauseStart;
                     }
                 }
             }
+        }
+    }
+    
+    return fullTime;
+}
+
+// get full or current (if relevant) pause time
+stock GetPauseTime( bRound, bTeam, team, bool: bCurrentOnly = false )
+{
+    new start = rndStartTimePause;
+    new stop = rndStopTimePause;
+    
+    new fullTime = 0;
+    new time = GetTime();
+    
+    if ( bCurrentOnly )
+    {
+        if ( bRound )
+        {
+            if ( g_bPaused && ( team == g_iCurTeam || !bTeam ) )
+            {
+                fullTime += time - g_iPauseStart;
+            }
+        }
+        return fullTime;
+    }
+    
+    // get pause time
+    if ( bRound )
+    {
+        if ( bTeam ) {
+            if ( g_strRoundData[g_iRound][team][start] && g_strRoundData[g_iRound][team][stop] ) {
+                fullTime = g_strRoundData[g_iRound][team][stop] - g_strRoundData[g_iRound][team][start];
+            }
+            if ( g_bPaused && team == g_iCurTeam ) {
+                fullTime += time - g_iPauseStart;
+            }
+        }
+        else {
+            if ( g_strRoundData[g_iRound][LTEAM_A][start] && g_strRoundData[g_iRound][LTEAM_A][stop] ) {
+                fullTime = g_strRoundData[g_iRound][LTEAM_A][stop] - g_strRoundData[g_iRound][LTEAM_A][start];
+            }
+            if ( g_strRoundData[g_iRound][LTEAM_B][start] && g_strRoundData[g_iRound][LTEAM_B][stop] ) {
+                fullTime += g_strRoundData[g_iRound][LTEAM_B][stop] - g_strRoundData[g_iRound][LTEAM_B][start];
+            }
+            if ( g_bPaused ) {
+                fullTime += time - g_iPauseStart;
+            }
+        }
+    }
+    else
+    {
+        if ( bTeam ) {
+            if ( g_strAllRoundData[team][start] && g_strAllRoundData[team][stop] ) {
+                fullTime = g_strAllRoundData[team][stop] - g_strAllRoundData[team][start];
+            }
+            /* (doesn't include current round)
+            if ( g_bPaused && team == g_iCurTeam ) {
+                fullTime += time - g_iPauseStart;
+            } */
+        }
+        else {
+            if ( g_strAllRoundData[LTEAM_A][start] && g_strAllRoundData[LTEAM_A][stop] ) {
+                fullTime = g_strAllRoundData[LTEAM_A][stop] - g_strAllRoundData[LTEAM_A][start];
+            }
+            if ( g_strAllRoundData[LTEAM_B][start] && g_strAllRoundData[LTEAM_B][stop] ) {
+                fullTime += g_strAllRoundData[LTEAM_B][stop] - g_strAllRoundData[LTEAM_B][start];
+            }
+            /* if ( g_bPaused ) {
+                fullTime += time - g_iPauseStart;
+            } */
         }
     }
     
