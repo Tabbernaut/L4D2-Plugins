@@ -50,6 +50,7 @@
 #define MAXCHARACTERS           4
 #define MAXMAP                  32
 #define MAXGAME                 24
+#define MAXWEAPNAME             24
 
 #define STATS_RESET_DELAY       5.0
 #define ROUNDSTART_DELAY        3.0
@@ -428,7 +429,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.10",
+    version = "0.9.11",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -445,8 +446,8 @@ public Plugin: myinfo =
         - accuracy still shaky..
             - 174% with pistols..
             - 103% with sniper..
-                check weaponfire event.. if it doesn't fire always (or sometimes has 'count' too) there is a prob
                 maybe it's got to do with tank-spawning + passing? 
+                hits on witches? double-hooked specials?
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
@@ -455,6 +456,7 @@ public Plugin: myinfo =
             
         - filewrite
             - get reliable max flowdist per survivor -- how?
+                - the hard way? track with a timer?
             
         build:
         ------
@@ -715,7 +717,7 @@ public OnMapStart()
     if ( !g_bLoadSkipDone && GetConVarBool(g_hCvarSkipMap) )
     {
         // reset stats and unset cvar
-        PrintDebug( 2, "OnMapStart: Resetting all stats (resetnextmap setting)...s " );
+        PrintDebug( 2, "OnMapStart: Resetting all stats (resetnextmap setting)... " );
         ResetStats( false, -1 );
         
         // this might not work (server might be resetting the resetnextmap var every time
@@ -1492,7 +1494,22 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         attIndex = GetPlayerIndexForClient( attacker );
         if ( attIndex == -1 ) { return Plugin_Continue; }
         
+        new dmgType = GetEventInt(event, "type");
+        new hitgroup = GetEventInt(event, "hitgroup");
         new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+        new storeA = -1, storeB = -1, storeC = -1;
+        
+        new weaponType = WPTYPE_NONE;
+        if ( dmgType & DMG_BUCKSHOT )
+        {
+            weaponType = WPTYPE_SHOTGUN;
+        }
+        else if ( dmgType & DMG_BULLET )
+        {
+            decl String: weaponName[MAXWEAPNAME];
+            GetClientWeapon( attacker, weaponName, MAXWEAPNAME );
+            weaponType = GetWeaponTypeForClassname( weaponName );
+        }
         
         if ( zClass >= ZC_SMOKER && zClass <= ZC_CHARGER )
         {
@@ -1501,19 +1518,46 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plySIDamageTankUp] += damage;
             }
             
+            switch ( weaponType )
+            {
+                case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsSIShotgun;  }
+                case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsSISmg;      storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
+                case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsSISniper;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
+                case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeB = plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1; }
+            }
+            
             g_strRoundData[g_iRound][g_iCurTeam][rndSIDamage] += damage;
             g_strRoundPlayerData[attIndex][g_iCurTeam][plySIDamage] += damage;
         }
         else if ( zClass == ZC_TANK && damage != 5000) // For some reason the last attacker does 5k damage?
         {
-            new type = GetEventInt(event, "type");
             
-            if ( type & DMG_CLUB || type & DMG_SLASH )
+            if ( dmgType & DMG_CLUB || dmgType & DMG_SLASH )
             {
                 g_strRoundPlayerData[attIndex][g_iCurTeam][plyMeleesOnTank]++;
             }
+            else
+            {
+                switch ( weaponType )
+                {
+                    case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsTankShotgun;  }
+                    case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsTankSmg; }
+                    case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsTankSniper; }
+                    case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeB = plyHitsTankPistol; }
+                }
+            }
             
             g_strRoundPlayerData[attIndex][g_iCurTeam][plyTankDamage] += damage;
+        }
+        
+        if ( storeA != -1 )
+        {
+            g_strRoundPlayerData[attIndex][g_iCurTeam][storeA]++;
+            g_strRoundPlayerData[attIndex][g_iCurTeam][storeB]++;
+            if ( storeC != -1 ) {
+                g_strRoundPlayerData[attIndex][g_iCurTeam][storeC]++;
+                g_strRoundPlayerData[attIndex][g_iCurTeam][ (storeC+3) ]++;    // = headshotsSI<type>
+            }
         }
     }
     // survivor to survivor
@@ -1604,17 +1648,50 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
 public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     if ( !g_bPlayersLeftStart ) { return; }
+    new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
+    if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
     
+    new attIndex = GetPlayerIndexForClient( attacker );
+    if ( attIndex == -1 ) { return; }
+        
     // catch damage done to witch
     new entity = GetEventInt(event, "entityid");
+    new hitgroup = GetEventInt(event, "hitgroup");
+    new dmgType = GetEventInt(event, "type");
+    
+    new storeA = -1, storeB = -1, storeC = -1;
+    
+    new weaponType = WPTYPE_NONE;
+    if ( dmgType & DMG_BUCKSHOT )
+    {
+        weaponType = WPTYPE_SHOTGUN;
+    }
+    else if ( dmgType & DMG_BULLET )
+    {
+        decl String: weaponName[MAXWEAPNAME];
+        GetClientWeapon( attacker, weaponName, MAXWEAPNAME );
+        weaponType = GetWeaponTypeForClassname( weaponName );
+    }
+    
+    switch ( weaponType )
+    {
+        case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsSIShotgun;  }
+        case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsSISmg;      storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
+        case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsSISniper;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
+        case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeB = plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1; }
+    }
+    
+    if ( storeA != -1 )
+    {
+        g_strRoundPlayerData[attIndex][g_iCurTeam][storeA]++;
+        g_strRoundPlayerData[attIndex][g_iCurTeam][storeB]++;
+        if ( storeC != -1 ) {
+            g_strRoundPlayerData[attIndex][g_iCurTeam][storeC]++;
+        }
+    }
     
     if ( IsWitch(entity) )
     {
-        new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
-        if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
-        new attIndex = GetPlayerIndexForClient( attacker );
-        if ( attIndex == -1 ) { return; }
-        
         new damage = GetEventInt(event, "amount");
         
         g_strRoundPlayerData[attIndex][g_iCurTeam][plyWitchDamage] += damage;
@@ -1928,151 +2005,19 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
 
 
 
-// special / tank gets hit
-public Action: TraceAttack_Special (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
-{
-    if ( !g_bPlayersLeftStart ) { return; }
-    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) || IsPlayerIncapacitated(attacker) ) { return; }
-    
-    new index = GetPlayerIndexForClient( attacker );
-    if ( index == -1 ) { return; }
-    
-    new weaponType = WPTYPE_NONE;
-    
-    // get weapon type
-    if ( damagetype & DMG_BUCKSHOT )
-    {
-        weaponType = WPTYPE_SHOTGUN;
-    }
-    else if ( damagetype & DMG_BULLET )
-    {
-        decl String:weaponname[48];
-        GetClientWeapon(attacker, weaponname, sizeof(weaponname));
-        weaponType = GetWeaponTypeForClassname(weaponname);
-    }
-    else {
-        // not handling anything else
-        return;
-    }
-    
-    
-    //PrintToChatAll("special hit: weptype %i hit: %i", weaponType, hitgroup );
-    
-    // count hits
-    switch ( weaponType )
-    {
-        case WPTYPE_SHOTGUN: {  g_strRoundPlayerData[index][g_iCurTeam][plyHitsShotgun]++; g_strRoundPlayerData[index][g_iCurTeam][plyHitsSIShotgun]++; }
-        case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHitsSmg]++;     g_strRoundPlayerData[index][g_iCurTeam][plyHitsSISmg]++; }
-        case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsSniper]++;  g_strRoundPlayerData[index][g_iCurTeam][plyHitsSISniper]++; }
-        case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsPistol]++;  g_strRoundPlayerData[index][g_iCurTeam][plyHitsSIPistol]++; }
-    }
-    
-    // headshots on anything but tank, separately store hits for tank
-    if ( GetEntProp(victim, Prop_Send, "m_zombieClass") == ZC_TANK )
-    {
-        switch ( weaponType )
-        {
-            case WPTYPE_SHOTGUN: {  g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankShotgun]++; }
-            case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankSmg]++; }
-            case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankSniper]++; }
-            case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsTankPistol]++; }
-        }
-    }
-    
-    // headshots (only bullet-based)
-    if ( damagetype & DMG_BULLET && hitgroup == HITGROUP_HEAD && GetEntProp(victim, Prop_Send, "m_zombieClass") != ZC_TANK )
-    {
-        switch ( weaponType )
-        {
-            case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSmg]++;    g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSISmg]++; }
-            case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSniper]++; g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSISniper]++; }
-            case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsPistol]++; g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSIPistol]++; }
-        }
-    }
-}
-
-// common infected / witch gets hit
-public Action: TraceAttack_Infected (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
-{
-    if ( !g_bPlayersLeftStart ) { return; }
-    if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) || IsPlayerIncapacitated(attacker) ) { return; }
-    
-    new index = GetPlayerIndexForClient( attacker );
-    if ( index == -1 ) { return; }
-    
-    new weaponType = WPTYPE_NONE;
-    
-    // get weapon type
-    if ( damagetype & DMG_BUCKSHOT )
-    {
-        weaponType = WPTYPE_SHOTGUN;
-    }
-    else if ( damagetype & DMG_BULLET )
-    {
-        decl String:weaponname[48];
-        GetClientWeapon(attacker, weaponname, sizeof(weaponname));
-        weaponType = GetWeaponTypeForClassname(weaponname);
-    }
-    else {
-        // not handling anything else
-        return;
-    }
-    
-    //PrintToChatAll("common hit: weptype %i hit: %10s", weaponType, g_cHitgroups[hitgroup]);
-    
-    // count hits
-    switch ( weaponType )
-    {
-        case WPTYPE_SHOTGUN: {  g_strRoundPlayerData[index][g_iCurTeam][plyHitsShotgun]++;}
-        case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHitsSmg]++; }
-        case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsSniper]++; }
-        case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHitsPistol]++; }
-    }
-    
-    // headshots (only bullet-based)
-    if ( damagetype & DMG_BULLET && hitgroup == HITGROUP_HEAD )
-    {
-        switch ( weaponType )
-        {
-            case WPTYPE_SMG: {      g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSmg]++; }
-            case WPTYPE_SNIPER: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsSniper]++; }
-            case WPTYPE_PISTOL: {   g_strRoundPlayerData[index][g_iCurTeam][plyHeadshotsPistol]++; }
-        }
-    }
-}
-
-
-// hooks for tracking attacks on SI/Tank
+// spawncount
 public Action: Event_PlayerSpawn (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
     new client = GetClientOfUserId( GetEventInt(hEvent, "userid") );
     if ( !IS_VALID_INFECTED(client) ) { return; }
-
-    SDKHook(client, SDKHook_TraceAttack, TraceAttack_Special);
     
-    g_strRoundData[g_iRound][g_iCurTeam][rndSISpawned]++;
-}
-
-// hooks for tracking attacks on common/witch
-public OnEntityCreated ( entity, const String:classname[] )
-{
-    if ( entity < 1 || !IsValidEntity(entity) || !IsValidEdict(entity) ) { return; }
+    new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
     
-    // track infected / witches, so damage on them counts as hits
-    
-    new strOEC: classnameOEC;
-    if (!GetTrieValue(g_hTrieEntityCreated, classname, classnameOEC)) { return; }
-    
-    switch ( classnameOEC )
+    if ( zClass >= ZC_SMOKER && zClass <= ZC_CHARGER )
     {
-        case OEC_INFECTED:
-        {
-            SDKHook(entity, SDKHook_TraceAttack, TraceAttack_Infected);
-        }
+        g_strRoundData[g_iRound][g_iCurTeam][rndSISpawned]++;
     }
 }
-
-
 
 
 /*
