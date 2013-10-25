@@ -347,6 +347,12 @@ enum strWeaponType
     WPTYPE_PISTOL
 };
 
+// trie values: weapon type (per accuracy-class)
+enum strMapType
+{
+    MP_FINALE
+};
+
 // trie values: OnEntityCreated classname
 enum strOEC
 {
@@ -399,6 +405,7 @@ new             g_iOldScores            [2];                                    
 new             g_iPlayerIndexSorted    [MAXSORTS][MAXTRACKED];                         // used to create a sorted list
 new             g_iPlayerSortedUseTeam  [MAXSORTS][MAXTRACKED];                         // after sorting: which team to use as the survivor team for player
 new             g_iPlayerRoundTeam      [3][MAXTRACKED];                                // which team is the player 0 = A, 1 = B, -1 = no team; [2] = current survivor round; [0]/[1] = team A / B (anyone who was ever on it)
+new             g_iPlayerGameTeam       [2][MAXTRACKED];                                // for entire game for team A / B if the player was ever on it
 
 new             g_strGameData           [strGameData];
 new             g_strAllRoundData       [2][strRoundData];                              // rounddata for ALL rounds, per team
@@ -408,6 +415,7 @@ new             g_strRoundPlayerData    [MAXTRACKED][2][strPlayerData];         
 
 new     Handle: g_hTriePlayers                                      = INVALID_HANDLE;   // trie for getting player index
 new     Handle: g_hTrieWeapons                                      = INVALID_HANDLE;   // trie for getting weapon type (from classname)
+new     Handle: g_hTrieMaps                                         = INVALID_HANDLE;   // trie for getting finale maps
 new     Handle: g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
 
 new     String: g_sPlayerName           [MAXTRACKED][MAXNAME];
@@ -442,12 +450,7 @@ public Plugin: myinfo =
         ------
         - game data doesn't show (even when it should, after a round is done)
         - pause time is incorrect, sometimes?
-
-        - accuracy still shaky..
-            - 174% with pistols..
-            - 103% with sniper..
-                maybe it's got to do with tank-spawning + passing? 
-                hits on witches? double-hooked specials?
+        - test accuracy with new code
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
@@ -468,6 +471,8 @@ public Plugin: myinfo =
                 damage done (to upright survivors),
                 commons killed,
                 dc's, assists, ?
+        
+        
         
     ideas
     -----
@@ -748,7 +753,7 @@ public OnMapEnd()
     g_iRound++;
     
     // if this was a finale, (and CMT is not loaded), end of game
-    if ( !g_bCMTActive && !g_bModeCampaign && L4D_IsMissionFinalMap() )
+    if ( !g_bCMTActive && !g_bModeCampaign && IsMissionFinalMap() )
     {
         HandleGameEnd();
     }
@@ -909,8 +914,15 @@ stock HandleRoundAddition()
     // start-stop times (always pairs)  <, not <=, because per 2!
     for ( i = rndStartTime; i < MAXRNDSTATS; i += 2 )
     {
+        if ( !g_strRoundData[g_iRound][g_iCurTeam][i] || !g_strRoundData[g_iRound][g_iCurTeam][i+1] ) { continue; }
+        
         // set end
-        g_strAllRoundData[g_iCurTeam][i+1] += g_strRoundData[g_iRound][g_iCurTeam][i+1] - g_strRoundData[g_iRound][g_iCurTeam][i];
+        if ( !g_strAllRoundData[g_iCurTeam][i] ) {
+            g_strAllRoundData[g_iCurTeam][i] = g_strRoundData[g_iRound][g_iCurTeam][i];
+            g_strAllRoundData[g_iCurTeam][i+1] = g_strRoundData[g_iRound][g_iCurTeam][i+1];
+        } else {
+            g_strAllRoundData[g_iCurTeam][i+1] += g_strRoundData[g_iRound][g_iCurTeam][i+1] - g_strRoundData[g_iRound][g_iCurTeam][i];
+        }
     }
     
     // player data
@@ -923,7 +935,14 @@ stock HandleRoundAddition()
         // start-stop times (always pairs)  <, not <=, because per 2!
         for ( i = plyTimeStartPresent; i < MAXPLYSTATS; i += 2 )
         {
-            g_strPlayerData[j][i+1] += g_strRoundPlayerData[j][g_iCurTeam][i+1] - g_strRoundPlayerData[j][g_iCurTeam][i];
+            if ( !g_strRoundPlayerData[j][g_iCurTeam][i] || !g_strRoundPlayerData[j][g_iCurTeam][i+1] ) { continue; }
+            
+            if ( !g_strPlayerData[j][i] ) {
+                g_strPlayerData[j][i] = g_strRoundPlayerData[j][g_iCurTeam][i];
+                g_strPlayerData[j][i+1] = g_strRoundPlayerData[j][g_iCurTeam][i+1];
+            } else {
+                g_strPlayerData[j][i+1] += g_strRoundPlayerData[j][g_iCurTeam][i+1] - g_strRoundPlayerData[j][g_iCurTeam][i];
+            }
         }
     }
 }
@@ -953,6 +972,8 @@ public Event_FinaleWin (Handle:hEvent, const String:name[], bool:dontBroadcast)
 // do something when game/campaign ends (including for campaign mode)
 stock HandleGameEnd()
 {
+    PrintDebug( 2, "HandleGameEnd..." );
+    
     // do automatic game end printing?
     
     // reset all stats
@@ -2252,10 +2273,14 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
             }
         }
         
-        // clear players
+        // clear players / team
         for ( i = 0; i < MAXTRACKED; i++ ) {
             for ( j = 0; j <= MAXPLYSTATS; j++ ) {
                 g_strPlayerData[i][j] = 0;
+            }
+            // clear all-game teams
+            for ( j = 0; j < 2; j++ ) {
+                g_iPlayerGameTeam[j][j] = -1;
             }
         }
         
@@ -2339,6 +2364,7 @@ stock UpdatePlayerCurrentTeam()
             
             // for tracking which players ever were in the team (only useful if they were in the team when round was live)
             g_iPlayerRoundTeam[g_iCurTeam][index] = g_iCurTeam;
+            g_iPlayerGameTeam[g_iCurTeam][index] = g_iCurTeam;
             
             // if player wasn't present, update presence (shift start forward)
             
@@ -4469,6 +4495,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     presTime = 0;
                 }
             }
+            if (presTime < 0 ) { presTime = 0; }
             
             FormatPercentage( strTmpA, s_len, presTime, fullTime, false );  // never a decimal
             LeftPadString( strTmpA, s_len, 7 );
@@ -4499,6 +4526,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     aliveTime = 0;
                 }
             }
+            if (aliveTime < 0 ) { aliveTime = 0; }
             
             FormatPercentage( strTmpA, s_len, aliveTime, presTime, false );  // never a decimal
             LeftPadString( strTmpA, s_len, 5 );
@@ -4521,6 +4549,7 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
                     upTime = 0;
                 }
             }
+            if (upTime < 0 ) { upTime = 0; }
             
             FormatPercentage( strTmpA, s_len, upTime, presTime, false );  // never a decimal
             LeftPadString( strTmpA, s_len, 6 );
@@ -4648,10 +4677,20 @@ stock BuildConsoleBufferMVP ( bool:bTank = false, bool: bMore = false, bool:bRou
             
             // time (%)
             if ( bRound ) {
-                presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
+                if ( g_strRoundPlayerData[i][team][plyTimeStartPresent] ) {
+                    presTime = ( (g_strRoundPlayerData[i][team][plyTimeStopPresent]) ? g_strRoundPlayerData[i][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[i][team][plyTimeStartPresent];
+                } else {
+                    presTime = 0;
+                }
             } else {
-                presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
+                if ( g_strPlayerData[i][plyTimeStartPresent] ) {
+                    presTime = ( (g_strPlayerData[i][plyTimeStopPresent]) ? g_strPlayerData[i][plyTimeStopPresent] : time ) - g_strPlayerData[i][plyTimeStartPresent];
+                } else {
+                    presTime = 0;
+                }
             }
+            if (presTime < 0 ) { presTime = 0; }
+            
             FormatPercentage( strTmpA, s_len, presTime, fullTime, false );  // never a decimal
             LeftPadString( strTmpA, s_len, 3 );
             FormatEx( strTmp[6], s_len, "%3s%s",
@@ -5055,12 +5094,17 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, statA = plySIDamage,
     // if on team right now, always show (or was last round?)
     if ( g_bPlayersLeftStart ) {
         if ( team == g_iCurTeam && g_iPlayerRoundTeam[LTEAM_CURRENT][index] == team ) { return true; }
+    } else if ( !bRound ) {
+        // if player was never on the team, don't show
+        if ( g_iPlayerGameTeam[team][index] != team ) { return false; }
     } else {
         // just allow it if he is currently a survivor
-        if ( !IsIndexSurvivor(index) ) {
-            if ( team == g_iCurTeam ) { return false; }
-        } else { 
-            if ( team != g_iCurTeam ) { return false; }
+        if ( index >= FIRST_NON_BOT ) {
+            if ( !IsIndexSurvivor(index) ) {
+                if ( team == g_iCurTeam ) { return false; }
+            } else { 
+                if ( team != g_iCurTeam ) { return false; }
+            }
         }
     }
     
@@ -5105,7 +5149,8 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
     new fullTime = 0;
     new time = GetTime();
     
-    if ( bRound ) {
+    if ( bRound )
+    {
         if ( bTeam ) {
             if ( g_strRoundData[g_iRound][team][start] ) {
                 fullTime = ( (g_strRoundData[g_iRound][team][stop]) ? g_strRoundData[g_iRound][team][stop] : time ) - g_strRoundData[g_iRound][team][start];
@@ -5118,7 +5163,8 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
                     }
                 }
             }
-        } else {
+        }
+        else {
             if ( g_strRoundData[g_iRound][LTEAM_A][start] ) {
                 fullTime = ( (g_strRoundData[g_iRound][LTEAM_A][stop]) ? g_strRoundData[g_iRound][LTEAM_A][stop] : time ) - g_strRoundData[g_iRound][LTEAM_A][start];
                 if ( g_bPaused && LTEAM_A == g_iCurTeam ) {
@@ -5142,7 +5188,9 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
                 }
             }
         }
-    } else {
+    }
+    else
+    {
         if ( bTeam ) {
             if ( g_strAllRoundData[team][start] ) {
                 fullTime = ( (g_strAllRoundData[team][stop]) ? g_strAllRoundData[team][stop] : time ) - g_strAllRoundData[team][start];
@@ -5155,7 +5203,8 @@ stock GetFullRoundTime( bRound, bTeam, team, bool:bTank = false, bool:bPause = f
                     }
                 }
             }
-        } else {
+        }
+        else {
             if ( g_strAllRoundData[LTEAM_A][start] ) {
                 fullTime = ( (g_strAllRoundData[LTEAM_A][stop]) ? g_strAllRoundData[LTEAM_A][stop] : time ) - g_strAllRoundData[LTEAM_A][start];
                 if ( g_bPaused && LTEAM_A == g_iCurTeam ) {
@@ -5358,7 +5407,7 @@ stock GetWeaponTypeForClassname ( const String:classname[] )
 
 stock GetPlayerIndexForClient ( client )
 {
-    if ( !IsClientAndInGame(client) ) { return -1; }
+    if ( !IS_VALID_INGAME(client) ) { return -1; }
     
     decl String: sSteamId[32];
     
@@ -5395,8 +5444,6 @@ stock GetPlayerIndexForSteamId ( const String:steamId[], client=-1 )
             strcopy( g_sPlayerNameSafe[pIndex], MAXNAME_TABLE, g_sPlayerName[pIndex] );
             stripUnicode( g_sPlayerNameSafe[pIndex], MAXNAME_TABLE );
         }
-        
-        //PrintToChatAll("client: %i %N %s", client, client, g_sPlayerName[g_iPlayers] );
         
         g_iPlayers++;
         
@@ -5436,6 +5483,9 @@ stock GetPlayerCharacter ( client )
 
 stock IsIndexSurvivor ( index )
 {
+    // assume bots are always survivors
+    if ( index < FIRST_NON_BOT ) { return true; }
+    
     new tmpind;
     for ( new client = 1; client <= MaxClients; client++ )
     {
@@ -5445,14 +5495,6 @@ stock IsIndexSurvivor ( index )
         if ( tmpind == index ) { return true; }
     }
     
-    return false;
-}
-stock bool: IsClientAndInGame ( index )
-{
-    if (index > 0 && index <= MaxClients)
-    {
-        return IsClientInGame(index);
-    }
     return false;
 }
 stock bool: IsWitch ( iEntity )
@@ -5754,6 +5796,22 @@ stock InitTries()
     g_hTrieEntityCreated = CreateTrie();
     SetTrieValue(g_hTrieEntityCreated, "infected",              OEC_INFECTED);
     SetTrieValue(g_hTrieEntityCreated, "witch",                 OEC_WITCH);
+    
+    // finales
+    g_hTrieMaps = CreateTrie();
+    SetTrieValue(g_hTrieMaps, "c1m4_atrium",                    MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c2m5_concert",                   MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c3m4_plantation",                MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c4m5_milltown_escape",           MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c5m5_bridge",                    MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c6m3_port",                      MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c7m3_port",                      MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c8m5_rooftop",                   MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c9m2_lots",                      MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c10m5_houseboat",                MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c11m5_runway",                   MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c12m5_cornfield",                MP_FINALE);
+    SetTrieValue(g_hTrieMaps, "c13m4_cutthroatcreek",           MP_FINALE);
 }
 /*
     General functions
@@ -5894,6 +5952,13 @@ stock CheckGameMode()
     }
 }
 
+stock IsMissionFinalMap()
+{
+    // since L4D_IsMissionFinalMap() is bollocksed, simple map string check
+    new strMapType: mapType;
+    if ( !GetTrieValue(g_hTrieMaps, g_sMapName[g_iRound], mapType) ) { return false; }
+    return bool:( mapType == MP_FINALE );
+}
 stock stripUnicode ( String:testString[MAXNAME], maxLength = 20 )
 {
     if ( maxLength < 1 ) { maxLength = MAXNAME; }
@@ -5972,7 +6037,6 @@ stock PrintDebug( debugLevel, const String:Message[], any:... )
         VFormat(DebugBuff, sizeof(DebugBuff), Message, 3);
         LogMessage(DebugBuff);
         //PrintToServer(DebugBuff);
-        //PrintToChatAll(DebugBuff);
     }
 }
 
