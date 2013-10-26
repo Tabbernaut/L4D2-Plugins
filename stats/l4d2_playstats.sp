@@ -58,6 +58,7 @@
 #define ROUNDEND_DELAY          3.0
 #define ROUNDEND_DELAY_SCAV     2.0
 #define PRINT_REPEAT_DELAY      15              // how many seconds to wait before re-doing automatic round end prints (opening/closing end door, etc)
+#define FREQ_FLOWCHECK          1.0
 
 #define MIN_TEAM_PRESENT_TIME   30              // how many seconds a player with 0-stats has to have been on a team to be listed as part of that team
 
@@ -397,12 +398,14 @@ new     Handle: g_hTrieWeapons                                      = INVALID_HA
 new     Handle: g_hTrieMaps                                         = INVALID_HANDLE;   // trie for getting finale maps
 new     Handle: g_hTrieEntityCreated                                = INVALID_HANDLE;   // trie for getting classname of entity created
 
+new     Float:  g_fHighestFlow          [4];                                            // highest flow a survivor was seen to have in the round (per character 0-3)
 new     String: g_sPlayerName           [MAXTRACKED][MAXNAME];
 new     String: g_sPlayerNameSafe       [MAXTRACKED][MAXNAME];                          // version of name without unicode characters
 new     String: g_sPlayerId             [MAXTRACKED][32];                               // steam id
 new     String: g_sMapName              [MAXROUNDS][MAXMAP];
 new     String: g_sConfigName           [MAXMAP];
 new             g_iPlayers                                          = 0;
+
 
 new     String: g_sConsoleBuf           [MAXCHUNKS][CONBUFSIZELARGE];
 new             g_iConsoleBufChunks                                 = 0;
@@ -427,10 +430,6 @@ public Plugin: myinfo =
 
         fixes:
         ------
-        - test accuracy with new code [ still weird with pistols.. only bots? ]
-            - still weird cases: check for weapon types.. does it happen with magnum?
-            - some specific sniper type?
-        
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
             - it's not the size.. got something to do with the timing?
@@ -725,6 +724,9 @@ public OnMapStart()
         g_iOldScores[LTEAM_A] = g_iScores[LTEAM_A];
         g_iOldScores[LTEAM_B] = g_iScores[LTEAM_B];
     }
+    
+    // start flow-check timer
+    CreateTimer( FREQ_FLOWCHECK, Timer_SaveFlows, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
 }
 
 public OnMapEnd()
@@ -982,6 +984,12 @@ stock RoundReallyStarting()
 {
     g_bPlayersLeftStart = true;
     new time = GetTime();
+    
+    // clear furthest flow
+    for ( new i = 0; i < 4; i++ )
+    {
+        g_fHighestFlow[i] = 0.0;
+    }
     
     if ( !g_bGameStarted )
     {
@@ -5284,6 +5292,34 @@ stock GetPauseTime( bRound, bTeam, team, bool: bCurrentOnly = false )
     return fullTime;
 }
 
+// safe furthest flow seen for each living survivor
+stock SaveFurthestFlows()
+{
+    new chr, Float: fTmp;
+    
+    for ( new i = 1; i <= MaxClients; i++ )
+    {
+        if ( !IS_VALID_SURVIVOR(i) || !IsPlayerAlive(i) ) { continue; }
+        
+        chr = GetPlayerCharacter(i);
+        fTmp = L4D2Direct_GetFlowDistance(i);
+        
+        if ( fTmp > g_fHighestFlow[chr] )
+        {
+            g_fHighestFlow[chr] = fTmp;
+        }
+    }
+}
+
+public Action: Timer_SaveFlows ( Handle:timer )
+{
+    if ( !g_bPlayersLeftStart || !g_bInRound ) { return Plugin_Continue; }
+    
+    SaveFurthestFlows();
+    
+    return Plugin_Continue;
+}
+
 /*
     Automatic display
     -----------------
@@ -5704,7 +5740,12 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     {
         if ( !IS_VALID_SURVIVOR(i) ) { continue; }
         
-        farFlowDist[clients] = 0.0;                                 //GetEntPropFloat( i, Prop_Data, "m_farthestSurvivorFlowAtDeath" );     // this doesn't work/exist
+        if ( clients < 4 )
+        {
+            // GetEntPropFloat( i, Prop_Data, "m_farthestSurvivorFlowAtDeath" );     // this doesn't work/exist
+            // instead, we're tracking it per character 0-3
+            farFlowDist[clients] = g_fHighestFlow[clients];
+        }
         curFlowDist[clients] = L4D2Direct_GetFlowDistance( i );
         clients++;
     }
@@ -5721,7 +5762,11 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     
     for ( i = 0; i < clients; i++ )
     {
-        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;%.2f;", strTmpLine, farFlowDist[i], curFlowDist[i] );
+        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;%.2f;",
+                strTmpLine,
+                (i < 4) ? farFlowDist[i] : 0.0,
+                curFlowDist[i]
+            );
     }
     Format( strTmpLine, sizeof(strTmpLine), "%s\n\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
