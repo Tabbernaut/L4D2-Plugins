@@ -75,16 +75,11 @@
 #define WP_RIFLE                5
 #define WP_RIFLE_DESERT         9
 #define WP_RIFLE_AK47           26
-#define WP_MOLOTOV              13
-#define WP_PIPE_BOMB            14
-#define WP_VOMITJAR             25
 #define WP_SMG_MP5              33
 #define WP_RIFLE_SG552          34
 #define WP_SNIPER_AWP           35
 #define WP_SNIPER_SCOUT         36
-#define WP_FIRST_AID_KIT        12
-#define WP_PAIN_PILLS           15
-#define WP_ADRENALINE           23
+#define WP_RIFLE_M60            37
 #define WP_MACHINEGUN           45
 
 #define HITGROUP_HEAD           1
@@ -193,22 +188,6 @@
 #define DIR_OUTPUT              "logs/"
 #define MAX_QUERY_SIZE          8192
 #define FILETABLEFLAGS          33460           // AUTO_ flags for what to print to a file automatically
-
-/* new const String: g_cHitgroups[][] =
-{
-    "<generic>",
-    "head",
-    "chest",
-    "stomach",
-    "arm (l)",
-    "arm (r)",
-    "leg (l)",
-    "leg (r)",
-    "?",
-    "?",
-    "back"
-};
-*/
 
 // types of statistic table(sets)
 enum _:strStatType
@@ -437,7 +416,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.12",
+    version = "0.9.13",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -449,12 +428,16 @@ public Plugin: myinfo =
         fixes:
         ------
         - test accuracy with new code [ still weird with pistols.. only bots? ]
+            - still weird cases: check for weapon types.. does it happen with magnum?
+            - some specific sniper type?
         
         - there might be some problem with printing large tables
             at round-end .. test some more (garbage text appears?)
             - it's not the size.. got something to do with the timing?
             - or delays between prints? (<= prolly)
-            
+        - see above: delays between each table -- don't have to be large,
+            just make sure it doesn't get sent in the same package.
+
         - filewrite
             - get reliable max flowdist per survivor -- how?
                 - the hard way? track with a timer?
@@ -1544,7 +1527,11 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
                 case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsSIShotgun;  }
                 case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsSISmg;      storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
                 case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsSISniper;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
-                case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeB = plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1; }
+                case WPTYPE_PISTOL: {
+                        storeA = plyHitsPistol;  storeB = plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1;
+                        // incapped: don't count hits
+                        if ( IsPlayerIncapacitated(attacker) ) { storeA = -1; }
+                    }
             }
             
             g_strRoundData[g_iRound][g_iCurTeam][rndSIDamage] += damage;
@@ -1564,7 +1551,11 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
                     case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsTankShotgun;  }
                     case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsTankSmg; }
                     case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsTankSniper; }
-                    case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeB = plyHitsTankPistol; }
+                    case WPTYPE_PISTOL: {
+                            storeA = plyHitsPistol;  storeB = plyHitsTankPistol;
+                            // incapped: don't count hits
+                            if ( IsPlayerIncapacitated(attacker) ) { storeA = -1; }
+                        }
                 }
             }
             
@@ -1700,7 +1691,11 @@ public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dont
         case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; }
         case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
         case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
-        case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1; }
+        case WPTYPE_PISTOL: {
+                storeA = plyHitsPistol;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1;
+                // incapped: don't count hits
+                if ( IsPlayerIncapacitated(attacker) ) { storeA = -1; }
+            }
     }
     
     if ( storeA != -1 )
@@ -1999,8 +1994,9 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
     {
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsPistol]++;
     }
-    else if (   weaponId == WP_SMG || weaponId == WP_SMG_SILENCED || weaponId == WP_SMG_MP5 ||
-                weaponId == WP_RIFLE || weaponId == WP_RIFLE_DESERT || weaponId == WP_RIFLE_AK47 || weaponId == WP_RIFLE_SG552
+    else if (   weaponId == WP_SMG         || weaponId == WP_SMG_SILENCED || weaponId == WP_SMG_MP5    ||
+                weaponId == WP_RIFLE       || weaponId == WP_RIFLE_DESERT || weaponId == WP_RIFLE_AK47 ||
+                weaponId == WP_RIFLE_SG552 || weaponId == WP_RIFLE_M60
     ) {
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsSmg]++;
     }
@@ -2011,8 +2007,8 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
         new count = GetEventInt(event, "count");
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsShotgun] += count;
     }
-    else if (   weaponId == WP_HUNTING_RIFLE || weaponId == WP_SNIPER_MILITARY  ||
-                weaponId == WP_SNIPER_AWP || weaponId == WP_SNIPER_SCOUT
+    else if (   weaponId == WP_HUNTING_RIFLE || weaponId == WP_SNIPER_MILITARY ||
+                weaponId == WP_SNIPER_AWP    || weaponId == WP_SNIPER_SCOUT
     ) {
         g_strRoundPlayerData[index][g_iCurTeam][plyShotsSniper]++;
     }
@@ -5752,9 +5748,12 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     }
     StrCat( sStats, sizeof(sStats), "\n" );
     
-    // scores (both rounds)
+    
+
+    // only print this once (after both rounds played)
     if ( !bFirstWrite )
     {
+        // scores (both rounds)
         FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:]\n" );
         StrCat( sStats, sizeof(sStats), strTmpLine );
 
@@ -5765,6 +5764,22 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
                 g_iScores[LTEAM_B]
             );
         StrCat( sStats, sizeof(sStats), strTmpLine );
+        
+        
+        // player names
+        FormatEx( strTmpLine, sizeof(strTmpLine), "[PlayerNames:]:\n" );
+        StrCat( sStats, sizeof(sStats), strTmpLine );
+        
+        iPlayerCount = 0;
+        for ( j = FIRST_NON_BOT; j < MAXTRACKED; j++ )
+        {
+            iPlayerCount++;
+            
+            // player lines, ";"-delimited: <#>;<steamid>;<name>\n  <= note: no ;
+            FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%s\n", iPlayerCount, g_sPlayerId[j], g_sPlayerName[j] );
+            StrCat( sStats, sizeof(sStats), strTmpLine );
+        }
+        StrCat( sStats, sizeof(sStats), "\n" );
     }
     
     
@@ -5838,15 +5853,15 @@ stock InitTries()
     SetTrieValue(g_hTrieWeapons, "weapon_sniper_scout",         WPTYPE_SNIPER);
     SetTrieValue(g_hTrieWeapons, "weapon_smg",                  WPTYPE_SMG);
     SetTrieValue(g_hTrieWeapons, "weapon_smg_silenced",         WPTYPE_SMG);
+    SetTrieValue(g_hTrieWeapons, "weapon_smg_mp5",              WPTYPE_SMG);
     SetTrieValue(g_hTrieWeapons, "weapon_rifle",                WPTYPE_SMG);
     SetTrieValue(g_hTrieWeapons, "weapon_rifle_desert",         WPTYPE_SMG);
     SetTrieValue(g_hTrieWeapons, "weapon_rifle_ak47",           WPTYPE_SMG);
-    SetTrieValue(g_hTrieWeapons, "weapon_smg_mp5",              WPTYPE_SMG);
     SetTrieValue(g_hTrieWeapons, "weapon_rifle_sg552",          WPTYPE_SMG);
     SetTrieValue(g_hTrieWeapons, "weapon_rifle_m60",            WPTYPE_SMG);
     //SetTrieValue(g_hTrieWeapons, "weapon_melee",               WPTYPE_NONE);
     //SetTrieValue(g_hTrieWeapons, "weapon_chainsaw",            WPTYPE_NONE);
-    //SetTrieValue(g_hTrieWeapons, "weapon_grenade_launcher",    WP_NONE);
+    //SetTrieValue(g_hTrieWeapons, "weapon_grenade_launcher",    WPTYPE_NONE);
     
     g_hTrieEntityCreated = CreateTrie();
     SetTrieValue(g_hTrieEntityCreated, "infected",              OEC_INFECTED);
