@@ -437,7 +437,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.11",
+    version = "0.9.12",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -448,7 +448,6 @@ public Plugin: myinfo =
 
         fixes:
         ------
-        - game data doesn't show (even when it should, after a round is done)
         - test accuracy with new code [ still weird with pistols.. only bots? ]
         
         - there might be some problem with printing large tables
@@ -1670,18 +1669,19 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
 public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     if ( !g_bPlayersLeftStart ) { return; }
+    
     new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
     if ( !IS_VALID_SURVIVOR(attacker) ) { return; }
     
     new attIndex = GetPlayerIndexForClient( attacker );
     if ( attIndex == -1 ) { return; }
-        
+    
     // catch damage done to witch
     new entity = GetEventInt(event, "entityid");
     new hitgroup = GetEventInt(event, "hitgroup");
     new dmgType = GetEventInt(event, "type");
     
-    new storeA = -1, storeB = -1, storeC = -1;
+    new storeA = -1, storeC = -1;
     
     new weaponType = WPTYPE_NONE;
     if ( dmgType & DMG_BUCKSHOT )
@@ -1697,16 +1697,15 @@ public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dont
     
     switch ( weaponType )
     {
-        case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsSIShotgun;  }
-        case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsSISmg;      storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
-        case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsSISniper;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
-        case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeB = plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1; }
+        case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; }
+        case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
+        case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
+        case WPTYPE_PISTOL: {  storeA = plyHitsPistol;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1; }
     }
     
     if ( storeA != -1 )
     {
         g_strRoundPlayerData[attIndex][g_iCurTeam][storeA]++;
-        g_strRoundPlayerData[attIndex][g_iCurTeam][storeB]++;
         if ( storeC != -1 ) {
             g_strRoundPlayerData[attIndex][g_iCurTeam][storeC]++;
         }
@@ -5726,7 +5725,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     
     for ( i = 0; i < clients; i++ )
     {
-        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;%.f2;", strTmpLine, farFlowDist[i], curFlowDist[i] );
+        Format( strTmpLine, sizeof(strTmpLine), "%s%.2f;%.2f;", strTmpLine, farFlowDist[i], curFlowDist[i] );
     }
     Format( strTmpLine, sizeof(strTmpLine), "%s\n\n", strTmpLine );
     StrCat( sStats, sizeof(sStats), strTmpLine );
