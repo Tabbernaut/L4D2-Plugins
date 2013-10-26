@@ -53,7 +53,7 @@
 #define MAXWEAPNAME             24
 
 #define STATS_RESET_DELAY       5.0
-#define ROUNDSTART_DELAY        3.0
+#define ROUNDSTART_DELAY        5.5             // this should always be longer than CMT's roundstart scores check, so we know whether there's been a swap! hardcoded 5.0 in there
 #define ROUNDEND_SCORE_DELAY    1.0
 #define ROUNDEND_DELAY          3.0
 #define ROUNDEND_DELAY_SCAV     2.0
@@ -347,6 +347,7 @@ new     bool:   g_bReadyUpAvailable     = false;
 new     bool:   g_bPauseAvailable       = false;
 new     bool:   g_bSkillDetectLoaded    = false;
 new     bool:   g_bCMTActive            = false;
+new     bool:   g_bCMTSwapped           = false;                                        // whether A/B teams have been swapped
 
 new     bool:   g_bModeCampaign         = false;
 new     bool:   g_bModeScavenge         = false;
@@ -419,7 +420,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.13",
+    version = "0.9.14",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -437,10 +438,10 @@ public Plugin: myinfo =
         - see above: delays between each table -- don't have to be large,
             just make sure it doesn't get sent in the same package.
 
-        - filewrite
-            - get reliable max flowdist per survivor -- how?
-                - the hard way? track with a timer?
+        - CMT may mix up logical teams, making us think A is playing, when this is actually B
+            - track this and correct
             
+
         build:
         ------
         - skill
@@ -1457,6 +1458,14 @@ public OnCMTEnd()
     PrintDebug(2, "CMT end.");
     
     HandleGameEnd();
+}
+// called when (before) CMT swaps logical teams in a round (this happens ~5 seconds after round start)
+public OnCMTTeamSwap()
+{
+    PrintDebug(2, "CMT TeamSwap.");
+    
+    // toggle CMT swap
+    g_bCMTSwapped = !g_bCMTSwapped;
 }
 
 /*
@@ -5453,7 +5462,12 @@ stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1 )
 */
 stock GetCurrentTeamSurvivor()
 {
-    return GameRules_GetProp("m_bAreTeamsFlipped");
+    // this is corrected if CMT has mixed the teams up to preserve playing order
+    if ( g_bCMTSwapped ) {
+        return !GameRules_GetProp("m_bAreTeamsFlipped");
+    } else {
+        return GameRules_GetProp("m_bAreTeamsFlipped");
+    }
 }
 
 stock GetWeaponTypeForId ( weaponId )
