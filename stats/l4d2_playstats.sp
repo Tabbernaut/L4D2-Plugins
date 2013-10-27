@@ -420,7 +420,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.14",
+    version = "0.9.15",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -438,8 +438,12 @@ public Plugin: myinfo =
         - see above: delays between each table -- don't have to be large,
             just make sure it doesn't get sent in the same package.
 
-        - CMT may mix up logical teams, making us think A is playing, when this is actually B
-            - track this and correct
+        - the current CMT + forwards for teamswaps solution is kinda bad.
+            - would be nicer to fix CMT so the normal gamerules swapped
+              check is correct -- so: test whether "m_bAreTeamsFlipped"
+              can be unproblematically written to (yes, I was afraid to
+              just try this without doing some serious testing with it
+              first).
             
 
         build:
@@ -5767,10 +5771,11 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     FormatEx( strTmpLine, sizeof(strTmpLine), "[Progress:%s]\n", (iTeam == LTEAM_A) ? "A" : "B" );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
-    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%.2f;",
+    FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%s;%i;%i;%.2f;",
             g_bSecondHalf,
             (iTeam == LTEAM_A) ? "A" : "B",
             g_iSurvived[iTeam],
+            L4D_GetVersusMaxCompletionScore(),
             maxFlowDist
         );
     
@@ -5832,6 +5837,8 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         iPlayerCount = 0;
         for ( j = FIRST_NON_BOT; j < MAXTRACKED; j++ )
         {
+            if ( !strlen(g_sPlayerId[j]) || !strlen(g_sPlayerName[j]) ) { continue; }
+            
             iPlayerCount++;
             
             // player lines, ";"-delimited: <#>;<steamid>;<name>\n  <= note: no ;
