@@ -58,6 +58,7 @@
 #define ROUNDEND_DELAY          3.0
 #define ROUNDEND_DELAY_SCAV     2.0
 #define PRINT_REPEAT_DELAY      15              // how many seconds to wait before re-doing automatic round end prints (opening/closing end door, etc)
+#define PRINT_DELAY_INC         0.1             // print delay increments (pauses between tables)
 #define FREQ_FLOWCHECK          1.0
 
 #define MIN_TEAM_PRESENT_TIME   30              // how many seconds a player with 0-stats has to have been on a team to be listed as part of that team
@@ -142,6 +143,7 @@
 #define AUTO_FUNFACT_GAME       (1 << 14)       // 16384
 #define AUTO_MVPCON_MORE_ROUND  (1 << 15)
 #define AUTO_MVPCON_MORE_GAME   (1 << 16)
+
 
 // fun fact
 #define FFACT_MAX_WEIGHT        10
@@ -420,7 +422,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.15",
+    version = "0.9.16",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -431,20 +433,13 @@ public Plugin: myinfo =
 
         fixes:
         ------
-        - there might be some problem with printing large tables
-            at round-end .. test some more (garbage text appears?)
-            - it's not the size.. got something to do with the timing?
-            - or delays between prints? (<= prolly)
-        - see above: delays between each table -- don't have to be large,
-            just make sure it doesn't get sent in the same package.
-
         - the current CMT + forwards for teamswaps solution is kinda bad.
             - would be nicer to fix CMT so the normal gamerules swapped
               check is correct -- so: test whether "m_bAreTeamsFlipped"
               can be unproblematically written to (yes, I was afraid to
               just try this without doing some serious testing with it
               first).
-            
+        
 
         build:
         ------
@@ -1326,6 +1321,11 @@ public Action: Cmd_StatsReset ( client, args )
 */
 public Action: Cmd_Cookie_SetPrintFlags ( client, args )
 {
+    if ( !IS_VALID_INGAME(client) ) {
+        PrintToServer( "This command can only be used by clients. Use the sm_stats_autoprint_* cvars to set server preferences." );
+        return Plugin_Handled;
+    }
+    
     if ( args )
     {
         decl String: sArg[24];
@@ -5370,33 +5370,101 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
     }
 }
 
-stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1 )
+// set iTeam to -2 to force printing for all players (where possible) (-1 = current team)
+stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1, bool: bNoDelay = false, bool:bPreSorted = false, bool:bSortedRound = false, bool:bSortedGame = false )
 {
     // prints automatic stuff, optionally for one client only
+    new bool: bSorted;
+    new bool: bSortedForGame;
     
-    new bool: bSorted = (iFlags & AUTO_MVPCON_ROUND) || (iFlags & AUTO_MVPCON_GAME) || (iFlags & AUTO_MVPCON_TANK) || (iFlags & AUTO_MVPCON_MORE_ROUND);
-    new bool: bSortedForGame = false;
+    if ( bPreSorted ) {
+        bSorted = bSortedRound;
+        bSortedForGame = bSortedGame;
+    }
+    else {
+        bSorted = (iFlags & AUTO_MVPCON_ROUND) || (iFlags & AUTO_MVPCON_GAME) || (iFlags & AUTO_MVPCON_TANK) || (iFlags & AUTO_MVPCON_MORE_ROUND);
+        bSortedForGame = false;
+    }
     
-    new bool: bTeam = bool:( iTeam != -1 );
+    new Float: fDelay, bool: bAddDelay, iDelayedFlags; 
+    new Handle: pack[5];
+    
+    new bool: bTeam = true;
+    // force for all:
+    if ( iTeam == -2 ) {
+        bTeam = false;
+        iTeam = -1;
+    }
     
     // mvp
     if ( iFlags & AUTO_MVPCON_ROUND ) {
+        bAddDelay = true;
         DisplayStatsMVP(client, false, false, true, bTeam, iTeam );
     }
     if ( iFlags & AUTO_MVPCON_GAME ) {
+        bAddDelay = true;
         DisplayStatsMVP(client, false, false, false, bTeam, iTeam );
         bSortedForGame = true;
     }
+    
+    // send delayed prints
+    if ( iDelayedFlags ) {
+        pack[4] = CreateDataPack();
+        WritePackCell( pack[4], iDelayedFlags );
+        WritePackCell( pack[4], client );
+        WritePackCell( pack[4], iTeam );
+        WritePackCell( pack[4], (bSorted) ? 1 : 0 );
+        WritePackCell( pack[4], (bSortedForGame) ? 1 : 0 );
+        CreateTimer( fDelay, Timer_DelayedPrint, pack[4] );
+        iDelayedFlags = 0;
+    }
+    if ( bAddDelay ) {
+        fDelay += PRINT_DELAY_INC;
+        bAddDelay = false;
+    }
+    
     if ( iFlags & AUTO_MVPCON_MORE_ROUND ) {
-        DisplayStatsMVP(client, false, true, true, bTeam, iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_MVPCON_MORE_ROUND;
+        } else {
+            DisplayStatsMVP(client, false, true, true, bTeam, iTeam );
+        }
+        
     }
     if ( iFlags & AUTO_MVPCON_MORE_GAME ) {
-        DisplayStatsMVP(client, false, true, false, bTeam, iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_MVPCON_MORE_GAME;
+        } else {
+            DisplayStatsMVP(client, false, true, false, bTeam, iTeam );
+        }
         bSortedForGame = true;
     }
     
     if ( iFlags & AUTO_MVPCON_TANK ) {
-        DisplayStatsMVP(client, true, false, true, bTeam, iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_MVPCON_TANK;
+        } else {
+            DisplayStatsMVP(client, true, false, true, bTeam, iTeam );
+        }
+    }
+    
+    // send delayed prints
+    if ( iDelayedFlags ) {
+        pack[0] = CreateDataPack();
+        WritePackCell( pack[0], iDelayedFlags );
+        WritePackCell( pack[0], client );
+        WritePackCell( pack[0], iTeam );
+        WritePackCell( pack[0], (bSorted) ? 1 : 0 );
+        WritePackCell( pack[0], (bSortedForGame) ? 1 : 0 );
+        CreateTimer( fDelay, Timer_DelayedPrint, pack[0] );
+        iDelayedFlags = 0;
+    }
+    if ( bAddDelay ) {
+        fDelay += PRINT_DELAY_INC;
+        bAddDelay = false;
     }
     
     if ( iFlags & AUTO_MVPCHAT_ROUND ) {
@@ -5425,40 +5493,143 @@ stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1 )
         DisplayStatsFunFactChat( client, false, false );
     }
     
+    
     // special / skill
     if ( iFlags & AUTO_SKILLCON_ROUND ) {
-        DisplayStatsSpecial(client, true, bTeam, false, iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_SKILLCON_ROUND;
+        } else {
+            DisplayStatsSpecial(client, true, bTeam, false, iTeam );
+        }
     }
     if ( iFlags & AUTO_SKILLCON_GAME ) {
-        DisplayStatsSpecial(client, false, bTeam, false, iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_SKILLCON_GAME;
+        } else {
+            DisplayStatsSpecial(client, false, bTeam, false, iTeam );
+        }
+    }
+    
+    // send delayed prints
+    if ( iDelayedFlags ) {
+        pack[1] = CreateDataPack();
+        WritePackCell( pack[1], iDelayedFlags );
+        WritePackCell( pack[1], client );
+        WritePackCell( pack[1], iTeam );
+        WritePackCell( pack[1], (bSorted) ? 1 : 0 );
+        WritePackCell( pack[1], (bSortedForGame) ? 1 : 0 );
+        CreateTimer( fDelay, Timer_DelayedPrint, pack[1] );
+        iDelayedFlags = 0;
+    }
+    if ( bAddDelay ) {
+        fDelay += PRINT_DELAY_INC;
+        bAddDelay = false;
     }
     
     // ff
     if ( iFlags & AUTO_FFCON_ROUND ) {
-        DisplayStatsFriendlyFire(client, true, bTeam, (bSorted && !bSortedForGame), iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_FFCON_ROUND;
+        } else {
+            DisplayStatsFriendlyFire(client, true, bTeam, (bSorted && !bSortedForGame), iTeam );
+        }
     }
     if ( iFlags & AUTO_FFCON_GAME ) {
-        DisplayStatsFriendlyFire(client, false, bTeam, (bSorted && bSortedForGame), iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_FFCON_GAME;
+        } else {
+            DisplayStatsFriendlyFire(client, false, bTeam, (bSorted && bSortedForGame), iTeam );
+        }
+    }
+    
+    // send delayed prints
+    if ( iDelayedFlags ) {
+        pack[2] = CreateDataPack();
+        WritePackCell( pack[2], iDelayedFlags );
+        WritePackCell( pack[2], client );
+        WritePackCell( pack[2], iTeam );
+        WritePackCell( pack[2], (bSorted) ? 1 : 0 );
+        WritePackCell( pack[2], (bSortedForGame) ? 1 : 0 );
+        CreateTimer( fDelay, Timer_DelayedPrint, pack[2] );
+        iDelayedFlags = 0;
+    }
+    if ( bAddDelay ) {
+        fDelay += PRINT_DELAY_INC;
+        bAddDelay = false;
     }
     
     // accuracy
     if ( iFlags & AUTO_ACCCON_ROUND ) {
-        DisplayStatsAccuracy(client, false, true, bTeam, (bSorted && !bSortedForGame), iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_ACCCON_ROUND;
+        } else {
+            DisplayStatsAccuracy(client, false, true, bTeam, (bSorted && !bSortedForGame), iTeam );
+        }
     }
     if ( iFlags & AUTO_ACCCON_GAME ) {
-        DisplayStatsAccuracy(client, false, false, bTeam, (bSorted && bSortedForGame), iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_ACCCON_GAME;
+        } else {
+            DisplayStatsAccuracy(client, false, false, bTeam, (bSorted && bSortedForGame), iTeam );
+        }
     }
     if ( iFlags & AUTO_ACCCON_MORE_ROUND ) {
-        DisplayStatsAccuracy(client, true, true, bTeam, (bSorted && !bSortedForGame), iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_ACCCON_MORE_ROUND;
+        } else {
+            DisplayStatsAccuracy(client, true, true, bTeam, (bSorted && !bSortedForGame), iTeam );
+        }
     }
     if ( iFlags & AUTO_ACCCON_MORE_GAME ) {
-        DisplayStatsAccuracy(client, true, false, bTeam, (bSorted && bSortedForGame), iTeam );
+        bAddDelay = true;
+        if ( !bNoDelay && fDelay > 0.0 ) {
+            iDelayedFlags += AUTO_ACCCON_MORE_GAME;
+        } else {
+            DisplayStatsAccuracy(client, true, false, bTeam, (bSorted && bSortedForGame), iTeam );
+        }
+    }
+    
+    // send delayed prints
+    if ( iDelayedFlags ) {
+        pack[3] = CreateDataPack();
+        WritePackCell( pack[3], iDelayedFlags );
+        WritePackCell( pack[3], client );
+        WritePackCell( pack[3], iTeam );
+        WritePackCell( pack[3], (bSorted) ? 1 : 0 );
+        WritePackCell( pack[3], (bSortedForGame) ? 1 : 0 );
+        CreateTimer( fDelay, Timer_DelayedPrint, pack[3] );
+        iDelayedFlags = 0;
+    }
+    if ( bAddDelay ) {
+        fDelay += PRINT_DELAY_INC;
+        bAddDelay = false;
     }
     
     // to do:
     // - inf
 }
 
+
+public Action: Timer_DelayedPrint( Handle:timer, Handle:pack )
+{
+    ResetPack( pack );
+    new flags = ReadPackCell( pack );
+    new client = ReadPackCell( pack );
+    new team = ReadPackCell( pack );
+    new bool: bSortedRound = bool:( ReadPackCell( pack ) );
+    new bool: bSortedGame = bool:( ReadPackCell( pack ) );
+    CloseHandle( pack );
+    
+    // send non-recursive print call ('first' true must be set for no further delays)
+    AutomaticPrintPerClient( flags, client, team, true, true, bSortedRound, bSortedGame );
+}
 
 /*  
     Support
