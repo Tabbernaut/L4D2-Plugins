@@ -1357,55 +1357,85 @@ public Action: Cmd_Cookie_SetPrintFlags ( client, args )
                 PrintToChat( client, "\x01Stats Pref.: \x04server default\x01." );
             }
             else {
-                new String: tmpStr[64];
+                new String: tmpStr[14][24], String: tmpPrint[256];
+                new part = 0;
                 
                 if ( iFlags & AUTO_MVPCHAT_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp/chat(round)" );
+                    Format( tmpStr[part], 24, "mvp/chat(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_MVPCHAT_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp/chat(game)" );
+                    Format( tmpStr[part], 24, "mvp/chat(game)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_MVPCON_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp(round)" );
+                    Format( tmpStr[part], 24, "mvp(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_MVPCON_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp(game)" );
+                    Format( tmpStr[part], 24, "mvp(game)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_MVPCON_MORE_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp/more(round)" );
+                    Format( tmpStr[part], 24, "mvp/more(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_MVPCON_MORE_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp/more(game)" );
+                    Format( tmpStr[part], 24, "mvp/more(game)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_MVPCON_TANK ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "mvp/tankfight" );
+                    Format( tmpStr[part], 24, "mvp/tankfight" );
+                    part++;
                 }
                 if ( iFlags & AUTO_SKILLCON_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "skill/special(round)" );
+                    Format( tmpStr[part], 24, "skill/special(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_SKILLCON_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "skill/special(game)" );
+                    Format( tmpStr[part], 24, "skill/special(game)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_FFCON_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "ff(round)" );
+                    Format( tmpStr[part], 24, "ff(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_FFCON_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "ff(game)" );
+                    Format( tmpStr[part], 24, "ff(game)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_ACCCON_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "accuracy(round)" );
+                    Format( tmpStr[part], 24, "accuracy(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_ACCCON_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "accuracy(game)" );
+                    Format( tmpStr[part], 24, "accuracy(game)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_ACCCON_MORE_ROUND ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "acc/more(round)" );
+                    Format( tmpStr[part], 24, "acc/more(round)" );
+                    part++;
                 }
                 if ( iFlags & AUTO_ACCCON_MORE_GAME ) {
-                    Format( tmpStr, sizeof(tmpStr), "%s%s%s", tmpStr, (strlen(tmpStr)) ? ", " : "", "acc/more(game)" );
+                    Format( tmpStr[part], 24, "acc/more(game)" );
+                    part++;
                 }
                 
-                PrintToChat( client, "\x01Stats Pref.: Flags set for: \x04%s\x01.", tmpStr );
+                PrintToChat( client, "\x01Stats Pref.: Flags set for:", tmpStr );
+                // print all parts
+                new tmpCnt = 0;
+                for ( new i = 0; i < part; i++ )
+                {
+                    Format( tmpPrint, sizeof(tmpPrint), "%s%s%s", tmpPrint, (tmpCnt) ? ", " : "", tmpStr[i] );
+                    tmpCnt++;
+                    
+                    // print each chunk of 6
+                    if ( tmpCnt >= 6 || i == part - 1 ) {
+                        PrintToChat( client, "\x04%s%s\x01", tmpPrint, (i < part - 1) ? "," : "" );
+                        tmpCnt = 0;
+                        tmpPrint = "";
+                    }
+                }
                 PrintToChat( client, "\x01Use \x04/stats_auto test\x01 to get a report preview.");
             }
             
