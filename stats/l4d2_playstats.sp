@@ -5697,7 +5697,7 @@ public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
     }
 }
 
-// set iTeam to -2 to force printing for all players (where possible) (-1 = current team)
+// set iTeam to -2 to force printing for all players (where possible) (-1 = current team) - setting client to -2 prints to file (and never needs a delay)
 stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1, bool: bNoDelay = false, bool:bPreSorted = false, bool:bSortedRound = false, bool:bSortedGame = false )
 {
     // prints automatic stuff, optionally for one client only
@@ -5721,6 +5721,11 @@ stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1, bool: bNoDelay =
     if ( iTeam == -2 ) {
         bTeam = false;
         iTeam = -1;
+    }
+    
+    if ( client == -2 )
+    {
+        bNoDelay = true;
     }
     
     // mvp
