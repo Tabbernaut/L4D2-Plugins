@@ -108,6 +108,8 @@ AUTO_FUNFACT_ROUND      8192    // fun fact, relevant to the round
 AUTO_FUNFACT_GAME       16384
 AUTO_MVPCON_MORE_ROUND  32768   // console table: more mvp stats, time alive, etc
 AUTO_MVPCON_MORE_GAME   65536
+AUTO_INFCON_ROUND       131072  // console table: infected team stats
+AUTO_INFCON_GAME        262144
 </pre>
 Default: vs: [8325], coop: [1289].
 
