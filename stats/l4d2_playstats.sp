@@ -325,17 +325,33 @@ enum _:strPlayerData
 // information per infected player (during other team's survivor round)
 enum _:strInfData
 {
-            infDmgTotal,
+            infDmgTotal,            //      including on incapped, excluding all tank damage!
             infDmgUpright,          // 1
+            infDmgTank,             //      only upright
+            infDmgTankIncap,        //      only incapped
+            infDmgScratch,          //      only upright
+            infDmgSpit,             //      only upright
+            infDmgBoom,             //      only upright
+            infDmgTankUp,           //      only upright, excluding the tank itself
             infHunterDPs,
             infHunterDPDmg,
-            infJockeyDPs,
-            infDeathCharges,
-            infCommon,
+            infJockeyDPs,           // 10
+            infDeathCharges,        
+            infBooms,               //      boomed survivors
+            infLedged,              //      survivors ledged
+            infCommon,              //      common killed by SI
             infSpawns,
-            infTankPasses
+            infSpawnSmoker,
+            infSpawnBoomer,
+            infSpawnHunter,
+            infSpawnCharger,
+            infSpawnSpitter,        // 20
+            infSpawnJockey,
+            infTankPasses,
+            infTimeStartPresent,    //      time present (on the team)
+            infTimeStopPresent,     //      if stoptime is 0, then it's NOW, ongoing
 };
-#define MAXINFSTATS                 8
+#define MAXINFSTATS                 24
 
 // trie values: weapon type (per accuracy-class)
 enum strWeaponType
@@ -403,6 +419,8 @@ new             g_iPauseStart           = 0;                                    
 new             g_iScores               [2];                                            // scores for both teams, as currently known
 new             g_iOldScores            [2];                                            // scores for both teams, as in previous round
 
+new             g_iBoomedBy             [MAXPLAYERS+1];                                 // if someone is boomed, by whom?
+
 new             g_iPlayerIndexSorted    [MAXSORTS][MAXTRACKED];                         // used to create a sorted list
 new             g_iPlayerSortedUseTeam  [MAXSORTS][MAXTRACKED];                         // after sorting: which team to use as the survivor team for player
 new             g_iPlayerRoundTeam      [3][MAXTRACKED];                                // which team is the player 0 = A, 1 = B, -1 = no team; [2] = current survivor round; [0]/[1] = team A / B (anyone who was ever on it)
@@ -442,7 +460,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.17",
+    version = "0.9.18",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -460,14 +478,16 @@ public Plugin: myinfo =
               just try this without doing some serious testing with it
               first).
         
+        - doesn't show first round mapname for stats/gen rounds
+
+        - infected players list is ginormous
+            the team check is in there.. but why doesn't it work?
+        
+
         build:
         ------
-        - add infected presence time
-            - and alive time, perhaps, per class?
-            - spawns per class?
-
         - skill
-            - clears / instaclears / average clear time?
+            - clears / instaclears [skill detect]
 
         - extend infected skills table
                 dc's, assists, ?
@@ -539,6 +559,10 @@ public OnPluginStart()
     HookEvent("defibrillator_used",         Event_DefibUsed,                EventHookMode_Post);
     HookEvent("pills_used",                 Event_PillsUsed,                EventHookMode_Post);
     HookEvent("adrenaline_used",            Event_AdrenUsed,                EventHookMode_Post);
+    
+    HookEvent("player_now_it",              Event_PlayerBoomed,             EventHookMode_Post);
+    HookEvent("player_no_longer_it",        Event_PlayerUnboomed,             EventHookMode_Post);
+    
     
     
     // cvars
@@ -630,12 +654,19 @@ public OnPluginStart()
                 index = GetPlayerIndexForClient( i );
                 
                 // set start time to now
-                g_strRoundPlayerData[index][0][plyTimeStartPresent] = time;
-                g_strRoundPlayerData[index][0][plyTimeStartAlive] = time;
-                g_strRoundPlayerData[index][0][plyTimeStartUpright] = time;
-                g_strRoundPlayerData[index][1][plyTimeStartPresent] = time;
-                g_strRoundPlayerData[index][1][plyTimeStartAlive] = time;
-                g_strRoundPlayerData[index][1][plyTimeStartUpright] = time;
+                if ( IS_VALID_SURVIVOR(i) )
+                {
+                    g_strRoundPlayerData[index][0][plyTimeStartPresent] = time;
+                    g_strRoundPlayerData[index][0][plyTimeStartAlive] = time;
+                    g_strRoundPlayerData[index][0][plyTimeStartUpright] = time;
+                    g_strRoundPlayerData[index][1][plyTimeStartPresent] = time;
+                    g_strRoundPlayerData[index][1][plyTimeStartAlive] = time;
+                    g_strRoundPlayerData[index][1][plyTimeStartUpright] = time;
+                }
+                else
+                {
+                    g_strRoundPlayerInfData[index][0][infTimeStartPresent] = time;
+                }
             }
         }
         
@@ -890,12 +921,16 @@ stock SetRoundEndTimes()
     }
     
     // player data
-    for ( j = 0; j < MAXTRACKED; j++ )
+    for ( j = 0; j < g_iPlayers; j++ )
     {
         // start-stop times (always pairs)  <, not <=, because per 2!
         for ( i = plyTimeStartPresent; i < MAXPLYSTATS; i += 2 )
         {
             if ( g_strRoundPlayerData[j][g_iCurTeam][i] && !g_strRoundPlayerData[j][g_iCurTeam][i+1] ) { g_strRoundPlayerData[j][g_iCurTeam][i+1] = time; }
+        }
+        for ( i = infTimeStartPresent; i < MAXINFSTATS; i += 2 )
+        {
+            if ( g_strRoundPlayerInfData[j][g_iCurTeam][i] && !g_strRoundPlayerInfData[j][g_iCurTeam][i+1] ) { g_strRoundPlayerInfData[j][g_iCurTeam][i+1] = time; }
         }
     }
 }
@@ -929,7 +964,7 @@ stock HandleRoundAddition()
     }
     
     // player data
-    for ( j = 0; j < MAXTRACKED; j++ )
+    for ( j = 0; j < g_iPlayers; j++ )
     {
         for ( i = 0; i < plyTimeStartPresent; i++ )
         {
@@ -945,6 +980,23 @@ stock HandleRoundAddition()
                 g_strPlayerData[j][i+1] = g_strRoundPlayerData[j][g_iCurTeam][i+1];
             } else {
                 g_strPlayerData[j][i+1] += g_strRoundPlayerData[j][g_iCurTeam][i+1] - g_strRoundPlayerData[j][g_iCurTeam][i];
+            }
+        }
+        
+        // same for infected data
+        for ( i = 0; i < infTimeStartPresent; i++ )
+        {
+            g_strPlayerInfData[j][i] += g_strRoundPlayerInfData[j][g_iCurTeam][i];
+        }
+        for ( i = infTimeStartPresent; i < MAXINFSTATS; i += 2 )
+        {
+            if ( !g_strRoundPlayerInfData[j][g_iCurTeam][i] || !g_strRoundPlayerInfData[j][g_iCurTeam][i+1] ) { continue; }
+            
+            if ( !g_strPlayerInfData[j][i] ) {
+                g_strPlayerInfData[j][i] = g_strRoundPlayerInfData[j][g_iCurTeam][i];
+                g_strPlayerInfData[j][i+1] = g_strRoundPlayerInfData[j][g_iCurTeam][i+1];
+            } else {
+                g_strPlayerInfData[j][i+1] += g_strRoundPlayerInfData[j][g_iCurTeam][i+1] - g_strRoundPlayerInfData[j][g_iCurTeam][i];
             }
         }
     }
@@ -1004,9 +1056,16 @@ stock RoundReallyStarting()
 {
     g_bPlayersLeftStart = true;
     new time = GetTime();
+    new i;
+    
+    // clear any lingering stats
+    for ( i = 1; i <= MaxClients; i++ )
+    {
+        g_iBoomedBy[i] = 0;
+    }
     
     // clear furthest flow
-    for ( new i = 0; i < 4; i++ )
+    for ( i = 0; i < 4; i++ )
     {
         g_fHighestFlow[i] = 0.0;
     }
@@ -1080,19 +1139,28 @@ public OnUnpause()
     // for each player in the current survivor team: substract too
     for ( client = 1; client <= MaxClients; client++ )
     {
-        if ( !IS_VALID_INGAME(client) || !IS_VALID_SURVIVOR(client) ) { continue; }
+        if ( !IS_VALID_INGAME(client) ) { continue; }
         
         index = GetPlayerIndexForClient( client );
         if ( index == -1 ) { continue; }
         
-        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] )  {
-            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] += pauseTime;
+        if ( IS_VALID_SURVIVOR(client) )
+        {
+            if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopPresent] )  {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] += pauseTime;
+            }
+            if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] )  {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += pauseTime;
+            }
+            if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] )  {
+                g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += pauseTime;
+            }
         }
-        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopAlive] )  {
-            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] += pauseTime;
-        }
-        if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] )  {
-            g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] += pauseTime;
+        else if ( IS_VALID_INFECTED(client) )
+        {
+            if ( !g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] )  {
+                g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] += pauseTime;
+            }
         }
     }
     
@@ -1560,6 +1628,7 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
     
     new damage = GetEventInt(event, "dmg_health");
     new attIndex, vicIndex;
+    new type, zClass;
     
     // survivor to infected
     if ( IS_VALID_SURVIVOR(attacker) && IS_VALID_INFECTED(victim) )
@@ -1571,7 +1640,7 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         
         new dmgType = GetEventInt(event, "type");
         new hitgroup = GetEventInt(event, "hitgroup");
-        new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+        zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
         new storeA = -1, storeB = -1, storeC = -1;
         
         new weaponType = WPTYPE_NONE;
@@ -1648,7 +1717,7 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
     {
         // friendly fire
         
-        new type = GetEventInt(event, "type");
+        type = GetEventInt(event, "type");
         if ( damage < 1 ) { return Plugin_Continue; }
         
         attIndex = GetPlayerIndexForClient( attacker );
@@ -1717,21 +1786,66 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
         
     }
     // infected to survivor
-    else if ( IS_VALID_SURVIVOR(victim) && IS_VALID_INFECTED(attacker) )
+    else if ( IS_VALID_SURVIVOR(victim) )
     {
         vicIndex = GetPlayerIndexForClient( victim );
         if ( vicIndex == -1 ) { return Plugin_Continue; }
+        new attackerent = GetEventInt(event, "attackerentid");
         
-        g_strRoundPlayerData[vicIndex][g_iCurTeam][plyDmgTaken] += damage;
-        
-        
-        attIndex = GetPlayerIndexForClient( attacker );
-        if ( attIndex == -1 ) { return Plugin_Continue; }
-        
-        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgTotal]++;
-        if ( !IsPlayerIncapacitatedAtAll(victim) )
+        if ( IS_VALID_INFECTED(attacker) )
         {
-            g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgUpright]++;
+            g_strRoundPlayerData[vicIndex][g_iCurTeam][plyDmgTaken] += damage;
+            
+            type = GetEventInt(event, "type");
+            zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+            
+            attIndex = GetPlayerIndexForClient( attacker );
+            if ( attIndex == -1 ) { return Plugin_Continue; }
+            
+            if ( zClass == ZC_TANK )
+            {
+                if ( !IsPlayerIncapacitatedAtAll(victim) ) {
+                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgTank] += damage;
+                }
+                else {
+                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgTankIncap] += damage;
+                }
+            }
+            else
+            {
+                g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgTotal] += damage;
+                
+                if ( !IsPlayerIncapacitatedAtAll(victim) )
+                {
+                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgUpright] += damage;
+                    
+                    if ( type & DMG_CLUB ) {
+                        // scratches? (always DMG_CLUB)
+                        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                    }
+                    else if ( type & (DMG_RADIATION | DMG_ENERGYBEAM) ) {
+                        // spit (DMG_RADIATION / DMG_ENERGYBEAM ) and sometimes ( DMG_VEHICLE / DMG_FALL ) on top of it
+                        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgSpit] += damage;
+                    }
+                    
+                    if ( g_bTankInGame ) {
+                        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgTankUp] += damage;
+                    }
+                }
+            }
+        }
+        else if ( IsValidEntity(attackerent) )
+        {
+            if ( IsCommon(attackerent) )
+            {
+                if ( !IsPlayerIncapacitatedAtAll(victim) )
+                {
+                    // how much damage did a boomer 'do'
+                    if ( g_iBoomedBy[victim] )  {
+                        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgBoom] += damage;
+                    }
+                }
+            }
         }
     }
     
@@ -1889,8 +2003,11 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
         }
         else if ( IS_VALID_INFECTED(attacker) )
         {
+            index = GetPlayerIndexForClient( attacker );
+            if ( index == -1 ) { return; }
+            
             // infected killed a common
-            g_strRoundPlayerInfData[index][g_iCurTeam][plyCommon]++;
+            g_strRoundPlayerInfData[index][g_iCurTeam][infCommon]++;
         }
     }
 }
@@ -2015,6 +2132,15 @@ public Action: Event_PlayerLedged (Handle:event, const String:name[], bool:dontB
         
         // store time they incapped (if they weren't already)
         if ( !g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] ) { g_strRoundPlayerData[index][g_iCurTeam][plyTimeStopUpright] = GetTime(); }
+        
+        new causer = GetClientOfUserId( GetEventInt(event, "causer") );
+        if ( IS_VALID_INFECTED(causer) )
+        {
+            new attIndex = GetPlayerIndexForClient( causer );
+            if ( attIndex == -1 ) { return; }
+            
+            g_strRoundPlayerInfData[attIndex][g_iCurTeam][infLedged] ++;
+        }
     }
 }
 
@@ -2132,9 +2258,41 @@ public Action: Event_PlayerSpawn (Handle:hEvent, const String:name[], bool:dontB
         new index = GetPlayerIndexForClient( client );
         if ( index == -1 ) { return; }
         g_strRoundPlayerInfData[index][g_iCurTeam][infSpawns]++;
+        
+        switch ( zClass )
+        {
+            case ZC_SMOKER:     { g_strRoundPlayerInfData[index][g_iCurTeam][infSpawnSmoker]++; }
+            case ZC_BOOMER:     { g_strRoundPlayerInfData[index][g_iCurTeam][infSpawnBoomer]++; }
+            case ZC_HUNTER:     { g_strRoundPlayerInfData[index][g_iCurTeam][infSpawnHunter]++; }
+            case ZC_SPITTER:    { g_strRoundPlayerInfData[index][g_iCurTeam][infSpawnSpitter]++; }
+            case ZC_JOCKEY:     { g_strRoundPlayerInfData[index][g_iCurTeam][infSpawnJockey]++; }
+            case ZC_CHARGER:    { g_strRoundPlayerInfData[index][g_iCurTeam][infSpawnCharger]++; }
+        }
     }
 }
 
+
+// boom tracking
+public Action: Event_PlayerBoomed (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new victim = GetClientOfUserId( GetEventInt(event, "userid") );
+    new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
+    
+    if ( IS_VALID_SURVIVOR(victim) && IS_VALID_INFECTED(attacker) )
+    {
+        g_iBoomedBy[victim] = attacker;
+        
+        new attIndex = GetPlayerIndexForClient( attacker );
+        if ( attIndex == -1 ) { return; }
+        
+        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infBooms] ++;
+    }
+}
+public Action: Event_PlayerUnboomed (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new victim = GetClientOfUserId( GetEventInt(event, "userid") );
+    g_iBoomedBy[victim] = 0;
+}
 
 /*
     Skill Detect forwards
@@ -2517,6 +2675,22 @@ stock UpdatePlayerCurrentTeam()
         {
             if ( IS_VALID_INFECTED(client) ) {
                 g_iPlayerRoundTeam[LTEAM_CURRENT][index] = (g_iCurTeam) ? 0 : 1;
+                
+                if ( g_bPlayersLeftStart ) {
+                    if ( index >= FIRST_NON_BOT )
+                    {
+                        g_iPlayerRoundTeam[g_iCurTeam][index] = (g_iCurTeam) ? 0 : 1;
+                        g_iPlayerGameTeam[g_iCurTeam][index] = (g_iCurTeam) ? 0 : 1;
+                        
+                        if ( g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] && g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] ) {
+                            g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] = time - ( g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] - g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] );
+                        } else if ( !g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] ) {
+                            g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] = time;
+                        }
+                        g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] = 0;
+                        if ( g_bPaused ) { g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] -= time - g_iPauseStart; }
+                    }
+                }
             }
             
             // if the player moved here from the other team, stop his presence time
@@ -2616,6 +2790,23 @@ stock SetStartSurvivorTime ( bool:bGame = false, bool:bRestart = false )
                     g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartPresent] = time;
                     g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartAlive] = time;
                     g_strRoundPlayerData[index][g_iCurTeam][plyTimeStartUpright] = time;
+                }
+            }
+        }
+        else if ( IS_VALID_INFECTED(client) )
+        {
+            if ( bGame )
+            {
+                g_strPlayerInfData[index][infTimeStartPresent] = time;
+            }
+            else
+            {
+                if ( bRestart )
+                {
+                    g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] = time - ( g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] - g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] );
+                }
+                else {
+                    g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] = time;
                 }
             }
         }
@@ -3019,7 +3210,7 @@ String: GetMVPChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 )
     
     // find first on the right team, if looking for 1 team and there is no team-specific sorting list
     if ( bTeam && !bRound ) {
-        for ( new i = 0; i < MAXTRACKED; i++ ) {
+        for ( new i = 0; i < g_iPlayers; i++ ) {
             if ( g_iPlayerRoundTeam[team][i] == team ) {
                 mvp_SI = i;
                 mvp_Common = i;
@@ -4125,6 +4316,7 @@ stock BuildConsoleBufferGeneral ( bool:bTeam = true, iTeam = -1 )
         // round header:
         strcopy( strTmpMap, sizeof(strTmpMap), g_sMapName[i] );
         RightPadString( strTmpMap, sizeof(strTmpMap), 15 );
+        if ( strlen(strTmpMap) > 15 ) { Format(strTmpMap, 15, "%s", strTmpMap); }
         Format( strTmp[0], s_len, "%3d. %15s", i + 1, strTmpMap );
         
         // round time
@@ -4153,7 +4345,7 @@ stock BuildConsoleBufferGeneral ( bool:bTeam = true, iTeam = -1 )
         
         // common
         if ( g_strRoundData[i][team][rndCommon] ) {
-            Format( strTmp[3], s_len, "%6d", g_strRoundData[i][team][rndSIKilled] );
+            Format( strTmp[3], s_len, "%6d", g_strRoundData[i][team][rndCommon] );
         } else {
             Format( strTmp[3], s_len, "      " );
         }
@@ -4433,7 +4625,7 @@ stock BuildConsoleBufferInfected ( bool:bRound = false, bool:bTeam = true, iTeam
         // Format the basic stats
         Format( g_sConsoleBuf[g_iConsoleBufChunks],
                 CONBUFSIZELARGE,
-                "%s%s| %20s | %16s | %9s | %9s | %4s | %11s | %10s |",
+                "%s%s| %20s | %13s | %7s | %14s | %6s |",
                 g_sConsoleBuf[g_iConsoleBufChunks],
                 ( bDivider ) ?               "| -------------------- | ------------- | ------- | -------------- | ------ |\n" : "",
                 g_sPlayerNameSafe[i],
@@ -5220,7 +5412,7 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
     new i, j;
     new bool: found, highest, highTeam, pickTeam;
     
-    if ( sortCol < SORT_SI || sortCol > SORT_FF ) { return; }
+    if ( sortCol < SORT_SI || sortCol > MAXSORTS -1 ) { return; }
     
     new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1) : g_iCurTeam );
     
@@ -5420,7 +5612,11 @@ stock GetPlayerWithHighestValue ( property, bool:bRound = true, bool:bTeam = tru
 stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = false, statA = plySIDamage, statB = plyCommon )
 {
     // not on team at all: don't show
-    if ( g_iPlayerRoundTeam[team][index] != team ) { return false; }
+    if ( bReverseTeam ) {
+        if ( g_iPlayerRoundTeam[team][index] != (team) ? 0 : 1 ) { return false; }
+    } else {
+        if ( g_iPlayerRoundTeam[team][index] != team ) { return false; }
+    }
     
     // if on team right now, always show (or was last round?)
     if ( g_bPlayersLeftStart ) {
@@ -5466,13 +5662,22 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
     if ( index < FIRST_NON_BOT ) { return false; }
     
     // been on the team for longer than X seconds? show
+    new presTime = 0;
+    new time = GetTime();
+    
     if ( !bReverseTeam ) {
-        new presTime = 0;
-        new time = GetTime();
         if ( bRound ) {
             presTime = ( (g_strRoundPlayerData[index][team][plyTimeStopPresent]) ? g_strRoundPlayerData[index][team][plyTimeStopPresent] : time ) - g_strRoundPlayerData[index][team][plyTimeStartPresent];
         } else {
             presTime = ( (g_strPlayerData[index][plyTimeStopPresent]) ? g_strPlayerData[index][plyTimeStopPresent] : time ) - g_strPlayerData[index][plyTimeStartPresent];
+        }
+        if ( presTime >= MIN_TEAM_PRESENT_TIME ) { return true; }
+    }
+    else {
+        if ( bRound ) {
+            presTime = ( (g_strRoundPlayerInfData[index][team][infTimeStopPresent]) ? g_strRoundPlayerInfData[index][team][infTimeStopPresent] : time ) - g_strRoundPlayerInfData[index][team][infTimeStartPresent];
+        } else {
+            presTime = ( (g_strPlayerInfData[index][infTimeStopPresent]) ? g_strPlayerInfData[index][infTimeStopPresent] : time ) - g_strPlayerInfData[index][infTimeStartPresent];
         }
         if ( presTime >= MIN_TEAM_PRESENT_TIME ) { return true; }
     }
@@ -5717,10 +5922,16 @@ stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1, bool: bNoDelay =
     new Handle: pack[6];
     
     new bool: bTeam = true;
-    // force for all:
+    
     if ( iTeam == -2 ) {
+        // force for all
         bTeam = false;
         iTeam = -1;
+    }
+    else if ( iTeam == -1 )
+    {
+        // force current team
+        iTeam = g_iCurTeam;
     }
     
     if ( client == -2 )
@@ -6158,7 +6369,20 @@ stock bool: IsWitch ( iEntity )
     }
     return false;
 }
-
+stock bool: IsCommon ( iEntity )
+{
+    if ( iEntity > 0 && IsValidEntity(iEntity) && IsValidEdict(iEntity) )
+    {
+        decl String:strClassName[64];
+        GetEdictClassname(iEntity, strClassName, sizeof(strClassName));
+        new strOEC: entType;
+        
+        if ( !GetTrieValue(g_hTrieEntityCreated, strClassName, entType) ) { return false; }
+        
+        return bool:(entType == OEC_INFECTED);
+    }
+    return false;
+}
 stock bool: IsTankInGame()
 {
     for ( new client = 1; client <= MaxClients; client++ )
@@ -6333,12 +6557,13 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     
+    
     // player data
     FormatEx( strTmpLine, sizeof(strTmpLine), "[Players:%s]:\n", (iTeam == LTEAM_A) ? "A" : "B" );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     new iPlayerCount;
-    for ( j = 0; j < MAXTRACKED; j++ )
+    for ( j = FIRST_NON_BOT; j < g_iPlayers; j++ )
     {
         if ( g_iPlayerRoundTeam[iTeam][j] != iTeam ) { continue; }
         iPlayerCount++;
@@ -6355,12 +6580,13 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     StrCat( sStats, sizeof(sStats), "\n" );
     
     
+    
     // infected player data
     FormatEx( strTmpLine, sizeof(strTmpLine), "[InfectedPlayers:%s]:\n", (iTeam == LTEAM_A) ? "A" : "B" );
     StrCat( sStats, sizeof(sStats), strTmpLine );
     
     iPlayerCount = 0;
-    for ( j = 0; j < MAXTRACKED; j++ )
+    for ( j = FIRST_NON_BOT; j < g_iPlayers; j++ )
     {
         // opposite team!
         if ( g_iPlayerRoundTeam[iTeam][j] != (iTeam) ? 0 : 1 ) { continue; }
@@ -6400,7 +6626,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         StrCat( sStats, sizeof(sStats), strTmpLine );
         
         iPlayerCount = 0;
-        for ( j = FIRST_NON_BOT; j < MAXTRACKED; j++ )
+        for ( j = FIRST_NON_BOT; j < g_iPlayers; j++ )
         {
             if ( !strlen(g_sPlayerId[j]) || !strlen(g_sPlayerName[j]) ) { continue; }
             
