@@ -1834,16 +1834,21 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
                 }
             }
         }
-        else if ( IsValidEntity(attackerent) )
+        else if ( IsValidEntity(attackerent) && IsCommon(attackerent) )
         {
-            if ( IsCommon(attackerent) )
+            if ( !IsPlayerIncapacitatedAtAll(victim) )
             {
-                if ( !IsPlayerIncapacitatedAtAll(victim) )
+                // how much damage did a boomer 'do'
+                if ( g_iBoomedBy[victim] )
                 {
-                    // how much damage did a boomer 'do'
-                    if ( g_iBoomedBy[victim] )  {
-                        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgBoom] += damage;
-                    }
+                    attIndex = GetPlayerIndexForClient( g_iBoomedBy[victim] );
+                    if ( attIndex == -1 ) { return Plugin_Continue; }
+                    
+                    g_strRoundPlayerData[vicIndex][g_iCurTeam][plyDmgTaken] += damage;
+                    
+                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgTotal] += damage;
+                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgUpright] += damage;
+                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgBoom] += damage;
                 }
             }
         }
