@@ -55,7 +55,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.3"
+#define PLUGIN_VERSION "0.9.4"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
