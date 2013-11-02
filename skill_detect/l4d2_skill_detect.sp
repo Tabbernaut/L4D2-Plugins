@@ -302,7 +302,7 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     levels on chipped targets.
     
     
-    To do
+    To Do
     -----
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
@@ -321,7 +321,7 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         - add 'm2'd' to onboomerpop forward (bool)
         - make separate teamskeet forward, with (for now, up to) 4 skeeters + the damage each did
     
-    - added deathcharge assist check
+    - add deathcharge assist check
         - smoker
         - jockey
         - forget about boomer
@@ -352,8 +352,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSkeetHurt =       CreateGlobalForward("OnSkeetHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardSkeetMelee =      CreateGlobalForward("OnSkeetMelee", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSkeetMeleeHurt =  CreateGlobalForward("OnSkeetMeleeHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
-    g_hForwardSkeetSniper =     CreateGlobalForward("OnSkeetSniperHeadshot", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardSkeetSniperHurt = CreateGlobalForward("OnSkeetSniperHeadshotHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
+    g_hForwardSkeetSniper =     CreateGlobalForward("OnSkeetSniper", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardSkeetSniperHurt = CreateGlobalForward("OnSkeetSniperHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardSkeetGL =         CreateGlobalForward("OnSkeetGL", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSIShove =         CreateGlobalForward("OnSpecialShoved", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardHunterDeadstop =  CreateGlobalForward("OnHunterDeadstop", ET_Ignore, Param_Cell, Param_Cell );
@@ -1794,7 +1794,7 @@ stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false, 
         Call_PushCell(victim);
         Call_Finish();
     }
-    if ( bSniper )
+    else if ( bGL )
     {
         Call_StartForward(g_hForwardSkeetGL);
         Call_PushCell(attacker);
