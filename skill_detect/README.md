@@ -21,11 +21,12 @@ Forwards this:
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
  *      OnTongueCut( survivor, victim )
  *      OnSmokerSelfClear( survivor, smoker, withShove )
- *      OnDeathCharge( charger, victim ) [ NOT DONE YET ]
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
  *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
  *      OnJockeyHighPounce( jockey, victim, Float:height )
+ *      OnDeathCharge( charger, victim, Float:height, Float:distance, wasCarried )
+ *      OnDeathChargeAssist( assistant, charger, victim ) [ NOT DONE YET ]
 
 CVars:
 ------
@@ -50,6 +51,8 @@ REP_POP                 2048
 REP_SHOVE               4096
 REP_HUNTERDP            8192           *
 REP_JOCKEYDP            16384          *
+REP_DEATHCHARGE         32768          *
+REP_DC_ASSIST           65536
 </pre>
 ( * = enabled by default )<br />
 
@@ -70,6 +73,9 @@ REP_JOCKEYDP            16384          *
 
 <b>sm_skill_jockeydp_height</b><br />
 [300] The mininum height for a jockey pounce for it to count as a 'high pounce'.<br />
+
+<b>sm_skill_deathcharge_height</b><br />
+[400] The mininum height for a survivor to have been charged down, for it to be reported as a death charge.<br />
 
 <b>sm_skill_hidefakedamage</b><br />
 [0/1], whether hide any damage on witch or level that exceeds the maximum health (this WILL make it harder to get drawcrowns and full levels!)<br />
