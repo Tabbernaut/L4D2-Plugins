@@ -5755,14 +5755,31 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
     // if on team right now, always show (or was last round?)
     if ( g_bPlayersLeftStart ) {
         if ( bReverseTeam ) {
-            if ( team == g_iCurTeam && g_iPlayerRoundTeam[LTEAM_CURRENT][index] == (team) ? 0 : 1 ) { return true; }
+            // no specs, only real infected
+            if (    (   g_strRoundPlayerInfData[index][team][infTimeStartPresent]   ||
+                        g_strRoundPlayerInfData[index][team][infSpawns]             ||
+                        g_strRoundPlayerInfData[index][team][infTankPasses] 
+                    ) &&
+                    team == g_iCurTeam &&
+                    g_iPlayerRoundTeam[LTEAM_CURRENT][index] == (team) ? 0 : 1
+            ) {
+                return true;
+            }
         } else {
             if ( team == g_iCurTeam && g_iPlayerRoundTeam[LTEAM_CURRENT][index] == team ) { return true; }
         }
     } else if ( !bRound ) {
         // if player was never on the team, don't show
         if ( bReverseTeam ) {
-            if ( g_iPlayerGameTeam[team][index] != (team) ? 0 : 1 ) { return false; }
+            // no specs, only real infected
+            if (    !(  g_strPlayerInfData[index][infTimeStartPresent] ||
+                        g_strPlayerInfData[index][infSpawns] ||
+                        g_strPlayerInfData[index][infTankPasses]
+                    ) ||
+                    g_iPlayerGameTeam[team][index] != (team) ? 0 : 1
+            ) {
+                return false;
+            }
         } else {
             if ( g_iPlayerGameTeam[team][index] != team ) { return false; }
         }
@@ -6724,6 +6741,13 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         // opposite team!
         if ( g_iPlayerRoundTeam[iTeam][j] != (iTeam) ? 0 : 1 ) { continue; }
         iPlayerCount++;
+        
+        // leave out players that were actually specs...
+        if (    g_strRoundPlayerInfData[j][iTeam][infTimeStartPresent] == 0 && g_strRoundPlayerInfData[j][iTeam][infTimeStopPresent] == 0 ||
+                g_strRoundPlayerInfData[j][iTeam][infSpawns] == 0 && g_strRoundPlayerInfData[j][iTeam][infTankPasses] == 0
+        ) {
+            continue;
+        }
         
         // player lines, ";"-delimited: <#>;<index>;<steamid>;<plyStat0>;<etc>;\n
         FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%i;%s;", iPlayerCount, j, g_sPlayerId[j] );
