@@ -22,7 +22,7 @@
  *      OnSkeetMeleeHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetSniperHurt( survivor, hunter, damage, isOverkill )
  *      OnHunterDeadstop( survivor, hunter )
- *      OnBoomerPop( survivor, boomer )
+ *      OnBoomerPop( survivor, boomer, shoveCount, Float:timeAlive )
  *      OnChargerLevel( survivor, charger )
  *      OnChargerLevelHurt( survivor, charger, damage )
  *      OnWitchCrown( survivor, damage )
@@ -34,6 +34,7 @@
  *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
  *      OnJockeyHighPounce( jockey, victim, Float:height )
  *      OnDeathCharge( charger, victim, Float: height, Float: distance, wasCarried )
+ *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
  
  *      OnDeathChargeAssist( assister, charger, victim )
  *      OnBHop( player, isInfected, speed, streak )         ?
@@ -55,7 +56,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.4"
+#define PLUGIN_VERSION "0.9.5"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -74,7 +75,6 @@
 #define CHARGE_CHECK_TIME       0.25    // check interval for survivors flying from impacts
 #define CHARGE_END_CHECK        2.5     // after client hits ground after getting impact-charged: when to check whether it was a death
 #define CHARGE_END_RECHECK      3.0     // safeguard wait to recheck on someone getting incapped out of bounds
-
 
 #define MIN_DC_TRIGGER_DMG      300     // minimum amount a 'trigger' / drown must do before counted as a death action
 #define MIN_DC_FALL_DMG         175     // minimum amount of fall damage counts as death-falling for a deathcharge
@@ -98,9 +98,10 @@
 
 #define DMGARRAYEXT     7                       // MAXPLAYERS+# -- extra indices in witch_dmg_array + 1
 
-#define CUT_SHOVED      1                       // .. i think
+#define CUT_SHOVED      1                       // smoker got shoved
+#define CUT_SHOVEDSURV  2                       // survivor got shoved
 #define CUT_KILL        3                       // reason for tongue break (release_type)
-#define CUT_SLASH       4                       // this is used for others shoving a survivor free too, don't trust
+#define CUT_SLASH       4                       // this is used for others shoving a survivor free too, don't trust .. it involves tongue damage?
 
 #define VICFLG_CARRIED          (1 << 0)        // was the one that the charger carried (not impacted)
 #define VICFLG_FALL             (1 << 1)        // flags stored per charge victim, to check for deathchargeroony -- fallen
@@ -129,9 +130,10 @@
 #define REP_JOCKEYDP            (1 << 14)
 #define REP_DEATHCHARGE         (1 << 15)
 #define REP_DC_ASSIST           (1 << 16)
+#define REP_INSTACLEAR          (1 << 17)
 
 #define REP_DEFAULT             "57397"         // (REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP | REP_DEATHCHARGE | REP_DC_ASSIST)
-                                                //  1 4 16 32 8192 16384 32768 65536 (122933 with ASSIST, 57397 without)
+                                                //  1 4 16 32 8192 16384 32768 65536 (122933 with ASSIST, 57397 without); 131072 for instaclears
 
 
 // trie values: weapon type
@@ -176,6 +178,19 @@ enum _:strWitchArray
     WTCH_CROWNTYPE
 };
 
+new const String: g_csSIClassName[][] =
+{
+    "",
+    "smoker",
+    "boomer",
+    "hunter",
+    "spitter",
+    "jockey",
+    "charger",
+    "witch",
+    "tank"
+};
+
 new     bool:           g_bLateLoad                                         = false;
 
 new     Handle:         g_hForwardSkeet                                     = INVALID_HANDLE;
@@ -199,6 +214,7 @@ new     Handle:         g_hForwardRockEaten                                 = IN
 new     Handle:         g_hForwardHunterDP                                  = INVALID_HANDLE;
 new     Handle:         g_hForwardJockeyDP                                  = INVALID_HANDLE;
 new     Handle:         g_hForwardDeathCharge                               = INVALID_HANDLE;
+new     Handle:         g_hForwardClear                                     = INVALID_HANDLE;
 
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
@@ -206,6 +222,11 @@ new     Handle:         g_hTrieEntityCreated                                = IN
 new     Handle:         g_hTrieAbility                                      = INVALID_HANDLE;   // ability check
 new     Handle:         g_hWitchTrie                                        = INVALID_HANDLE;   // witch tracking (Crox)
 new     Handle:         g_hRockTrie                                         = INVALID_HANDLE;   // tank rock tracking
+
+// all SI / pinners
+new     Float:          g_fSpawnTime            [MAXPLAYERS + 1];                               // time the SI spawned up
+new     Float:          g_fPinTime              [MAXPLAYERS + 1][2];                            // time the SI pinned a target: 0 = start of pin (tongue pull, charger carry); 1 = carry end / tongue reigned in
+new                     g_iSpecialVictim        [MAXPLAYERS + 1];                               // current victim (set in traceattack, so we can check on death)
 
 // skeets
 new                     g_iHunterShotDmgTeam    [MAXPLAYERS + 1];                               // counting shotgun blast damage for hunter, counting entire survivor team's damage
@@ -221,7 +242,7 @@ new     bool:           g_bHunterKilledPouncing [MAXPLAYERS + 1];               
 new     Float:          g_fPouncePosition       [MAXPLAYERS + 1][3];                            // position that a hunter (jockey?) pounced from (or charger started his carry)
 
 // deadstops
-new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when was the player shoved last (by attacker)? (to prevent doubles)
+new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when was the player shoved last by attacker? (to prevent doubles)
 
 // levels / charges
 new                     g_iChargerHealth        [MAXPLAYERS + 1];                               // how much health the charger had the last time it was seen taking damage
@@ -233,7 +254,8 @@ new                     g_iVictimFlags          [MAXPLAYERS + 1];               
 new                     g_iVictimMapDmg         [MAXPLAYERS + 1];                               // for a victim, how much the cumulative map damage is so far (trigger hurt / drowning)
 
 // pops
-new                     g_bBoomerHitSomebody    [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
+new     bool:           g_bBoomerHitSomebody    [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
+new                     g_iBoomerGotShoved      [MAXPLAYERS + 1];                               // count boomer was shoved at any point
 
 // crowns
 new     Float:          g_fWitchShotStart       [MAXPLAYERS + 1];                               // when the last shotgun blast from a survivor started (on any witch)
@@ -263,6 +285,7 @@ new     Handle:         g_hCvarHunterDPThresh                               = IN
 new     Handle:         g_hCvarJockeyDPThresh                               = INVALID_HANDLE;   // cvar distance for jockey highpounce
 new     Handle:         g_hCvarHideFakeDamage                               = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
 new     Handle:         g_hCvarDeathChargeHeight                            = INVALID_HANDLE;   // cvar how high a charger must have come in order for a DC to count
+new     Handle:         g_hCvarInstaTime                                    = INVALID_HANDLE;   // cvar clear within this time or lower for instaclear
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
@@ -307,33 +330,34 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
     
-    - reconsider popping conditions.. distance? if it ever got close?
-        after it boomed?
-    
-    - add jockey deadstops (and change forward to reflect type)
-    
     - tongue cut detect: use
-        L4D_OnStartMeleeSwing(client, bool:boolean)
+        L4D_OnStartMeleeSwing(client, bool:boolean) ?
     
     - count rock hits even if they do no damage [epi request]
     
     - sometimes (rarely) witch crowns are not counted/reported?
+        - full crowns on sitting witches
     
     - sir
-        - add 's since spawn' to onboomerpop forward
-        - add 'm2'd' to onboomerpop forward (bool)
         - make separate teamskeet forward, with (for now, up to) 4 skeeters + the damage each did
     
     - add deathcharge assist check
         - smoker
         - jockey
-    
+        
+    - add deathcharge coordinates for some areas
+        - DT4 next to saferoom
+        - DA1 near the lower roof, on sidewalk next to fence (no hurttrigger there)
+        - DA2 next to crane roof to the right of window
+            DA2 charge down into start area, after everyone's jumped the fence
+        
     detect...
+        - ? add jockey deadstops (and change forward to reflect type)
         - ? show meatshots on teammates / report meatshots?
         - ? speedcrown detection?
         - ? bhop (streaks) detection
         - ? spit-on-cap detection
-        - ? insta-clears?
+        
 */
 
 public Plugin:myinfo = 
@@ -359,7 +383,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSkeetGL =         CreateGlobalForward("OnSkeetGL", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSIShove =         CreateGlobalForward("OnSpecialShoved", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardHunterDeadstop =  CreateGlobalForward("OnHunterDeadstop", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardBoomerPop =       CreateGlobalForward("OnBoomerPop", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardBoomerPop =       CreateGlobalForward("OnBoomerPop", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float );
     g_hForwardLevel =           CreateGlobalForward("OnChargerLevel", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardLevelHurt =       CreateGlobalForward("OnChargerLevelHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardCrown =           CreateGlobalForward("OnWitchCrown", ET_Ignore, Param_Cell, Param_Cell );
@@ -371,6 +395,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float );
     g_hForwardJockeyDP =        CreateGlobalForward("OnJockeyHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float );
     g_hForwardDeathCharge =     CreateGlobalForward("OnDeathCharge", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
+    g_hForwardClear =           CreateGlobalForward("OnSpecialClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
+    
     
     g_bLateLoad = late;
     
@@ -398,11 +424,15 @@ public OnPluginStart()
     
     HookEvent("tongue_grab",                Event_TongueGrab,               EventHookMode_Post);
     HookEvent("tongue_pull_stopped",        Event_TonguePullStopped,        EventHookMode_Post);
+    HookEvent("choke_start",                Event_ChokeStart,               EventHookMode_Post);
+    HookEvent("choke_stopped",              Event_ChokeStop,                EventHookMode_Post);
+    
     HookEvent("jockey_ride",                Event_JockeyRide,               EventHookMode_Post);
     
     HookEvent("charger_carry_start",        Event_ChargeCarryStart,         EventHookMode_Post);
     HookEvent("charger_carry_end",          Event_ChargeCarryEnd,           EventHookMode_Post);
     HookEvent("charger_impact",             Event_ChargeImpact,             EventHookMode_Post);
+    HookEvent("charger_pummel_start",       Event_ChargePummelStart,        EventHookMode_Post);
     
     HookEvent("player_incapacitated_start", Event_IncapStart,               EventHookMode_Post);
     
@@ -424,6 +454,7 @@ public OnPluginStart()
     g_hCvarJockeyDPThresh = CreateConVar(   "sm_skill_jockeydp_height",   "300", "How much height distance a jockey must make for his 'DP' to count as a reportable highpounce.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarHideFakeDamage = CreateConVar(   "sm_skill_hidefakedamage",      "0", "If set, any damage done that exceeds the health of a victim is hidden in reports.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarDeathChargeHeight = CreateConVar("sm_skill_deathcharge_height","400", "How much height distance a charger must take its victim for a deathcharge to be reported.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarInstaTime = CreateConVar(        "sm_skill_instaclear_time",     "0.75", "A clear within this time (in seconds) counts as an insta-clear.", FCVAR_PLUGIN, true, 0.0, false );
     
     // cvars: built in
     g_hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
@@ -768,11 +799,16 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
     
     new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
     
+    g_fSpawnTime[client] = GetGameTime();
+    g_fPinTime[client][0] = 0.0;
+    g_fPinTime[client][1] = 0.0;
+    
     switch ( zClass )
     {
         case ZC_BOOMER:
         {
             g_bBoomerHitSomebody[client] = false;
+            g_iBoomerGotShoved[client] = 0;
         }
         case ZC_SMOKER:
         {
@@ -790,12 +826,16 @@ public Action: Event_PlayerSpawn( Handle:event, const String:name[], bool:dontBr
         }
         case ZC_JOCKEY:
         {
+            SDKHook(client, SDKHook_TraceAttack, TraceAttack_Jockey);
+            
             g_fPouncePosition[client][0] = 0.0;
             g_fPouncePosition[client][1] = 0.0;
             g_fPouncePosition[client][2] = 0.0;
         }
         case ZC_CHARGER:
         {
+            SDKHook(client, SDKHook_TraceAttack, TraceAttack_Charger);
+            
             g_iChargerHealth[client] = GetConVarInt(g_hCvarChargerHealth);
         }
     }
@@ -840,8 +880,12 @@ public Action: Event_IncapStart( Handle:event, const String:name[], bool:dontBro
 // trace attacks on hunters
 public Action: TraceAttack_Hunter (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
 {
+    // track pinning
+    g_iSpecialVictim[victim] = GetEntPropEnt(victim, Prop_Send, "m_pounceVictim");
+    
     if ( !IS_VALID_SURVIVOR(attacker) || !IsValidEdict(inflictor) ) { return; }
     
+    // track flight
     if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
     {
         g_fHunterTracePouncing[victim] = GetGameTime();
@@ -850,6 +894,22 @@ public Action: TraceAttack_Hunter (victim, &attacker, &inflictor, &Float:damage,
     {
         g_fHunterTracePouncing[victim] = 0.0;
     }   
+}
+public Action: TraceAttack_Charger (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
+{
+    // track pinning
+    new victimA = GetEntPropEnt(victim, Prop_Send, "m_carryVictim");
+    if ( victimA != -1 ) {
+        g_iSpecialVictim[victim] = victimA;
+    } else {
+        g_iSpecialVictim[victim] = GetEntPropEnt(victim, Prop_Send, "m_pummelVictim");
+    }
+    
+}
+public Action: TraceAttack_Jockey (victim, &attacker, &inflictor, &Float:damage, &damagetype, &ammotype, hitbox, hitgroup)
+{
+    // track pinning
+    g_iSpecialVictim[victim] = GetEntPropEnt(victim, Prop_Send, "m_jockeyVictim");
 }
 
 public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontBroadcast )
@@ -892,6 +952,17 @@ public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontB
                         HandleNonSkeet( attacker, victim, g_iHunterShotDmg[victim][attacker] );
                     }
                 }
+                else {
+                    // check whether it was a clear
+                    if ( g_iSpecialVictim[victim] > 0 )
+                    {
+                        HandleClear( attacker, victim, g_iSpecialVictim[victim],
+                                ZC_HUNTER,
+                                FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                                -1.0
+                            );
+                    }
+                }
                 
                 ResetHunter(victim);
             }
@@ -900,17 +971,29 @@ public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontB
             {
                 if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
                 
-                if ( g_bSmokerClearCheck[victim] )
-                {
-                    if ( g_iSmokerVictim[victim] == attacker && g_iSmokerVictimDamage[victim] >= GetConVarInt(g_hCvarSelfClearThresh) )
-                    {
+                if (    g_bSmokerClearCheck[victim] &&
+                        g_iSmokerVictim[victim] == attacker &&
+                        g_iSmokerVictimDamage[victim] >= GetConVarInt(g_hCvarSelfClearThresh)
+                ) {
                         HandleSmokerSelfClear( attacker, victim );
-                    }
                 }
                 else
                 {
                     g_bSmokerClearCheck[victim] = false;
                     g_iSmokerVictim[victim] = 0;
+                }
+            }
+            
+            case ZC_JOCKEY:
+            {
+                // check whether it was a clear
+                if ( g_iSpecialVictim[victim] > 0 )
+                {
+                    HandleClear( attacker, victim, g_iSpecialVictim[victim],
+                            ZC_JOCKEY,
+                            FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                            -1.0
+                        );
                 }
             }
             
@@ -920,6 +1003,16 @@ public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontB
                 // switch charge victim to 'impact' check (reset checktime)
                 if ( IS_VALID_INGAME(g_iChargeVictim[victim]) ) {
                     g_fChargeTime[ g_iChargeVictim[victim] ] = GetGameTime();
+                }
+                
+                // check whether it was a clear
+                if ( g_iSpecialVictim[victim] > 0 )
+                {
+                    HandleClear( attacker, victim, g_iSpecialVictim[victim],
+                            ZC_CHARGER,
+                            (g_fPinTime[victim][1] > 0.0) ? FloatSub( GetGameTime(), g_fPinTime[victim][1]) : -1.0,
+                            FloatSub( GetGameTime(), g_fPinTime[victim][0])
+                        );
                 }
             }
         }
@@ -953,6 +1046,42 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
     
     if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(victim) ) { return Plugin_Continue; }
     
+    new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+    
+    // track on boomers
+    if ( zClass == ZC_BOOMER )
+    {
+        g_iBoomerGotShoved[victim]++;
+    }
+    else {
+        // check for clears
+        switch ( zClass )
+        {
+            case ZC_HUNTER: {
+                if ( GetEntPropEnt(victim, Prop_Send, "m_pounceVictim") > 0 )
+                {
+                    HandleClear( attacker, victim, GetEntPropEnt(victim, Prop_Send, "m_pounceVictim"),
+                            ZC_HUNTER,
+                            FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                            -1.0,
+                            true
+                        );
+                }
+            }
+            case ZC_JOCKEY: {
+                if ( GetEntPropEnt(victim, Prop_Send, "m_jockeyVictim") > 0 )
+                {
+                    HandleClear( attacker, victim, GetEntPropEnt(victim, Prop_Send, "m_jockeyVictim"),
+                            ZC_JOCKEY,
+                            FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                            -1.0,
+                            true
+                        );
+                }
+            }
+        }
+    }
+    
     if ( g_fVictimLastShove[victim][attacker] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) > SHOVE_TIME )
     {
         if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
@@ -964,7 +1093,6 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
         
         g_fVictimLastShove[victim][attacker] = GetGameTime();
     }
-    
     
     // check for shove on smoker by pull victim
     if ( g_iSmokerVictim[victim] == attacker )
@@ -980,6 +1108,8 @@ public Action: Event_LungePounce( Handle:event, const String:name[], bool:dontBr
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     new victim = GetClientOfUserId( GetEventInt(event, "victim") );
+    
+    g_fPinTime[client][0] = GetGameTime();
     
     // clear hunter-hit stats (not skeeted)
     ResetHunter(client);
@@ -1038,6 +1168,7 @@ public Action: Event_JockeyRide( Handle:event, const String:name[], bool:dontBro
     
     if ( !IS_VALID_INFECTED(client) || !IS_VALID_SURVIVOR(victim) ) { return Plugin_Continue; }
     
+    g_fPinTime[client][0] = GetGameTime();
     
     // minimum distance travelled?
     // ignore if no real pounce start pos
@@ -1100,13 +1231,15 @@ public Action: Event_ChargeCarryStart( Handle:event, const String:name[], bool:d
     if ( !IS_VALID_INFECTED(client) ) { return; }
 
     g_fChargeTime[client] = GetGameTime();
+    g_fPinTime[client][0] = g_fChargeTime[client];
+    g_fPinTime[client][1] = 0.0;
     
     if ( !IS_VALID_SURVIVOR(victim) ) { return; }
     
     g_iChargeVictim[client] = victim;           // store who we're carrying (as long as this is set, it's not considered an impact charge flight)
     g_iVictimCharger[victim] = client;          // store who's charging whom
     g_iVictimFlags[victim] = VICFLG_CARRIED;    // reset flags for checking later - we know only this now
-    g_fChargeTime[victim] = GetGameTime();
+    g_fChargeTime[victim] = g_fChargeTime[client];
     g_iVictimMapDmg[victim] = 0;
     
     GetClientAbsOrigin( victim, g_fChargeVictimPos[victim] );
@@ -1132,10 +1265,22 @@ public Action: Event_ChargeImpact( Handle:event, const String:name[], bool:dontB
     CreateTimer( CHARGE_CHECK_TIME, Timer_ChargeCheck, victim, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
 }
 
+public Action: Event_ChargePummelStart( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    
+    if ( !IS_VALID_INFECTED(client) ) { return; }
+    
+    g_fPinTime[client][1] = GetGameTime();
+}
+
+
 public Action: Event_ChargeCarryEnd( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     if ( client < 1 || client > MaxClients ) { return; }
+    
+    g_fPinTime[client][1] = GetGameTime();
     
     // delay so we can check whether charger died 'mid carry'
     CreateTimer( 0.1, Timer_ChargeCarryEnd, client, TIMER_FLAG_NO_MAPCHANGE );
@@ -1340,7 +1485,7 @@ public Action: Event_BoomerExploded (Handle:event, const String:name[], bool:don
         new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
         if ( IS_VALID_SURVIVOR(attacker) )
         {
-            HandlePop( attacker, client );
+            HandlePop( attacker, client, g_iBoomerGotShoved[client], FloatSub(GetGameTime(), g_fSpawnTime[client]) );
         }
     }
 }
@@ -1591,7 +1736,16 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
     
     if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return Plugin_Continue; }
     
+    // clear check -  if the smoker itself was not shoved, handle the clear
+    HandleClear( attacker, smoker, victim,
+            ZC_SMOKER,
+            (g_fPinTime[smoker][1] > 0.0) ? FloatSub( GetGameTime(), g_fPinTime[smoker][1]) : -1.0,
+            FloatSub( GetGameTime(), g_fPinTime[smoker][0]),
+            bool:( reason != CUT_SLASH && reason != CUT_KILL )
+        );
+    
     //PrintDebug(0, "smoker %i: tongue broke (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
+    //PrintToChatAll("smoker %i: tongue broke (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
     
     if ( attacker != victim ) { return Plugin_Continue; }
     
@@ -1631,9 +1785,39 @@ public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBro
         g_bSmokerShoved[attacker] = false;
         g_iSmokerVictim[attacker] = victim;
         g_iSmokerVictimDamage[attacker] = 0;
+        g_fPinTime[attacker][0] = GetGameTime();
+        g_fPinTime[attacker][1] = 0.0;
     }
     
     return Plugin_Continue;
+}
+
+public Action: Event_ChokeStart (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
+    
+    if ( g_fPinTime[attacker][0] == 0.0 ) { g_fPinTime[attacker][0] = GetGameTime(); }
+    g_fPinTime[attacker][1] = GetGameTime();
+}
+
+public Action: Event_ChokeStop (Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new attacker = GetClientOfUserId( GetEventInt(event, "userid") );
+    new victim = GetClientOfUserId( GetEventInt(event, "victim") );
+    new smoker = GetClientOfUserId( GetEventInt(event, "smoker") );
+    new reason = GetEventInt(event, "release_type");
+    
+    if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(smoker) ) { return; }
+    
+    // if the smoker itself was not shoved, handle the clear
+    HandleClear( attacker, smoker, victim,
+            ZC_SMOKER,
+            (g_fPinTime[smoker][1] > 0.0) ? FloatSub( GetGameTime(), g_fPinTime[smoker][1]) : -1.0,
+            FloatSub( GetGameTime(), g_fPinTime[smoker][0]),
+            bool:( reason != CUT_SLASH && reason != CUT_KILL )
+        );
+    
+    //PrintToChatAll("smoker %i: choke end (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
 }
 
 /*
@@ -1641,7 +1825,7 @@ public Action: Event_TongueGrab (Handle:event, const String:name[], bool:dontBro
     ----------------------
 */
 // boomer pop
-stock HandlePop( attacker, victim )
+stock HandlePop( attacker, victim, shoveCount, Float:timeAlive )
 {
     // report?
     if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_POP )
@@ -1659,6 +1843,8 @@ stock HandlePop( attacker, victim )
     Call_StartForward(g_hForwardBoomerPop);
     Call_PushCell(attacker);
     Call_PushCell(victim);
+    Call_PushCell(shoveCount);
+    Call_PushFloat(timeAlive);
     Call_Finish();
 }
 
@@ -2065,6 +2251,67 @@ stock HandleDeathCharge( attacker, victim, Float:height, Float:distance, bool:bC
     Call_PushFloat(height);
     Call_PushFloat(distance);
     Call_PushCell( (bCarried) ? 1 : 0 );
+    Call_Finish();
+}
+
+// SI clears    (cleartimeA = pummel/pounce/ride/choke, cleartimeB = tongue drag, charger carry)
+stock HandleClear( attacker, victim, pinVictim, zombieClass, Float:clearTimeA, Float:clearTimeB, bool:bWithShove = false )
+{
+    
+    PrintDebug(0, "Clear: %i freed %i from %i: time: %.2f / %.2f -- class: %s (with shove? %i)", attacker, pinVictim, victim, clearTimeA, clearTimeB, g_csSIClassName[zombieClass], bWithShove );
+    
+    if ( attacker != pinVictim && GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_INSTACLEAR )
+    {
+        new Float: fMinTime = GetConVarFloat(g_hCvarInstaTime);
+        new Float: fClearTime = (clearTimeA != -1.0 && clearTimeA < clearTimeB) ? clearTimeA : clearTimeB;
+        
+        if ( fClearTime != -1.0 && fClearTime <= fMinTime )
+        {
+            if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
+            {
+                if ( IS_VALID_INGAME(pinVictim) )
+                {
+                    PrintToChatAll( "\x04%N\x01 insta-cleared \x05%N\x01 from \x04%N\x01 (%s) (%.2f seconds).",
+                            attacker, pinVictim, victim,
+                            g_csSIClassName[zombieClass],
+                            fClearTime
+                        );
+                } else {
+                    PrintToChatAll( "\x04%N\x01 insta-cleared a teammate from \x04%N\x01 (%s) (%.2f seconds).",
+                            attacker, victim,
+                            g_csSIClassName[zombieClass],
+                            fClearTime
+                        );
+                }
+            }
+            else if ( IS_VALID_INGAME(attacker) )
+            {
+                if ( IS_VALID_INGAME(pinVictim) )
+                {
+                    PrintToChatAll( "\x04%N\x01 insta-cleared \x05%N\x01 from a %s (%.2f seconds).",
+                            attacker, pinVictim,
+                            g_csSIClassName[zombieClass],
+                            fClearTime
+                        );
+                } else {
+                    PrintToChatAll( "\x04%N\x01 insta-cleared a teammate from a %s (%.2f seconds).",
+                            attacker,
+                            g_csSIClassName[zombieClass],
+                            fClearTime
+                        );
+                }
+            }
+        }
+    }
+    
+    Call_StartForward(g_hForwardClear);
+    Call_PushCell(attacker);
+    Call_PushCell(victim);
+    Call_PushCell(pinVictim);
+    Call_PushCell(zombieClass);
+    Call_PushFloat(clearTimeA);
+    Call_PushFloat(clearTimeB);
+    Call_PushCell( (bWithShove) ? 1 : 0 );
     Call_Finish();
 }
 
