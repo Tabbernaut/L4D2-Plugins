@@ -314,8 +314,8 @@ enum _:strPlayerData
             plyFFTakenOther,
             plyFFGivenTotal,
             plyFFTakenTotal,
-            plyHunterDPs,           //      these are not used (since they're for the wrong team.. could make it who caught the pounces?)
-            plyJockeyDPs,           // 70
+            plyClears,              //      amount of clears (under a min)
+            plyAvgClearTime,        // 70   average time it takes to clear someone (* 1000 so it doesn't have to be a float)
             plyTimeStartPresent,    //      time present (on the team)
             plyTimeStopPresent,     //      if stoptime is 0, then it's NOW, ongoing
             plyTimeStartAlive,
@@ -463,7 +463,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.20",
+    version = "0.9.21",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -499,7 +499,8 @@ public Plugin: myinfo =
         build:
         ------
         - skill
-            - clears / instaclears [skill detect]        
+            - clears / instaclears  skill_detect: OnSpecialClear()
+            - show average clear time for all survivors
         
     ideas
     -----
@@ -2542,6 +2543,24 @@ public OnDeathCharge ( attacker, victim, Float:height, Float:distance, bool:bCar
     g_strRoundPlayerInfData[index][g_iCurTeam][infDeathCharges]++;
 }
 
+// clears
+public OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, bool:withShove )
+{
+    new Float: fClearTime = (timeA != -1.0 && timeA < timeB) ? timeA : timeB;
+    
+    // ignore any clears that take longer than a minute to clear
+    // also ignore self-clears
+    if ( fClearTime < 0.0 || fClearTime == 0.0 || fClearTime > 60.0 || clearer == pinvictim ) { return; }
+    
+    new index = GetPlayerIndexForClient( clearer );
+    if ( index == -1 ) { return; }
+    
+    g_strRoundPlayerData[index][g_iCurTeam][plyAvgClearTime] = RoundFloat(
+            ( Float:( g_strRoundPlayerData[index][g_iCurTeam][plyAvgClearTime] * g_strRoundPlayerData[index][g_iCurTeam][plyClears] ) + fClearTime * 1000.0 ) /
+            Float:( g_strRoundPlayerData[index][g_iCurTeam][plyClears] + 1 )
+        );
+    g_strRoundPlayerData[index][g_iCurTeam][plyClears]++;
+}
 
 /*
     Stats cleanup
@@ -3721,14 +3740,16 @@ String: GetFunFactChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 
                 maxval = FFACT_MAX_MELEESKEET;
             }
             case FFACT_TYPE_HUNTERDP: {
-                property = plyHunterDPs;
-                minval = FFACT_MIN_HUNTERDP;
-                maxval = FFACT_MAX_HUNTERDP;
+                continue;
+                //property = infHunterDPs;
+                //minval = FFACT_MIN_HUNTERDP;
+                //maxval = FFACT_MAX_HUNTERDP;
             }
             case FFACT_TYPE_JOCKEYDP: {
-                property = plyJockeyDPs;
-                minval = FFACT_MIN_JOCKEYDP;
-                maxval = FFACT_MAX_JOCKEYDP;
+                continue;
+                //property = infJockeyDPs;
+                //minval = FFACT_MIN_JOCKEYDP;
+                //maxval = FFACT_MAX_JOCKEYDP;
             }
             case FFACT_TYPE_M2: {
                 property = plyShoves;
