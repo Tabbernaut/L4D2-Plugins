@@ -195,7 +195,8 @@
 // writing
 #define DIR_OUTPUT              "logs/"
 #define MAX_QUERY_SIZE          8192
-#define FILETABLEFLAGS          33460           // AUTO_ flags for what to print to a file automatically
+#define FILETABLEFLAGS          164532          // AUTO_ flags for what to print to a file automatically
+
 
 // types of statistic table(sets)
 enum _:strStatType
@@ -462,7 +463,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.19",
+    version = "0.9.20",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -479,19 +480,21 @@ public Plugin: myinfo =
               can be unproblematically written to (yes, I was afraid to
               just try this without doing some serious testing with it
               first).
-
-        - infected players list is ginormous
-            the team check is in there.. but why doesn't it work?
-            - still shows more people in the infected team than it should
-                - esp. in written stats (always a few 0;0;0 data lines)
         
-        - charger slams are considered 'scratches', etc
-            - ie. scratch damage is unreliable
-                - fix: check for pins
-                    - jockeys riding, chargers pinning, hunters pinning
-                        - chargers: remember that the bump-impact is also counted as a 'scratch'!
-                - spit, boom = ok, damagetype is different
+        - test 'fun fact'
+        - add to fun fact
+            - infected stuff: 
+                    - scratches on survivors
+                    - dc's
+                    - hp's
+                    
 
+        note:
+        -----
+        Due to the spectator bug, spectators will still be considered to be on
+        the infected team. Stats-parsing should probably be done with this in mind,
+        only keeping empty data rows if the team isn't 'full' already
+        (check teamsize).
         
         build:
         ------
@@ -2755,6 +2758,8 @@ stock UpdatePlayerCurrentTeam()
                 }
             }
             else  {
+                g_iPlayerRoundTeam[LTEAM_CURRENT][index] = -1;
+                
                 // if the player moved here from the other team, stop his presence time
                 if ( !g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] && g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStartPresent] ) {
                     g_strRoundPlayerInfData[index][g_iCurTeam][infTimeStopPresent] = time;

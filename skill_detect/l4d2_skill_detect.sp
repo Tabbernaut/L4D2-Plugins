@@ -309,12 +309,15 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     
     - reconsider popping conditions.. distance? if it ever got close?
         after it boomed?
+    
     - add jockey deadstops (and change forward to reflect type)
     
     - tongue cut detect: use
         L4D_OnStartMeleeSwing(client, bool:boolean)
     
     - count rock hits even if they do no damage [epi request]
+    
+    - sometimes (rarely) witch crowns are not counted/reported?
     
     - sir
         - add 's since spawn' to onboomerpop forward
@@ -324,7 +327,6 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     - add deathcharge assist check
         - smoker
         - jockey
-        - forget about boomer
     
     detect...
         - ? show meatshots on teammates / report meatshots?
