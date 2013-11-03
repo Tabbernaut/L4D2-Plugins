@@ -14,7 +14,7 @@ Forwards this:
  *      OnSkeetMeleeHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetSniperHurt( survivor, hunter, damage, isOverkill )
  *      OnHunterDeadstop( survivor, hunter )
- *      OnBoomerPop( survivor, boomer )
+ *      OnBoomerPop( survivor, boomer, shoveCount, Float:timeAlive )
  *      OnChargerLevel( survivor, charger )
  *      OnChargerLevelHurt( survivor, charger, damage )
  *      OnWitchCrown( survivor, damage )
@@ -27,6 +27,7 @@ Forwards this:
  *      OnJockeyHighPounce( jockey, victim, Float:height )
  *      OnDeathCharge( charger, victim, Float:height, Float:distance, wasCarried )
  *      OnDeathChargeAssist( assistant, charger, victim ) [ NOT DONE YET ]
+ *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
 
 CVars:
 ------
@@ -53,6 +54,7 @@ REP_HUNTERDP            8192           *
 REP_JOCKEYDP            16384          *
 REP_DEATHCHARGE         32768          *
 REP_DC_ASSIST           65536
+REP_INSTACLEAR          131072
 </pre>
 ( * = enabled by default )<br />
 
@@ -76,6 +78,9 @@ REP_DC_ASSIST           65536
 
 <b>sm_skill_deathcharge_height</b><br />
 [400] The mininum height for a survivor to have been charged down, for it to be reported as a death charge.<br />
+
+<b>sm_skill_instaclear_time</b><br />
+[0.75] The maximum amount of time a clear can take to still count as 'insta'.<br />
 
 <b>sm_skill_hidefakedamage</b><br />
 [0/1], whether hide any damage on witch or level that exceeds the maximum health (this WILL make it harder to get drawcrowns and full levels!)<br />
