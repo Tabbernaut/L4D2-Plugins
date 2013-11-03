@@ -499,8 +499,8 @@ public Plugin: myinfo =
         build:
         ------
         - skill
-            - clears / instaclears  skill_detect: OnSpecialClear()
-            - show average clear time for all survivors
+            - clears / instaclears (show in stats)
+            - show average clear time (for all survivors?)
         
     ideas
     -----
@@ -2434,7 +2434,7 @@ public OnSkeetSniperHurt ( attacker, victim, damage )
 }
 
 // pops
-public OnBoomerPop ( attacker, victim )
+public OnBoomerPop ( attacker, victim, shoveCount, Float:timeAlive )
 {
     if ( !g_bPlayersLeftStart ) { return; }
     
