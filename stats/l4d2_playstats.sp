@@ -52,6 +52,8 @@
 #define MAXGAME                 24
 #define MAXWEAPNAME             24
 
+#define STUMBLE_DMG_THRESH      3               // smaller than this is stumble damage (for chargers)
+
 #define STATS_RESET_DELAY       5.0
 #define ROUNDSTART_DELAY        5.5             // this should always be longer than CMT's roundstart scores check, so we know whether there's been a swap! hardcoded 5.0 in there
 #define ROUNDEND_SCORE_DELAY    1.0
@@ -1806,7 +1808,7 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
             g_strRoundPlayerData[vicIndex][g_iCurTeam][plyDmgTaken] += damage;
             
             type = GetEventInt(event, "type");
-            zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+            zClass = GetEntProp(attacker, Prop_Send, "m_zombieClass");
             
             attIndex = GetPlayerIndexForClient( attacker );
             if ( attIndex == -1 ) { return Plugin_Continue; }
@@ -1829,9 +1831,39 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
                     g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgUpright] += damage;
                     
                     if ( type & DMG_CLUB ) {
-                        // scratches? (always DMG_CLUB)
-                        // TO DO (also check for not riding, not impact damage!)
-                        g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                        // scratches? (always DMG_CLUB), but check for rides etc
+                        switch ( zClass )
+                        {
+                            case ZC_CHARGER: {
+                                if (    GetEntPropEnt(attacker, Prop_Send, "m_carryVictim") == -1 &&
+                                        GetEntPropEnt(attacker, Prop_Send, "m_pummelVictim") == -1 &&
+                                        damage >= STUMBLE_DMG_THRESH
+                                ) {
+                                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                                }
+                            }
+                            case ZC_SMOKER: {
+                                if ( GetEntPropEnt(attacker, Prop_Send, "m_tongueVictim") == -1 ) {
+                                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                                }
+                            }
+                            
+                            case ZC_JOCKEY: {
+                                if ( GetEntPropEnt(attacker, Prop_Send, "m_jockeyVictim") == -1 ) {
+                                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                                }
+                            }
+                            
+                            case ZC_HUNTER: {
+                                if ( GetEntPropEnt(attacker, Prop_Send, "m_pounceVictim") == -1 ) {
+                                    g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                                }
+                            }
+                            
+                            default: {
+                                g_strRoundPlayerInfData[attIndex][g_iCurTeam][infDmgScratch] += damage;
+                            }
+                        }
                     }
                     else if ( type & (DMG_RADIATION | DMG_ENERGYBEAM) ) {
                         // spit (DMG_RADIATION / DMG_ENERGYBEAM ) and sometimes ( DMG_VEHICLE / DMG_FALL ) on top of it
