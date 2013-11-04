@@ -56,7 +56,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.5"
+#define PLUGIN_VERSION "0.9.6"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -849,7 +849,7 @@ public Action: Event_IncapStart( Handle:event, const String:name[], bool:dontBro
     // test for deathcharges
     
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
-    new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
+    //new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
     new attackent = GetEventInt(event, "attackerentid");
     new dmgtype = GetEventInt(event, "type");
     
@@ -864,7 +864,7 @@ public Action: Event_IncapStart( Handle:event, const String:name[], bool:dontBro
     
     new Float: flow = GetSurvivorDistance(client);
     
-    PrintDebug( 3, "Incap Pre on [%N]: attk: %i / %i (%s) - dmgtype: %i - flow: %.1f", client, attacker, attackent, classname, dmgtype, flow );
+    //PrintDebug( 3, "Incap Pre on [%N]: attk: %i / %i (%s) - dmgtype: %i - flow: %.1f", client, attacker, attackent, classname, dmgtype, flow );
     
     // drown is damage type
     if ( dmgtype & DMG_DROWN )
@@ -1331,7 +1331,7 @@ public Action: Timer_DeathChargeCheck( Handle:timer, any:client )
     if ( !IS_VALID_INGAME(client) ) { return; }
     
     // check conditions.. if flags match up, it's a DC
-    PrintDebug( 3, "Checking charge victim: %i - %i - flags: %i (alive? %i)", g_iVictimCharger[client], client, g_iVictimFlags[client], IsPlayerAlive(client) );
+    //PrintDebug( 3, "Checking charge victim: %i - %i - flags: %i (alive? %i)", g_iVictimCharger[client], client, g_iVictimFlags[client], IsPlayerAlive(client) );
     
     new flags = g_iVictimFlags[client];
     
@@ -2263,7 +2263,9 @@ stock HandleClear( attacker, victim, pinVictim, zombieClass, Float:clearTimeA, F
     if ( attacker != pinVictim && GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_INSTACLEAR )
     {
         new Float: fMinTime = GetConVarFloat(g_hCvarInstaTime);
-        new Float: fClearTime = (clearTimeA != -1.0 && clearTimeA < clearTimeB) ? clearTimeA : clearTimeB;
+        new Float: fClearTime = clearTimeA;
+        if ( zombieClass == ZC_CHARGER || zombieClass == ZC_SMOKER ) { fClearTime = clearTimeB; }
+        
         
         if ( fClearTime != -1.0 && fClearTime <= fMinTime )
         {
