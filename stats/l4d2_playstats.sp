@@ -463,7 +463,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.21",
+    version = "0.9.22",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -472,7 +472,7 @@ public Plugin: myinfo =
     todo
     ----
 
-        fixes:
+        fix:
         ------
         - the current CMT + forwards for teamswaps solution is kinda bad.
             - would be nicer to fix CMT so the normal gamerules swapped
@@ -488,7 +488,10 @@ public Plugin: myinfo =
                     - dc's
                     - hp's
                     
-
+        
+        - full game stats don't show before round is live
+        - full game stat: shows last round time, instead of full game time
+        
         note:
         -----
         Due to the spectator bug, spectators will still be considered to be on
@@ -2546,9 +2549,10 @@ public OnDeathCharge ( attacker, victim, Float:height, Float:distance, bool:bCar
 // clears
 public OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, bool:withShove )
 {
-    new Float: fClearTime = (timeA != -1.0 && timeA < timeB) ? timeA : timeB;
+    new Float: fClearTime = timeA;
+    if ( zombieClass == ZC_CHARGER || zombieClass == ZC_SMOKER ) { fClearTime = timeB; }
     
-    // ignore any clears that take longer than a minute to clear
+    // ignore any that take longer than a minute to clear
     // also ignore self-clears
     if ( fClearTime < 0.0 || fClearTime == 0.0 || fClearTime > 60.0 || clearer == pinvictim ) { return; }
     
@@ -2593,7 +2597,8 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
         
         // clear rounds
         for ( i = 0; i < MAXROUNDS; i++ ) {
-            g_sMapName[i] = "";
+            // no need to clear mapnames.. they are only shown when relevant anyway
+            //if ( i > 0 ) { g_sMapName[i] = ""; }
             for ( j = 0; j < 2; j++ ) {
                 for ( k = 0; k <= MAXRNDSTATS; k++ ) {
                     g_strRoundData[i][j][k] = 0;
@@ -2616,7 +2621,7 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
             }
             // clear all-game teams
             for ( j = 0; j < 2; j++ ) {
-                g_iPlayerGameTeam[j][j] = -1;
+                g_iPlayerGameTeam[i][j] = -1;
             }
         }
         
@@ -3557,14 +3562,14 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
             pauseTime = GetPauseTime( bRound, bTeam, team );
             
             if ( fullTime )  {
-                FormatTimeAsDuration( strTmp[0], s_len, fullTime, false  );
+                FormatTimeAsDuration( strTmp[0], s_len, fullTime, false );
                 RightPadString( strTmp[0], s_len, 13);
             } else {
                 FormatEx( strTmp[0], s_len, "(not started)");
             }
             
             if ( tankTime )  {
-                FormatTimeAsDuration( strTmp[1], s_len, tankTime, false  );
+                FormatTimeAsDuration( strTmp[1], s_len, tankTime, false );
                 RightPadString( strTmp[1], s_len, 13);
             } else {
                 FormatEx( strTmp[1], s_len, "             ");
@@ -3572,7 +3577,7 @@ stock DisplayStatsMVP( client, bool:bTank = false, bool:bMore = false, bool:bRou
             
             if ( g_bPauseAvailable ) {
                 if ( pauseTime )  {
-                    FormatTimeAsDuration( strTmp[2], s_len, pauseTime, false  );
+                    FormatTimeAsDuration( strTmp[2], s_len, pauseTime, false );
                     RightPadString( strTmp[2], s_len, 13);
                 } else {
                     FormatEx( strTmp[2], s_len, "             ");
@@ -4496,7 +4501,7 @@ stock BuildConsoleBufferGeneral ( bool:bTeam = true, iTeam = -1 )
                 CONBUFSIZELARGE,
                 "%s%s| %20s | %12s | %5s | %6s | %6s | %6s | %4s | %6s | %8s |",
                 g_sConsoleBuf[g_iConsoleBufChunks],
-                ( bDivider ) ? "| -------------------- | ------------ | ----- | ------ | ------ | ------ | ---- | ----- | --------- |\n" : "",
+                ( bDivider ) ? "| -------------------- | ------------ | ----- | ------ | ------ | ------ | ---- | ------ | --------- |\n" : "",
                 strTmp[0], strTmp[1], strTmp[2],
                 strTmp[3], strTmp[4], strTmp[5],
                 strTmp[6], strTmp[7], strTmp[8]
@@ -5753,7 +5758,8 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
     }
     
     // if on team right now, always show (or was last round?)
-    if ( g_bPlayersLeftStart ) {
+    if ( g_bPlayersLeftStart )
+    {
         if ( bReverseTeam ) {
             // no specs, only real infected
             if (    (   g_strRoundPlayerInfData[index][team][infTimeStartPresent]   ||
@@ -5765,25 +5771,38 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
             ) {
                 return true;
             }
-        } else {
+        }
+        else {
             if ( team == g_iCurTeam && g_iPlayerRoundTeam[LTEAM_CURRENT][index] == team ) { return true; }
         }
-    } else if ( !bRound ) {
+    }
+    else if ( !bRound )
+    {
         // if player was never on the team, don't show
         if ( bReverseTeam ) {
             // no specs, only real infected
-            if (    !(  g_strPlayerInfData[index][infTimeStartPresent] ||
-                        g_strPlayerInfData[index][infSpawns] ||
+            if (    !(  g_strPlayerInfData[index][infTimeStartPresent]  ||
+                        g_strPlayerInfData[index][infSpawns]            ||
                         g_strPlayerInfData[index][infTankPasses]
                     ) ||
                     g_iPlayerGameTeam[team][index] != (team) ? 0 : 1
             ) {
                 return false;
             }
-        } else {
-            if ( g_iPlayerGameTeam[team][index] != team ) { return false; }
         }
-    } else {
+        else {
+            if (    !(  g_strPlayerData[index][plyTimeStartPresent]     ||
+                        g_strPlayerData[index][statA]                   ||
+                        g_strPlayerData[index][statB]
+                    ) ||
+                    g_iPlayerGameTeam[team][index] != team
+            ) {
+                return false;
+            }
+        }
+    }
+    else
+    {
         // just allow it if he is currently a survivor
         if ( index >= FIRST_NON_BOT ) {
             if ( !IsIndexSurvivor(index, bReverseTeam) ) {
