@@ -8,8 +8,8 @@ and send global forwards so other plugins can make use of the tracking.
 Forwards this:
  *      OnSkeet( survivor, hunter )
  *      OnSkeetMelee( survivor, hunter )
- *      OnSkeetSniper( survivor, hunter )
  *      OnSkeetGL( survivor, hunter )
+ *      OnSkeetSniper( survivor, hunter )
  *      OnSkeetHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetMeleeHurt( survivor, hunter, damage, isOverkill )
  *      OnSkeetSniperHurt( survivor, hunter, damage, isOverkill )
@@ -19,15 +19,15 @@ Forwards this:
  *      OnChargerLevelHurt( survivor, charger, damage )
  *      OnWitchCrown( survivor, damage )
  *      OnWitchCrownHurt( survivor, damage, chipdamage )
- *      OnTongueCut( survivor, victim )
+ *      OnTongueCut( survivor, smoker )
  *      OnSmokerSelfClear( survivor, smoker, withShove )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
- *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
+ *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height )
  *      OnJockeyHighPounce( jockey, victim, Float:height )
- *      OnDeathCharge( charger, victim, Float:height, Float:distance, wasCarried )
- *      OnDeathChargeAssist( assistant, charger, victim ) [ NOT DONE YET ]
+ *      OnDeathCharge( charger, victim, Float: height, Float: distance, wasCarried )
  *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
+ *      OnBoomerVomitLanded( boomer, amount )
 
 CVars:
 ------
