@@ -31,10 +31,11 @@
  *      OnSmokerSelfClear( survivor, smoker, withShove )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
- *      OnHunterHighPounce( hunter, victim, Float:damage, Float:height )
+ *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height )
  *      OnJockeyHighPounce( jockey, victim, Float:height )
  *      OnDeathCharge( charger, victim, Float: height, Float: distance, wasCarried )
  *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
+ *      OnBoomerVomitLanded( boomer, amount )
  
  *      OnDeathChargeAssist( assister, charger, victim )
  *      OnBHop( player, isInfected, speed, streak )         ?
@@ -56,7 +57,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.6"
+#define PLUGIN_VERSION "0.9.7"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -75,6 +76,7 @@
 #define CHARGE_CHECK_TIME       0.25    // check interval for survivors flying from impacts
 #define CHARGE_END_CHECK        2.5     // after client hits ground after getting impact-charged: when to check whether it was a death
 #define CHARGE_END_RECHECK      3.0     // safeguard wait to recheck on someone getting incapped out of bounds
+#define VOMIT_DURATION_TIME     2.25    // how long the boomer vomit stream lasts -- when to check for boom count
 
 #define MIN_DC_TRIGGER_DMG      300     // minimum amount a 'trigger' / drown must do before counted as a death action
 #define MIN_DC_FALL_DMG         175     // minimum amount of fall damage counts as death-falling for a deathcharge
@@ -215,7 +217,7 @@ new     Handle:         g_hForwardHunterDP                                  = IN
 new     Handle:         g_hForwardJockeyDP                                  = INVALID_HANDLE;
 new     Handle:         g_hForwardDeathCharge                               = INVALID_HANDLE;
 new     Handle:         g_hForwardClear                                     = INVALID_HANDLE;
-
+new     Handle:         g_hForwardVomitLanded                               = INVALID_HANDLE;
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // getting classname of entity created
@@ -228,7 +230,7 @@ new     Float:          g_fSpawnTime            [MAXPLAYERS + 1];               
 new     Float:          g_fPinTime              [MAXPLAYERS + 1][2];                            // time the SI pinned a target: 0 = start of pin (tongue pull, charger carry); 1 = carry end / tongue reigned in
 new                     g_iSpecialVictim        [MAXPLAYERS + 1];                               // current victim (set in traceattack, so we can check on death)
 
-// skeets
+// hunters: skeets/pounces
 new                     g_iHunterShotDmgTeam    [MAXPLAYERS + 1];                               // counting shotgun blast damage for hunter, counting entire survivor team's damage
 new                     g_iHunterShotDmg        [MAXPLAYERS + 1][MAXPLAYERS + 1];               // counting shotgun blast damage for hunter / skeeter combo
 new     Float:          g_fHunterShotStart      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when the last shotgun blast on hunter started (if at any time) by an attacker
@@ -237,9 +239,9 @@ new     Float:          g_fHunterLastShot       [MAXPLAYERS + 1];               
 new                     g_iHunterLastHealth     [MAXPLAYERS + 1];                               // last time hunter took any damage, how much health did it have left?
 new                     g_iHunterOverkill       [MAXPLAYERS + 1];                               // how much more damage a hunter would've taken if it wasn't already dead
 new     bool:           g_bHunterKilledPouncing [MAXPLAYERS + 1];                               // whether the hunter was killed when actually pouncing
-
-// highpounces
+new                     g_iPounceDamage         [MAXPLAYERS + 1];                               // how much damage on last 'highpounce' done
 new     Float:          g_fPouncePosition       [MAXPLAYERS + 1][3];                            // position that a hunter (jockey?) pounced from (or charger started his carry)
+
 
 // deadstops
 new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when was the player shoved last by attacker? (to prevent doubles)
@@ -256,6 +258,7 @@ new                     g_iVictimMapDmg         [MAXPLAYERS + 1];               
 // pops
 new     bool:           g_bBoomerHitSomebody    [MAXPLAYERS + 1];                               // false if boomer didn't puke/exploded on anybody
 new                     g_iBoomerGotShoved      [MAXPLAYERS + 1];                               // count boomer was shoved at any point
+new                     g_iBoomerVomitHits      [MAXPLAYERS + 1];                               // how many booms in one vomit so far
 
 // crowns
 new     Float:          g_fWitchShotStart       [MAXPLAYERS + 1];                               // when the last shotgun blast from a survivor started (on any witch)
@@ -392,11 +395,11 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardRockSkeeted =     CreateGlobalForward("OnTankRockSkeeted", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float );
+    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float );
     g_hForwardJockeyDP =        CreateGlobalForward("OnJockeyHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float );
     g_hForwardDeathCharge =     CreateGlobalForward("OnDeathCharge", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardClear =           CreateGlobalForward("OnSpecialClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
-    
+    g_hForwardVomitLanded =     CreateGlobalForward("OnBoomerVomitLanded", ET_Ignore, Param_Cell, Param_Cell );
     
     g_bLateLoad = late;
     
@@ -539,12 +542,13 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
     new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
     new zClass;
     
+    new damage = GetEventInt(event, "dmg_health");
+    new damagetype = GetEventInt(event, "type");
+    
     if ( IS_VALID_INFECTED(victim) )
     {
         zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
         new health = GetEventInt(event, "health");
-        new damage = GetEventInt(event, "dmg_health");
-        new damagetype = GetEventInt(event, "type");
         new hitgroup = GetEventInt(event, "hitgroup");
         
         if ( damage < 1 ) { return Plugin_Continue; }
@@ -739,6 +743,14 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
         
         switch ( zClass )
         {
+            case ZC_HUNTER:
+            {
+                // a hunter pounce landing is DMG_CRUSH
+                if ( damagetype & DMG_CRUSH ) {
+                    g_iPounceDamage[attacker] = damage;
+                }
+            }
+            
             case ZC_TANK:
             {
                 new String: weapon[10];
@@ -771,19 +783,16 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
     // check for deathcharge flags
     if ( IS_VALID_SURVIVOR(victim) )
     {
-        new damage = GetEventInt(event, "dmg_health");
-        new dmgtype = GetEventInt(event, "type");
-        
         // debug
-        if ( dmgtype & DMG_DROWN || dmgtype & DMG_FALL ) {
+        if ( damagetype & DMG_DROWN || damagetype & DMG_FALL ) {
             g_iVictimMapDmg[victim] += damage;
         }
         
-        if ( dmgtype & DMG_DROWN && damage >= MIN_DC_TRIGGER_DMG )
+        if ( damagetype & DMG_DROWN && damage >= MIN_DC_TRIGGER_DMG )
         {
             g_iVictimFlags[victim] = g_iVictimFlags[victim] | VICFLG_HURTLOTS;
         }
-        else if ( dmgtype & DMG_FALL && damage >= MIN_DC_FALL_DMG )
+        else if ( damagetype & DMG_FALL && damage >= MIN_DC_FALL_DMG )
         {
             g_iVictimFlags[victim] = g_iVictimFlags[victim] | VICFLG_HURTLOTS;
         }
@@ -1139,10 +1148,27 @@ public Action: Event_LungePounce( Handle:event, const String:name[], bool:dontBr
     
     if ( fDamage >= GetConVarFloat(g_hCvarHunterDPThresh) )
     {
-        HandleHunterDP( client, victim, fDamage, fHeight );
+        new Handle: pack = CreateDataPack();
+        WritePackCell( pack, client );
+        WritePackCell( pack, victim );
+        WritePackFloat( pack, fDamage );
+        WritePackFloat( pack, fHeight );
+        CreateTimer( 0.05, Timer_HunterDP, pack );
     }
     
     return Plugin_Continue;
+}
+
+public Action: Timer_HunterDP( Handle:timer, Handle:pack )
+{
+    ResetPack( pack );
+    new client = ReadPackCell( pack );
+    new victim = ReadPackCell( pack );
+    new Float: fDamage = ReadPackFloat( pack );
+    new Float: fHeight = ReadPackFloat( pack );
+    CloseHandle( pack );
+    
+    HandleHunterDP( client, victim, g_iPounceDamage[client], fDamage, fHeight );
 }
 
 public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontBroadcast )
@@ -1472,7 +1498,25 @@ public Action: Event_PlayerBoomed (Handle:event, const String:name[], bool:dontB
     if ( byBoom && IS_VALID_INFECTED(attacker) )
     {
         g_bBoomerHitSomebody[attacker] = true;
+        
+        // check if it was vomit spray
+        new bool: byExplosion = GetEventBool(event, "exploded");
+        if ( !byExplosion )
+        {
+            // count amount of booms
+            if ( !g_iBoomerVomitHits[attacker] ) {
+                // check for boom count later
+                CreateTimer( VOMIT_DURATION_TIME, Timer_BoomVomitCheck, attacker, TIMER_FLAG_NO_MAPCHANGE );
+            }
+            g_iBoomerVomitHits[attacker]++;
+        }
     }
+}
+// check how many booms landed
+public Action: Timer_BoomVomitCheck ( Handle:timer, any:client )
+{
+    HandleVomitLanded( client, g_iBoomerVomitHits[client] );
+    g_iBoomerVomitHits[client] = 0;
 }
 
 // boomers that didn't bile anyone
@@ -2174,25 +2218,26 @@ HandleRockSkeeted( attacker, victim )
 }
 
 // highpounces
-stock HandleHunterDP( attacker, victim, Float:damage, Float:height )
+stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Float:height )
 {
     // report?
     if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_HUNTERDP )
     {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", attacker,  victim, RoundToFloor(damage), RoundFloat(height) );
+            PrintToChatAll( "\x04%N\x01 high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", attacker,  victim, actualDamage, RoundFloat(height) );
         }
         else if ( IS_VALID_INGAME(victim) )
         {
-            PrintToChatAll( "A hunter high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", victim, RoundToFloor(damage), RoundFloat(height) );
+            PrintToChatAll( "A hunter high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", victim, actualDamage, RoundFloat(height) );
         }
     }
     
     Call_StartForward(g_hForwardHunterDP);
     Call_PushCell(attacker);
     Call_PushCell(victim);
-    Call_PushFloat(damage);
+    Call_PushCell(actualDamage);
+    Call_PushFloat(calculatedDamage);
     Call_PushFloat(height);
     Call_Finish();
 }
@@ -2314,6 +2359,15 @@ stock HandleClear( attacker, victim, pinVictim, zombieClass, Float:clearTimeA, F
     Call_PushFloat(clearTimeA);
     Call_PushFloat(clearTimeB);
     Call_PushCell( (bWithShove) ? 1 : 0 );
+    Call_Finish();
+}
+
+// booms
+stock HandleVomitLanded( attacker, boomCount )
+{
+    Call_StartForward(g_hForwardVomitLanded);
+    Call_PushCell(attacker);
+    Call_PushCell(boomCount);
     Call_Finish();
 }
 
