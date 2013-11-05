@@ -2621,7 +2621,7 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
             }
             // clear all-game teams
             for ( j = 0; j < 2; j++ ) {
-                g_iPlayerGameTeam[i][j] = -1;
+                g_iPlayerGameTeam[j][i] = -1;
             }
         }
         
