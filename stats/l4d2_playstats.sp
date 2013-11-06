@@ -475,7 +475,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.22",
+    version = "0.9.23",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -496,12 +496,6 @@ public Plugin: myinfo =
         - full game stats don't show before round is live
         - full game stat: shows last round time, instead of full game time
         
-        note:
-        -----
-        Due to the spectator bug, spectators will still be considered to be on
-        the infected team. Stats-parsing should probably be done with this in mind,
-        only keeping empty data rows if the team isn't 'full' already
-        (check teamsize).
         
         build:
         ------
@@ -2564,8 +2558,8 @@ public OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Flo
     if ( index == -1 ) { return; }
     
     g_strRoundPlayerData[index][g_iCurTeam][plyAvgClearTime] = RoundFloat(
-            ( Float:( g_strRoundPlayerData[index][g_iCurTeam][plyAvgClearTime] * g_strRoundPlayerData[index][g_iCurTeam][plyClears] ) + fClearTime * 1000.0 ) /
-            Float:( g_strRoundPlayerData[index][g_iCurTeam][plyClears] + 1 )
+            ( float( g_strRoundPlayerData[index][g_iCurTeam][plyAvgClearTime] * g_strRoundPlayerData[index][g_iCurTeam][plyClears] ) + fClearTime * 1000.0 ) /
+            float( g_strRoundPlayerData[index][g_iCurTeam][plyClears] + 1 )
         );
     g_strRoundPlayerData[index][g_iCurTeam][plyClears]++;
 }
@@ -4582,7 +4576,7 @@ stock BuildConsoleBufferGeneral ( bool:bTeam = true, iTeam = -1 )
                 CONBUFSIZELARGE,
                 "%s%s| %20s | %12s | %5s | %6s | %6s | %6s | %4s | %6s | %8s |",
                 g_sConsoleBuf[g_iConsoleBufChunks],
-                ( bDivider ) ? "| -------------------- | ------------ | ----- | ------ | ------ | ------ | ---- | ------ | --------- |\n" : "",
+                ( bDivider ) ? "| -------------------- | ------------ | ----- | ------ | ------ | ------ | ---- | ------ | -------- |\n" : "",
                 strTmp[0], strTmp[1], strTmp[2],
                 strTmp[3], strTmp[4], strTmp[5],
                 strTmp[6], strTmp[7], strTmp[8]
@@ -4749,7 +4743,7 @@ stock BuildConsoleBufferInfected ( bool:bRound = false, bool:bTeam = true, iTeam
         if ( !bTeam && bRound ) {
             team = g_iPlayerSortedUseTeam[SORT_INF][i];
         }
-        if ( !TableIncludePlayer(i, team, bRound, true, infDmgUpright, infDmgTotal) ) { continue; }     // reverse lookup this time
+        if ( !TableIncludePlayer(i, team, bRound, true, infDmgTotal, infSpawns) ) { continue; }     // reverse lookup this time
         
         // damage
         if (    bRound && (g_strRoundPlayerInfData[i][team][infDmgTotal]) ||
@@ -5872,9 +5866,9 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
     {
         if ( bReverseTeam ) {
             // no specs, only real infected
-            if (    (   g_strRoundPlayerInfData[index][team][infTimeStartPresent]   ||
-                        g_strRoundPlayerInfData[index][team][infSpawns]             ||
-                        g_strRoundPlayerInfData[index][team][infTankPasses] 
+            if (    (   g_strRoundPlayerInfData[index][team][infTimeStartPresent]   &&
+                        (   g_strRoundPlayerInfData[index][team][infSpawns] ||
+                            g_strRoundPlayerInfData[index][team][infTankPasses] )
                     ) &&
                     team == g_iCurTeam &&
                     g_iPlayerRoundTeam[LTEAM_CURRENT][index] == (team) ? 0 : 1
@@ -5891,9 +5885,9 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
         // if player was never on the team, don't show
         if ( bReverseTeam ) {
             // no specs, only real infected
-            if (    !(  g_strPlayerInfData[index][infTimeStartPresent]  ||
-                        g_strPlayerInfData[index][infSpawns]            ||
-                        g_strPlayerInfData[index][infTankPasses]
+            if (    !(  g_strPlayerInfData[index][infTimeStartPresent]   &&
+                        (   g_strPlayerInfData[index][infSpawns] ||
+                            g_strPlayerInfData[index][infTankPasses] )
                     ) ||
                     g_iPlayerGameTeam[team][index] != (team) ? 0 : 1
             ) {
@@ -6869,7 +6863,6 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     {
         // opposite team!
         if ( g_iPlayerRoundTeam[iTeam][j] != (iTeam) ? 0 : 1 ) { continue; }
-        iPlayerCount++;
         
         // leave out players that were actually specs...
         if (    g_strRoundPlayerInfData[j][iTeam][infTimeStartPresent] == 0 && g_strRoundPlayerInfData[j][iTeam][infTimeStopPresent] == 0 ||
@@ -6877,6 +6870,7 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         ) {
             continue;
         }
+        iPlayerCount++;
         
         // player lines, ";"-delimited: <#>;<index>;<steamid>;<plyStat0>;<etc>;\n
         FormatEx( strTmpLine, sizeof(strTmpLine), "%i;%i;%s;", iPlayerCount, j, g_sPlayerId[j] );
