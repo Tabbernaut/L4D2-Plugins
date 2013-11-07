@@ -475,7 +475,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.23",
+    version = "0.9.24",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -3813,7 +3813,8 @@ String: GetFunFactChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 
             }
         }
         
-        highest = GetPlayerWithHighestValue( property, bRound, bTeam, iTeam, bInf );
+        highest = GetPlayerWithHighestValue( property, bRound, bTeam, team, bInf );
+        if ( highest == -1 ) { continue; }
         
         if ( bInf )
         {
@@ -5789,17 +5790,17 @@ stock SortPlayersMVP ( bool:bRound = true, sortCol = SORT_SI, bool:bTeam = true,
 }
 
 // return the player index for the player with the highest value for a given prop
-stock GetPlayerWithHighestValue ( property, bool:bRound = true, bool:bTeam = true, iTeam = -1, bool:bInfected = false )
+stock GetPlayerWithHighestValue ( property, bool:bRound = true, bool:bTeam = true, team = -1, bool:bInfected = false )
 {
     new i, highest, highTeam, pickTeam;
     
-    new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1) : g_iCurTeam );
+    //new team = ( iTeam != -1 ) ? iTeam : ( ( g_bSecondHalf && !g_bPlayersLeftStart ) ? ( (g_iCurTeam) ? 0 : 1) : g_iCurTeam );
     
     highest = -1;
     
     if ( bInfected )
     {
-        for ( i = 0; i < g_iPlayers; i++ )
+        for ( i = FIRST_NON_BOT; i < g_iPlayers; i++ )
         {
             // if the index is the highest, take it
             if ( bRound ) {
@@ -5825,7 +5826,7 @@ stock GetPlayerWithHighestValue ( property, bool:bRound = true, bool:bTeam = tru
     }
     else
     {
-        for ( i = 0; i < g_iPlayers; i++ )
+        for ( i = FIRST_NON_BOT; i < g_iPlayers; i++ )
         {
             // if the index is the highest, take it
             if ( bRound ) {
@@ -5856,7 +5857,7 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
 {
     // not on team at all: don't show
     if ( bReverseTeam ) {
-        if ( g_iPlayerRoundTeam[team][index] != (team) ? 0 : 1 ) { return false; }
+        if ( g_iPlayerRoundTeam[team][index] != ((team) ? 0 : 1) ) { return false; }
     } else {
         if ( g_iPlayerRoundTeam[team][index] != team ) { return false; }
     }
@@ -5871,7 +5872,8 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
                             g_strRoundPlayerInfData[index][team][infTankPasses] )
                     ) &&
                     team == g_iCurTeam &&
-                    g_iPlayerRoundTeam[LTEAM_CURRENT][index] == (team) ? 0 : 1
+                    g_iPlayerRoundTeam[LTEAM_CURRENT][index] == ((team) ? 0 : 1) &&
+                    index >= FIRST_NON_BOT
             ) {
                 return true;
             }
@@ -5889,7 +5891,8 @@ stock TableIncludePlayer ( index, team, bool:bRound = true, bool:bReverseTeam = 
                         (   g_strPlayerInfData[index][infSpawns] ||
                             g_strPlayerInfData[index][infTankPasses] )
                     ) ||
-                    g_iPlayerGameTeam[team][index] != (team) ? 0 : 1
+                    g_iPlayerGameTeam[team][index] != ((team) ? 0 : 1) ||
+                    index < FIRST_NON_BOT
             ) {
                 return false;
             }
@@ -6303,10 +6306,10 @@ stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1, bool: bNoDelay =
     
     // fun fact
     if ( iFlags & AUTO_FUNFACT_ROUND ) {
-        DisplayStatsFunFactChat( client, true, false );
+        DisplayStatsFunFactChat( client, true, bTeam, iTeam );
     }
     if ( iFlags & AUTO_FUNFACT_GAME ) {
-        DisplayStatsFunFactChat( client, false, false );
+        DisplayStatsFunFactChat( client, false, bTeam, iTeam );
     }
     
     
