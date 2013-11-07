@@ -16,5 +16,6 @@ Plugins:
 <b>vanilla_cvars</b>: allows server admins to set cvars for their vanilla game without it conflicting with confogl configs.<br />
 <b>skill_detect</b>: detecting and global forwards for skeets, levels, crowns, tongue cuts, dp's, etc.<br />
 <b>(play)stats</b>: replacement and vast improvement of survivor_mvp; uses skill_detect.<br />
+<b>teamshuffle</b>: shuffles teams by vote.<br />
 
 <b>holdout_bonus</b>: WIP/idea: replacing part of distance scoring to a duration-based holdout bonus for camping-events.<br />
