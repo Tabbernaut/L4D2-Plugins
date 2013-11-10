@@ -24,7 +24,7 @@
 #define IS_INFECTED_ALIVE(%1)   (IS_VALID_INFECTED(%1) && IsPlayerAlive(%1))
 
 #define TIMEOUT_TIME    5
-#define MAX_PLY         8
+#define MAX_PLY         48
 
 
 // globals
