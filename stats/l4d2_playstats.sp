@@ -475,7 +475,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.24",
+    version = "0.9.25",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -1187,11 +1187,8 @@ public OnUnpause()
 
 public Action: L4D_OnSetCampaignScores ( &scoreA, &scoreB )
 {
-    PrintDebug( 2, "OnSetCampaignScores: A: %i -- B: %i (secondround: %i)", scoreA, scoreB, g_bSecondHalf );
-    
     g_iScores[LTEAM_A] = scoreA;
     g_iScores[LTEAM_B] = scoreB;
-    
     return Plugin_Continue;
 }
 /*
@@ -2519,7 +2516,7 @@ public OnTankRockSkeeted ( attacker, victim )
     g_strRoundPlayerData[index][g_iCurTeam][plyRockSkeets]++;
 }
 // highpounces
-public OnHunterHighPounce ( attacker, victim, Float:damage, Float:height )
+public OnHunterHighPounce ( attacker, victim, actualDamage, Float:damage, Float:height )
 {
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
