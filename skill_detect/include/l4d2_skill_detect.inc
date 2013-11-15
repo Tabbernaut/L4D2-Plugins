@@ -238,6 +238,14 @@ forward OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Fl
  */
 forward OnBoomerVomitLanded( boomer, amount );
 
+/**
+ *  Called whenever a survivor shoves a special infected (any kind).
+ *
+ *  @param  int     survivor      the survivor client that performed the feat
+ *  @param  int     infected      the infected client that underwent it
+ *  @param  int     zombieClass   the class type of the infected shoved
+ */
+forward OnSpecialShoved( survivor, infected, zombieClass );
 
 
 public SharedPlugin:__pl_skilldetect =
