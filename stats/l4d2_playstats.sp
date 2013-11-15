@@ -2348,7 +2348,7 @@ public Action: Event_PlayerUnboomed (Handle:event, const String:name[], bool:don
     ---------------------
 */
 // m2 & deadstop
-public OnSpecialShoved ( attacker, victim )
+public OnSpecialShoved ( attacker, victim, zombieClass )
 {
     if ( !g_bPlayersLeftStart ) { return; }
     
