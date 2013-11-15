@@ -12,44 +12,29 @@
 
     Changelog
     =========
-        0.0.9
+        0.1.0
+            - replaced netprop round tracking with bool. (odd behaviour fix?)
+            
+        0.0.1 - 0.0.9
             - added library registration ('penaltybonus')
-            
-        0.0.8
             - simplified round-end: L4D2_OnEndVersusRound instead of a bunch of hooked events.
-            
-        0.0.7
             - added native to change defib penalty (since it can vary in Random!)
-            
-        0.0.6
             - where possible, neatly divides total bonus through bonuses/penalties,
               to improve end-of-round overview. Only works for single-value bonus/penalty
               setups.
             - fixed double minus signs appearing on reports for negative changes.
-            
-        0.0.5
             - fixed incorrect reporting on round end (twice the 2nd team's score).
             - added enable cvar.
             - avoided messing with bonus unless it's really necessary.
-            
-        0.0.4
             - fixed for config-set custom defib penalty values.
-            
-        0.0.3
             - optional report of changes to bonus as they happen.
             - removed sm_bonus command effects when display mode is off.
             - fixed report error.
-        
-        0.0.2
             - added sm_bonus command to display bonus.
-            
-        0.0.1
             - optional simple tank/witch kill bonus (off by default).
             - optional bonus reporting on round end.
             - allows setting bonus through natives.
             - bonus calculation, taking defib use into account.
-            
-        
 */
 
 
@@ -58,7 +43,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached.",
-    version = "0.0.9",
+    version = "0.1.0",
     url = ""
 }
 
@@ -70,6 +55,7 @@ new     Handle:         g_hCvarReportChange                                 = IN
 new     Handle:         g_hCvarBonusTank                                    = INVALID_HANDLE;
 new     Handle:         g_hCvarBonusWitch                                   = INVALID_HANDLE;
 
+new     bool:           g_bSecondHalf                                       = false;
 new     bool:           g_bFirstMapStartDone                                = false;                // so we can set the config-set defib penalty
 
 new     Handle:         g_hCvarDefibPenalty                                 = INVALID_HANDLE;
@@ -194,7 +180,7 @@ public OnPluginEnd()
 public OnMapStart()
 {
     // save original defib penalty setting
-    if (!g_bFirstMapStartDone)
+    if ( !g_bFirstMapStartDone )
     {
         g_iOriginalPenalty = GetConVarInt(g_hCvarDefibPenalty);
         g_bFirstMapStartDone = true;
@@ -202,10 +188,16 @@ public OnMapStart()
     
     SetConVarInt(g_hCvarDefibPenalty, g_iOriginalPenalty);
     
+    g_bSecondHalf = false;
     g_bRoundOver[0] = false;
     g_bRoundOver[1] = false;
     g_iDefibsUsed[0] = 0;
     g_iDefibsUsed[1] = 0;
+}
+
+public OnMapEnd()
+{
+    g_bSecondHalf = false;
 }
 
 public OnRoundStart()
@@ -220,6 +212,7 @@ public OnRoundStart()
 public OnRoundEnd()
 {
     g_bRoundOver[RoundNum()] = true;
+    g_bSecondHalf = true;
     
     if (GetConVarBool(g_hCvarEnabled) && GetConVarBool(g_hCvarDoDisplay))
     {
@@ -445,7 +438,8 @@ public Event_DefibUsed(Handle:event, const String:name[], bool:dontBroadcast)
 
 RoundNum()
 {
-    return GameRules_GetProp("m_bInSecondHalfOfRound");
+    return ( g_bSecondHalf ) ? 1 : 0;
+    //return GameRules_GetProp("m_bInSecondHalfOfRound");
 }
 
 /*
