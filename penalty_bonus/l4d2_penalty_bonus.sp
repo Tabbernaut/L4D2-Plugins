@@ -12,6 +12,9 @@
 
     Changelog
     =========
+        0.0.9
+            - added library registration ('penaltybonus')
+            
         0.0.8
             - simplified round-end: L4D2_OnEndVersusRound instead of a bunch of hooked events.
             
@@ -55,7 +58,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached.",
-    version = "0.0.8",
+    version = "0.0.9",
     url = ""
 }
 
@@ -92,6 +95,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     CreateNative("PBONUS_AddRoundBonus", Native_AddRoundBonus);
     CreateNative("PBONUS_GetDefibsUsed", Native_GetDefibsUsed);
     CreateNative("PBONUS_SetDefibPenalty", Native_SetDefibPenalty);
+    
+    RegPluginLibrary("penaltybonus");
     
     return APLRes_Success;
 }
@@ -170,9 +175,9 @@ public OnPluginStart()
     g_hCvarBonusWitch = CreateConVar(   "sm_pbonus_witch",          "0",    "Give this much bonus when a witch is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
     
     // hook events
-    HookEvent("defibrillator_used",         Event_DefibUsed,            EventHookMode_PostNoCopy);
-    HookEvent("witch_killed",               Event_WitchKilled,          EventHookMode_PostNoCopy);
-    HookEvent("player_death",               Event_PlayerDeath,          EventHookMode_Post);
+    HookEvent("defibrillator_used",     Event_DefibUsed,            EventHookMode_PostNoCopy);
+    HookEvent("witch_killed",           Event_WitchKilled,          EventHookMode_PostNoCopy);
+    HookEvent("player_death",           Event_PlayerDeath,          EventHookMode_Post);
  
     // Chat cleaning
     AddCommandListener(Command_Say, "say");
