@@ -34,12 +34,12 @@
  *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height )
  *      OnJockeyHighPounce( jockey, victim, Float:height )
  *      OnDeathCharge( charger, victim, Float: height, Float: distance, wasCarried )
+ *      OnSpecialShoved( survivor, infected, zombieClass )
  *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
  *      OnBoomerVomitLanded( boomer, amount )
- 
- *      OnDeathChargeAssist( assister, charger, victim )
- *      OnBHop( player, isInfected, speed, streak )         ?
- 
+ *
+ *      OnDeathChargeAssist( assister, charger, victim )    [ not done yet ]
+ *      OnBHop( player, isInfected, speed, streak )         [ not done yet ]
  *
  *  Where survivor == -2 if it was a team effort, -1 or 0 if unknown or invalid client.
  *  damage is the amount of damage done (that didn't add up to skeeting damage),
@@ -57,7 +57,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.7"
+#define PLUGIN_VERSION "0.9.8"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -311,6 +311,9 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     Does not report people cutting smoker tongues that target players other
     than themselves. Could be done, but would require (too much) tracking.
     
+    Actual damage done, on Hunter DPs, is low when the survivor gets incapped
+    by (a fraction of) the total pounce damage.
+    
     
     Fake Damage
     -----------
@@ -330,20 +333,21 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     
     To Do
     -----
-    - make forwards fire for every potential action,
-        - include the relevant values, so other plugins can decide for themselves what to consider it
-    
-    - tongue cut detect: use
-        L4D_OnStartMeleeSwing(client, bool:boolean) ?
-    
-    - count rock hits even if they do no damage [epi request]
     
     - sometimes (rarely) witch crowns are not counted/reported?
         - full crowns on sitting witches
+        
+    fix:
+        Clear: 8 freed 2 from 7: time: 0.93 / 414.50 -- class: charger (with shove? 0)
+        - how is that 415 seconds?
     
-    - sir
-        - make separate teamskeet forward, with (for now, up to) 4 skeeters + the damage each did
+    - make forwards fire for every potential action,
+        - include the relevant values, so other plugins can decide for themselves what to consider it
     
+    - test chargers getting dislodged with boomer pops?
+    
+    - add car-alarm trigger check survivor/SI-assist
+    - add commonhop check
     - add deathcharge assist check
         - smoker
         - jockey
@@ -353,7 +357,10 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         - DA1 near the lower roof, on sidewalk next to fence (no hurttrigger there)
         - DA2 next to crane roof to the right of window
             DA2 charge down into start area, after everyone's jumped the fence
-        
+            
+    - count rock hits even if they do no damage [epi request]    
+    - sir
+        - make separate teamskeet forward, with (for now, up to) 4 skeeters + the damage each did
     detect...
         - ? add jockey deadstops (and change forward to reflect type)
         - ? show meatshots on teammates / report meatshots?
@@ -384,7 +391,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSkeetSniper =     CreateGlobalForward("OnSkeetSniper", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardSkeetSniperHurt = CreateGlobalForward("OnSkeetSniperHurt", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardSkeetGL =         CreateGlobalForward("OnSkeetGL", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardSIShove =         CreateGlobalForward("OnSpecialShoved", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardSIShove =         CreateGlobalForward("OnSpecialShoved", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardHunterDeadstop =  CreateGlobalForward("OnHunterDeadstop", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardBoomerPop =       CreateGlobalForward("OnBoomerPop", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float );
     g_hForwardLevel =           CreateGlobalForward("OnChargerLevel", ET_Ignore, Param_Cell, Param_Cell );
@@ -1091,14 +1098,14 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
         }
     }
     
-    if ( g_fVictimLastShove[victim][attacker] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) > SHOVE_TIME )
+    if ( g_fVictimLastShove[victim][attacker] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) >= SHOVE_TIME )
     {
         if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
         {
             HandleDeadstop( attacker, victim );
         }
         
-        HandleShove( attacker, victim );
+        HandleShove( attacker, victim, zClass );
         
         g_fVictimLastShove[victim][attacker] = GetGameTime();
     }
@@ -1256,6 +1263,8 @@ public Action: Event_ChargeCarryStart( Handle:event, const String:name[], bool:d
     new victim = GetClientOfUserId( GetEventInt(event, "victim") );
     if ( !IS_VALID_INFECTED(client) ) { return; }
 
+    PrintDebug(0, "Charge carry start: %i - %i -- time: %.2f", client, victim, GetGameTime() );
+    
     g_fChargeTime[client] = GetGameTime();
     g_fPinTime[client][0] = g_fChargeTime[client];
     g_fPinTime[client][1] = 0.0;
@@ -1357,7 +1366,7 @@ public Action: Timer_DeathChargeCheck( Handle:timer, any:client )
     if ( !IS_VALID_INGAME(client) ) { return; }
     
     // check conditions.. if flags match up, it's a DC
-    //PrintDebug( 3, "Checking charge victim: %i - %i - flags: %i (alive? %i)", g_iVictimCharger[client], client, g_iVictimFlags[client], IsPlayerAlive(client) );
+    PrintDebug( 3, "Checking charge victim: %i - %i - flags: %i (alive? %i)", g_iVictimCharger[client], client, g_iVictimFlags[client], IsPlayerAlive(client) );
     
     new flags = g_iVictimFlags[client];
     
@@ -1965,7 +1974,7 @@ stock HandleDeadstop( attacker, victim )
     Call_PushCell(victim);
     Call_Finish();
 }
-stock HandleShove( attacker, victim )
+stock HandleShove( attacker, victim, zombieClass )
 {
     // report?
     if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_SHOVE )
@@ -1983,6 +1992,7 @@ stock HandleShove( attacker, victim )
     Call_StartForward(g_hForwardSIShove);
     Call_PushCell(attacker);
     Call_PushCell(victim);
+    Call_PushCell(zombieClass);
     Call_Finish();
 }
 
