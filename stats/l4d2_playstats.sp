@@ -8,6 +8,7 @@
 #include <clientprefs>
 #undef REQUIRE_PLUGIN
 #include <readyup>
+#include <lgofnoc>
 #define REQUIRE_PLUGIN
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
@@ -394,10 +395,13 @@ enum strOEC
 new     bool:   g_bLateLoad             = false;
 new     bool:   g_bFirstLoadDone        = false;                                        // true after first onMapStart
 new     bool:   g_bLoadSkipDone         = false;                                        // true after skipping the _resetnextmap for stats
+
+new     bool:   g_bLGOAvailable         = false;                                        // whether lgofnoc is loaded
 new     bool:   g_bReadyUpAvailable     = false;
 new     bool:   g_bPauseAvailable       = false;
 new     bool:   g_bSkillDetectLoaded    = false;
-new     bool:   g_bCMTActive            = false;
+
+new     bool:   g_bCMTActive            = false;                                        // whether custom map transitions is running a mapset
 new     bool:   g_bCMTSwapped           = false;                                        // whether A/B teams have been swapped
 
 new     bool:   g_bModeCampaign         = false;
@@ -475,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.25",
+    version = "0.9.26",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -519,21 +523,24 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 // crox readyup usage
 public OnAllPluginsLoaded()
 {
+    g_bLGOAvailable = LibraryExists("lgofnoc");
     g_bReadyUpAvailable = LibraryExists("readyup");
     g_bPauseAvailable = LibraryExists("pause");
     g_bSkillDetectLoaded = LibraryExists("skill_detect");
 }
 public OnLibraryRemoved(const String:name[])
 {
-    if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = false; }
-    if ( StrEqual(name, "pause") ) { g_bPauseAvailable = false; }
-    if ( StrEqual(name, "skill_detect") ) { g_bSkillDetectLoaded = false; }
+    if ( StrEqual(name, "lgofnoc") ) { g_bLGOAvailable = false; }
+    else if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = false; }
+    else if ( StrEqual(name, "pause") ) { g_bPauseAvailable = false; }
+    else if ( StrEqual(name, "skill_detect") ) { g_bSkillDetectLoaded = false; }
 }
 public OnLibraryAdded(const String:name[])
 {
-    if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = true; }
-    if ( StrEqual(name, "pause") ) { g_bPauseAvailable = true; }
-    if ( StrEqual(name, "skill_detect") ) { g_bSkillDetectLoaded = true; }
+    if ( StrEqual(name, "lgofnoc") ) { g_bLGOAvailable = true; }
+    else if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = true; }
+    else if ( StrEqual(name, "pause") ) { g_bPauseAvailable = true; }
+    else if ( StrEqual(name, "skill_detect") ) { g_bSkillDetectLoaded = true; }
 }
 
 
@@ -704,6 +711,15 @@ public OnPluginStart()
     }
 }
 
+/*
+    Forwards from lgofnoc
+    --------------------- */
+public LGO_OnMatchModeStart( const String: sConfig[] )
+{
+    // ignore this map, match will start on next reload.
+    g_bLoadSkipDone = false;
+}
+
 public OnConfigsExecuted()
 {
     g_iTeamSize = GetConVarInt( FindConVar("survivor_limit") );
@@ -762,7 +778,7 @@ public OnMapStart()
     
     CheckGameMode();
     
-    if ( !g_bLoadSkipDone && GetConVarBool(g_hCvarSkipMap) )
+    if ( !g_bLoadSkipDone && ( g_bLGOAvailable || GetConVarBool(g_hCvarSkipMap) ) )
     {
         // reset stats and unset cvar
         PrintDebug( 2, "OnMapStart: Resetting all stats (resetnextmap setting)... " );
@@ -1049,6 +1065,7 @@ stock HandleGameEnd()
     
     // reset all stats
     ResetStats( false, -1 );
+    g_bLoadSkipDone = false;
 }
 public OnRoundIsLive()
 {
