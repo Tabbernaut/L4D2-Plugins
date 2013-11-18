@@ -57,7 +57,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.8"
+#define PLUGIN_VERSION "0.9.9"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -2312,6 +2312,9 @@ stock HandleDeathCharge( attacker, victim, Float:height, Float:distance, bool:bC
 // SI clears    (cleartimeA = pummel/pounce/ride/choke, cleartimeB = tongue drag, charger carry)
 stock HandleClear( attacker, victim, pinVictim, zombieClass, Float:clearTimeA, Float:clearTimeB, bool:bWithShove = false )
 {
+    // sanity check:
+    if ( clearTimeA < 0 && clearTimeA != -1.0 ) { clearTimeA = 0.0; }
+    if ( clearTimeB < 0 && clearTimeB != -1.0 ) { clearTimeB = 0.0; }
     
     PrintDebug(0, "Clear: %i freed %i from %i: time: %.2f / %.2f -- class: %s (with shove? %i)", attacker, pinVictim, victim, clearTimeA, clearTimeB, g_csSIClassName[zombieClass], bWithShove );
     
