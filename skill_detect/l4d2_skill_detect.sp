@@ -38,6 +38,7 @@
  *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
  *      OnBoomerVomitLanded( boomer, amount )
  *      OnBunnyHopStreak( survivor, streak, Float:maxVelocity )
+ *      OnCarAlarmTriggered( survivor, infected, reason )
  *
  *      OnDeathChargeAssist( assister, charger, victim )    [ not done yet ]
  *      OnBHop( player, isInfected, speed, streak )         [ not done yet ]
@@ -58,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.10"
+#define PLUGIN_VERSION "0.9.11"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -81,6 +82,7 @@
 #define CHARGE_END_RECHECK      3.0     // safeguard wait to recheck on someone getting incapped out of bounds
 #define VOMIT_DURATION_TIME     2.25    // how long the boomer vomit stream lasts -- when to check for boom count
 #define ROCK_CHECK_TIME         1.0     // how long to wait after rock entity is destroyed before checking for skeet/eat (high to avoid lag issues)
+#define CARALARM_MIN_TIME       0.11    // maximum time after touch/shot => alarm to connect the two events (test this for LAG)
 
 #define MIN_DC_TRIGGER_DMG      300     // minimum amount a 'trigger' / drown must do before counted as a death action
 #define MIN_DC_FALL_DMG         175     // minimum amount of fall damage counts as death-falling for a deathcharge
@@ -140,9 +142,10 @@
 #define REP_DC_ASSIST           (1 << 16)
 #define REP_INSTACLEAR          (1 << 17)       // 131072
 #define REP_BHOPSTREAK          (1 << 18)       // 262144
+#define REP_CARALARM            (1 << 19)       // 524288
 
-#define REP_DEFAULT             "57397"         // (REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP | REP_DEATHCHARGE | REP_DC_ASSIST)
-                                                //  1 4 16 32 8192 16384 32768 65536 (122933 with ASSIST, 57397 without); 131072 for instaclears
+#define REP_DEFAULT             "581685"        // (REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP | REP_DEATHCHARGE | REP_CARALARM)
+                                                //  1 4 16 32 8192 16384 32768 65536 (122933 with ASSIST, 57397 without); 131072 for instaclears + 524288 for car alarm
 
 
 // trie values: weapon type
@@ -158,7 +161,9 @@ enum strOEC
 {
     OEC_WITCH,
     OEC_TANKROCK,
-    OEC_TRIGGER
+    OEC_TRIGGER,
+    OEC_CARALARM,
+    OEC_CARGLASS
 };
 
 // trie values: special abilities
@@ -185,6 +190,14 @@ enum _:strWitchArray
     WTCH_CROWNER,
     WTCH_CROWNSHOT,
     WTCH_CROWNTYPE
+};
+
+enum _:enAlarmReasons
+{
+    CALARM_UNKNOWN,
+    CALARM_SHOT,
+    CALARM_TOUCHED,
+    CALARM_BOOMER
 };
 
 new const String: g_csSIClassName[][] =
@@ -226,12 +239,14 @@ new     Handle:         g_hForwardDeathCharge                               = IN
 new     Handle:         g_hForwardClear                                     = INVALID_HANDLE;
 new     Handle:         g_hForwardVomitLanded                               = INVALID_HANDLE;
 new     Handle:         g_hForwardBHopStreak                                = INVALID_HANDLE;
+new     Handle:         g_hForwardAlarmTriggered                            = INVALID_HANDLE;
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // getting classname of entity created
 new     Handle:         g_hTrieAbility                                      = INVALID_HANDLE;   // ability check
 new     Handle:         g_hWitchTrie                                        = INVALID_HANDLE;   // witch tracking (Crox)
 new     Handle:         g_hRockTrie                                         = INVALID_HANDLE;   // tank rock tracking
+new     Handle:         g_hCarTrie                                          = INVALID_HANDLE;   // car alarm tracking
 
 // all SI / pinners
 new     Float:          g_fSpawnTime            [MAXPLAYERS + 1];                               // time the SI spawned up
@@ -288,6 +303,10 @@ new     bool:           g_bHopCheck             [MAXPLAYERS + 1];               
 new                     g_iHops                 [MAXPLAYERS + 1];                               // amount of hops in streak
 new     Float:          g_fLastHop              [MAXPLAYERS + 1][3];                            // velocity vector of last jump
 new     Float:          g_fHopTopVelocity       [MAXPLAYERS + 1];                               // maximum velocity in hopping streak
+
+// alarms
+new     Float:          g_fLastCarAlarm                                     = 0.0;              // time when last car alarm went off
+new                     g_iLastCarAlarmReason   [MAXPLAYERS + 1];                               // what this survivor did to set the last alarm off
 
 // cvars
 new     Handle:         g_hCvarReport                                       = INVALID_HANDLE;   // cvar whether to report at all
@@ -381,10 +400,6 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         - ? add jockey deadstops (and change forward to reflect type)
         - ? show meatshots on teammates / report meatshots?
         - ? speedcrown detection?
-        - ? bhop (streaks) detection
-            - cvar starting minimal speed
-            - speed change threshold (default: any)
-            
         - ? spit-on-cap detection
         
 */
@@ -427,7 +442,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardClear =           CreateGlobalForward("OnSpecialClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardVomitLanded =     CreateGlobalForward("OnBoomerVomitLanded", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardBHopStreak =      CreateGlobalForward("OnBunnyHopStreak", ET_Ignore, Param_Cell, Param_Cell, Param_Float );
-    
+    g_hForwardAlarmTriggered =  CreateGlobalForward("OnCarAlarmTriggered", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_bLateLoad = late;
     
     return APLRes_Success;
@@ -436,6 +451,10 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 public OnPluginStart()
 {
     // hooks
+    HookEvent("round_start",                Event_RoundStart,               EventHookMode_PostNoCopy);
+    HookEvent("scavenge_round_start",       Event_RoundStart,               EventHookMode_PostNoCopy);
+    HookEvent("round_end",                  Event_RoundEnd,                 EventHookMode_PostNoCopy);
+    
     HookEvent("player_spawn",               Event_PlayerSpawn,              EventHookMode_Post);
     HookEvent("player_hurt",                Event_PlayerHurt,               EventHookMode_Pre);
     HookEvent("player_death",               Event_PlayerDeath,              EventHookMode_Pre);
@@ -457,15 +476,14 @@ public OnPluginStart()
     HookEvent("tongue_pull_stopped",        Event_TonguePullStopped,        EventHookMode_Post);
     HookEvent("choke_start",                Event_ChokeStart,               EventHookMode_Post);
     HookEvent("choke_stopped",              Event_ChokeStop,                EventHookMode_Post);
-    
     HookEvent("jockey_ride",                Event_JockeyRide,               EventHookMode_Post);
-    
     HookEvent("charger_carry_start",        Event_ChargeCarryStart,         EventHookMode_Post);
     HookEvent("charger_carry_end",          Event_ChargeCarryEnd,           EventHookMode_Post);
     HookEvent("charger_impact",             Event_ChargeImpact,             EventHookMode_Post);
     HookEvent("charger_pummel_start",       Event_ChargePummelStart,        EventHookMode_Post);
     
     HookEvent("player_incapacitated_start", Event_IncapStart,               EventHookMode_Post);
+    HookEvent("triggered_car_alarm",        Event_CarAlarmGoesOff,          EventHookMode_Post);
     
     
     // version cvar
@@ -518,15 +536,16 @@ public OnPluginStart()
     SetTrieValue(g_hTrieEntityCreated, "tank_rock",             OEC_TANKROCK);
     SetTrieValue(g_hTrieEntityCreated, "witch",                 OEC_WITCH);
     SetTrieValue(g_hTrieEntityCreated, "trigger_hurt",          OEC_TRIGGER);
-    
+    SetTrieValue(g_hTrieEntityCreated, "prop_car_alarm",        OEC_CARALARM);
+    SetTrieValue(g_hTrieEntityCreated, "prop_car_glass",        OEC_CARGLASS);
     
     g_hTrieAbility = CreateTrie();
     SetTrieValue(g_hTrieAbility, "ability_lunge",               ABL_HUNTERLUNGE);
     SetTrieValue(g_hTrieAbility, "ability_throw",               ABL_ROCKTHROW);
     
-    
     g_hWitchTrie = CreateTrie();
     g_hRockTrie = CreateTrie();
+    g_hCarTrie = CreateTrie();
     
     if ( g_bLateLoad )
     {
@@ -570,6 +589,12 @@ public Action: Event_RoundStart( Handle:event, const String:name[], bool:dontBro
     {
         g_bIsHopping[i] = false;
     }
+}
+
+public Action: Event_RoundEnd( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    // clean trie, new cars will be created
+    ClearTrie(g_hCarTrie);
 }
 
 public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
@@ -1228,9 +1253,6 @@ public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontB
         GetEntPropVector(client, Prop_Data, "m_vecVelocity", fVel ); 
         fVel[2] = 0.0; // safeguard
         
-        //PrintToChatAll("jump %i: loc: %.f,%.f,%.f - vel: %.f,%.f,%.f", client, fPos[0],fPos[1],fPos[2], fVel[0],fVel[1],fVel[2]);
-        
-        //GetVectorDistance(g_fLastHop[client], fVel)
         new Float: fLengthNew, Float: fLengthOld;
         fLengthNew = GetVectorLength(fVel);
         
@@ -1263,7 +1285,7 @@ public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontB
                     g_fHopTopVelocity[client] = fLengthNew;
                 }
                 
-                PrintToChat( client, "bunnyhop %i: speed: %.1f / increase: %.1f", g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
+                //PrintToChat( client, "bunnyhop %i: speed: %.1f / increase: %.1f", g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
                 //PrintDebug( 0, "%N: bunnyhop %i: speed: %.1f / increase: %.1f", client, g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
             }
             else
@@ -1276,9 +1298,6 @@ public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontB
                     g_iHops[client] = 0;
                 }
             }
-            
-            //PrintToChatAll( "jump %i: hops: %i -- vel length: %.1f (prev %.1f) / change: %.1f", client, g_iHops[client], fLengthNew, fLengthOld, fLengthNew - fLengthOld );
-            
         }
         
         g_fLastHop[client][0] = fVel[0];
@@ -1487,13 +1506,13 @@ public Action: Event_ChargeCarryEnd( Handle:event, const String:name[], bool:don
     CreateTimer( 0.1, Timer_ChargeCarryEnd, client, TIMER_FLAG_NO_MAPCHANGE );
 }
 
-public Action: Timer_ChargeCarryEnd ( Handle:timer, any:client )
+public Action: Timer_ChargeCarryEnd( Handle:timer, any:client )
 {
     // set charge time to 0 to avoid deathcharge timer continuing
     g_iChargeVictim[client] = 0;        // unset this so the repeated timer knows to stop for an ongroundcheck
 }
 
-public Action: Timer_ChargeCheck ( Handle:timer, any:client )
+public Action: Timer_ChargeCheck( Handle:timer, any:client )
 {
     // if something went wrong with the survivor or it was too long ago, forget about it
     if ( !IS_VALID_SURVIVOR(client) || !g_iVictimCharger[client] || g_fChargeTime[client] == 0.0 || FloatSub( GetGameTime(), g_fChargeTime[client]) > MAX_CHARGE_TIME )
@@ -1619,6 +1638,73 @@ public OnEntityCreated ( entity, const String:classname[] )
             
             SDKHook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
             SDKHook(entity, SDKHook_Touch, OnTouch_Rock);
+        }
+        
+        
+        case OEC_CARALARM:
+        {
+            decl String:car_key[10];
+            FormatEx(car_key, sizeof(car_key), "%x", entity);
+            
+            SDKHook(entity, SDKHook_OnTakeDamage, OnTakeDamage_Car);
+            SDKHook(entity, SDKHook_Touch, OnTouch_Car);
+            
+            CreateTimer( 0.01, Timer_CarAlarmCreated, entity, TIMER_FLAG_NO_MAPCHANGE );
+        }
+        
+        case OEC_CARGLASS:
+        {
+            SDKHook(entity, SDKHook_OnTakeDamage, OnTakeDamage_CarGlass);
+            SDKHook(entity, SDKHook_Touch, OnTouch_CarGlass);
+            
+            //SetTrieValue(g_hCarTrie, car_key, );
+            CreateTimer( 0.02, Timer_CarAlarmGlassCreated, entity, TIMER_FLAG_NO_MAPCHANGE );
+        }
+    }
+}
+
+public Action: Timer_CarAlarmCreated (Handle:timer, any:entity)
+{
+    decl String:car_key[10];
+    FormatEx(car_key, sizeof(car_key), "%x", entity);
+    
+    decl String:target[48];
+    GetEntPropString(entity, Prop_Data, "m_iName", target, sizeof(target));
+    
+    SetTrieValue( g_hCarTrie, target, entity );
+    SetTrieValue( g_hCarTrie, car_key, 0 );         // who shot the car?
+}
+
+public Action: Timer_CarAlarmGlassCreated (Handle:timer, any:entity)
+{
+    // glass is parented to a car, link the two through the trie
+    // find parent and save both
+    decl String:car_key[10];
+    FormatEx(car_key, sizeof(car_key), "%x", entity);
+    
+    decl String:parent[48];
+    GetEntPropString(entity, Prop_Data, "m_iParent", parent, sizeof(parent));
+    new parentEntity;
+    
+    // find targetname in trie
+    if ( GetTrieValue(g_hCarTrie, parent, parentEntity ) )
+    {
+        // if valid entity, save the parent entity
+        if ( IsValidEntity(parentEntity) )
+        {
+            SetTrieValue( g_hCarTrie, car_key, parentEntity );
+            
+            decl String:car_key_p[10];
+            FormatEx(car_key_p, sizeof(car_key_p), "%x_A", parentEntity);
+            new testEntity;
+            
+            if ( GetTrieValue(g_hCarTrie, car_key_p, testEntity) )
+            {
+                // second glass
+                FormatEx(car_key_p, sizeof(car_key_p), "%x_B", parentEntity);
+            }
+            
+            SetTrieValue( g_hCarTrie, car_key_p, entity );
         }
     }
 }
@@ -1761,7 +1847,7 @@ public Action: Event_WitchHarasserSet ( Handle:event, const String:name[], bool:
     }
 }
 
-public Action:OnTakeDamageByWitch ( victim, &attacker, &inflictor, &Float:damage, &damagetype )
+public Action: OnTakeDamageByWitch ( victim, &attacker, &inflictor, &Float:damage, &damagetype )
 {
     // if a survivor is hit by a witch, note it in the witch damage array (maxplayers+2 = 1)
     if ( IS_VALID_SURVIVOR(victim) && damage > 0.0 )
@@ -2047,6 +2133,164 @@ public Action: Event_ChokeStop (Handle:event, const String:name[], bool:dontBroa
         );
     
     //PrintToChatAll("smoker %i: choke end (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
+}
+
+// car alarm handling
+public Action: Event_CarAlarmGoesOff( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    g_fLastCarAlarm = GetGameTime();
+}
+
+public Action: OnTakeDamage_Car ( victim, &attacker, &inflictor, &Float:damage, &damagetype )
+{
+    new zClass = 0;
+    
+    if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
+    
+    /*
+    // check for either: boomer pop or survivor
+    
+    if ( IS_VALID_INFECTED(attacker) )
+    {
+        zClass = GetEntProp(attacker, Prop_Send, "m_zombieClass");
+    }
+    if ( !IS_VALID_SURVIVOR(attacker) && zClass != ZC_BOOMER ) { return Plugin_Continue; }
+    */
+    
+    CreateTimer( 0.01, Timer_CheckAlarm, victim, TIMER_FLAG_NO_MAPCHANGE );
+    
+    decl String:car_key[10];
+    FormatEx(car_key, sizeof(car_key), "%x", victim);
+    SetTrieValue(g_hCarTrie, car_key, attacker);
+    
+    if ( zClass )
+    {
+        // boomer popped / scratched?
+        //PrintToChatAll("damage to car: %.f  type %i", damage, damagetype );
+    }
+    else
+    {
+        // survivor
+        if ( damage == 0.0 ) {
+            g_iLastCarAlarmReason[attacker] = CALARM_TOUCHED;
+        }
+        else {
+            g_iLastCarAlarmReason[attacker] = CALARM_SHOT;
+        }
+    }
+    
+    return Plugin_Continue;
+}
+
+public OnTouch_Car ( entity, client )
+{
+    if ( !IS_VALID_SURVIVOR(client) ) { return; }
+    
+    CreateTimer( 0.01, Timer_CheckAlarm, entity, TIMER_FLAG_NO_MAPCHANGE );
+    
+    decl String:car_key[10];
+    FormatEx(car_key, sizeof(car_key), "%x", entity);
+    SetTrieValue(g_hCarTrie, car_key, client);
+    
+    g_iLastCarAlarmReason[client] = CALARM_TOUCHED;
+    
+    return;
+}
+
+public Action: OnTakeDamage_CarGlass ( victim, &attacker, &inflictor, &Float:damage, &damagetype )
+{
+    // check for either: boomer pop or survivor
+    if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
+    
+    
+    decl String:car_key[10];
+    FormatEx(car_key, sizeof(car_key), "%x", victim);
+    new parentEntity;
+    
+    if ( GetTrieValue(g_hCarTrie, car_key, parentEntity) )
+    {
+        //PrintToChatAll("car alarm damage (glass): parent: %i", parentEntity);
+        CreateTimer( 0.01, Timer_CheckAlarm, parentEntity, TIMER_FLAG_NO_MAPCHANGE );
+        
+        FormatEx(car_key, sizeof(car_key), "%x", parentEntity);
+        SetTrieValue(g_hCarTrie, car_key, attacker);
+        
+        if ( damage == 0.0 ) {
+            g_iLastCarAlarmReason[attacker] = CALARM_TOUCHED;
+        }
+        else {
+            g_iLastCarAlarmReason[attacker] = CALARM_SHOT;
+        }
+    }
+    
+    return Plugin_Continue;
+}
+
+public OnTouch_CarGlass ( entity, client )
+{
+    if ( !IS_VALID_SURVIVOR(client) ) { return; }
+    
+    decl String:car_key[10];
+    FormatEx(car_key, sizeof(car_key), "%x", entity);
+    new parentEntity;
+    
+    if ( GetTrieValue(g_hCarTrie, car_key, parentEntity) )
+    {
+        //PrintToChatAll("car alarm touch (glass): %i / parent: %i", entity, parentEntity);
+        CreateTimer( 0.01, Timer_CheckAlarm, parentEntity, TIMER_FLAG_NO_MAPCHANGE );
+        
+        FormatEx(car_key, sizeof(car_key), "%x", parentEntity);
+        SetTrieValue(g_hCarTrie, car_key, client);
+        
+        g_iLastCarAlarmReason[client] = CALARM_TOUCHED;
+    }
+    
+    return;
+}
+
+public Action: Timer_CheckAlarm (Handle:timer, any:entity)
+{
+    //PrintToChatAll( "checking alarm: time: %.3f", GetGameTime() - g_fLastCarAlarm );
+    
+    if ( FloatSub(GetGameTime(), g_fLastCarAlarm) < CARALARM_MIN_TIME )
+    {
+        // got a match, drop stuff from trie and handle triggering
+        decl String:car_key[10];
+        new testEntity;
+        new survivor = -1;
+        
+        // remove car glass
+        FormatEx(car_key, sizeof(car_key), "%x_A", entity);
+        if ( GetTrieValue(g_hCarTrie, car_key, testEntity) )
+        {
+            RemoveFromTrie(g_hCarTrie, car_key);
+            SDKUnhook(testEntity, SDKHook_OnTakeDamage, OnTakeDamage_CarGlass);
+            SDKUnhook(testEntity, SDKHook_Touch, OnTouch_CarGlass);
+        }
+        FormatEx(car_key, sizeof(car_key), "%x_B", entity);
+        if ( GetTrieValue(g_hCarTrie, car_key, testEntity) )
+        {
+            RemoveFromTrie(g_hCarTrie, car_key);
+            SDKUnhook(testEntity, SDKHook_OnTakeDamage, OnTakeDamage_CarGlass);
+            SDKUnhook(testEntity, SDKHook_Touch, OnTouch_CarGlass);
+        }
+        
+        // remove car
+        FormatEx(car_key, sizeof(car_key), "%x", entity);
+        if ( GetTrieValue(g_hCarTrie, car_key, survivor) )
+        {
+            RemoveFromTrie(g_hCarTrie, car_key);
+            SDKUnhook(entity, SDKHook_OnTakeDamage, OnTakeDamage_Car);
+            SDKUnhook(entity, SDKHook_Touch, OnTouch_Car);
+        }
+        
+        // TO DO: add infected assistant check, add reason (if known)
+        HandleCarAlarmTriggered(
+                survivor,
+                0,
+                (IS_VALID_INGAME(survivor)) ? g_iLastCarAlarmReason[survivor] : CALARM_UNKNOWN
+            );
+    }
 }
 
 /*
@@ -2560,6 +2804,7 @@ stock HandleVomitLanded( attacker, boomCount )
     Call_Finish();
 }
 
+// bhaps
 stock HandleBHopStreak( survivor, streak, Float: maxVelocity )
 {
     if (    GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_BHOPSTREAK &&
@@ -2580,6 +2825,31 @@ stock HandleBHopStreak( survivor, streak, Float: maxVelocity )
     Call_PushFloat(maxVelocity);
     Call_Finish();
 }
+// car alarms
+stock HandleCarAlarmTriggered( survivor, infected, reason )
+{
+    /*
+        TO DO:
+        reason can be:
+            0 (unknown)
+            1 shot
+            2 touched
+            3 popped a boomer next to it
+    */
+    
+    if (    GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_CARALARM &&
+            IS_VALID_INGAME(survivor) && !IsFakeClient(survivor)
+    ) {
+        PrintToChatAll( "\x04%N\x01 triggered a car-alarm!", survivor );
+    }
+    
+    Call_StartForward(g_hForwardAlarmTriggered);
+    Call_PushCell(survivor);
+    Call_PushCell(infected);
+    Call_PushCell(reason);
+    Call_Finish();
+}
+
 
 // support
 // -------
