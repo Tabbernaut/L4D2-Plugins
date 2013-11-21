@@ -247,6 +247,17 @@ forward OnBoomerVomitLanded( boomer, amount );
  */
 forward OnSpecialShoved( survivor, infected, zombieClass );
 
+/**
+ *  Called whenever a survivor lands any number of bunnyhops in a row. Called
+ *  afterwards.
+ *
+ *  @param  int     survivor      the survivor client that performed the feat
+ *  @param  int     streak        the amount of hops in a row
+ *  @param  Float   maxVelocity   the highest speed during any jump or jump apex
+ */
+forward OnBunnyHopStreak( survivor, streak, Float:maxVelocity );
+
+
 
 public SharedPlugin:__pl_skilldetect =
 {
