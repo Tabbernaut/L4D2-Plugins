@@ -257,6 +257,15 @@ forward OnSpecialShoved( survivor, infected, zombieClass );
  */
 forward OnBunnyHopStreak( survivor, streak, Float:maxVelocity );
 
+/**
+ *  Called whenever a car alarm is triggered (by a survivor).
+ *
+ *  @param  int     survivor      the survivor client that triggered the alarm (-1 or 0 if unknown)
+ *  @param  int     infected      if > 0: the infected client that assisted in triggering it
+ *  @param  int     reason        the reason for triggering (0: unknown; 1: shot; 2:touched; 3:popped boomer)
+ */
+forward OnCarAlarmTriggered( survivor, infected, reason );
+
 
 
 public SharedPlugin:__pl_skilldetect =
