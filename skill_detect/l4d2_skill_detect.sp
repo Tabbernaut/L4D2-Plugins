@@ -37,6 +37,7 @@
  *      OnSpecialShoved( survivor, infected, zombieClass )
  *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
  *      OnBoomerVomitLanded( boomer, amount )
+ *      OnBunnyHopStreak( survivor, streak, Float:maxVelocity )
  *
  *      OnDeathChargeAssist( assister, charger, victim )    [ not done yet ]
  *      OnBHop( player, isInfected, speed, streak )         [ not done yet ]
@@ -57,7 +58,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.9"
+#define PLUGIN_VERSION "0.9.10"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -71,18 +72,23 @@
 
 #define SHOTGUN_BLAST_TIME      0.1
 #define POUNCE_CHECK_TIME       0.1
+#define HOP_CHECK_TIME          0.1
+#define HOPEND_CHECK_TIME       0.1     // after streak end (potentially) detected, to check for realz?
 #define SHOVE_TIME              0.05
 #define MAX_CHARGE_TIME         12.0    // maximum time to pass before charge checking ends
 #define CHARGE_CHECK_TIME       0.25    // check interval for survivors flying from impacts
 #define CHARGE_END_CHECK        2.5     // after client hits ground after getting impact-charged: when to check whether it was a death
 #define CHARGE_END_RECHECK      3.0     // safeguard wait to recheck on someone getting incapped out of bounds
 #define VOMIT_DURATION_TIME     2.25    // how long the boomer vomit stream lasts -- when to check for boom count
+#define ROCK_CHECK_TIME         1.0     // how long to wait after rock entity is destroyed before checking for skeet/eat (high to avoid lag issues)
 
 #define MIN_DC_TRIGGER_DMG      300     // minimum amount a 'trigger' / drown must do before counted as a death action
 #define MIN_DC_FALL_DMG         175     // minimum amount of fall damage counts as death-falling for a deathcharge
 #define WEIRD_FLOW_THRESH       900.0   // -9999 seems to be break flow.. but meh
 #define MIN_FLOWDROPHEIGHT      350.0   // minimum height a survivor has to have dropped before a WEIRD_FLOW value is treated as a DC spot
 #define MIN_DC_RECHECK_DMG      100     // minimum damage from map to have taken on first check, to warrant recheck
+
+#define HOP_ACCEL_THRESH        0.01    // bhop speed increase must be higher than this for it to count as part of a hop streak
 
 #define ZC_SMOKER       1
 #define ZC_BOOMER       2
@@ -132,7 +138,8 @@
 #define REP_JOCKEYDP            (1 << 14)
 #define REP_DEATHCHARGE         (1 << 15)
 #define REP_DC_ASSIST           (1 << 16)
-#define REP_INSTACLEAR          (1 << 17)
+#define REP_INSTACLEAR          (1 << 17)       // 131072
+#define REP_BHOPSTREAK          (1 << 18)       // 262144
 
 #define REP_DEFAULT             "57397"         // (REP_SKEET | REP_LEVEL | REP_CROWN | REP_DRAWCROWN | REP_HUNTERDP | REP_JOCKEYDP | REP_DEATHCHARGE | REP_DC_ASSIST)
                                                 //  1 4 16 32 8192 16384 32768 65536 (122933 with ASSIST, 57397 without); 131072 for instaclears
@@ -218,6 +225,7 @@ new     Handle:         g_hForwardJockeyDP                                  = IN
 new     Handle:         g_hForwardDeathCharge                               = INVALID_HANDLE;
 new     Handle:         g_hForwardClear                                     = INVALID_HANDLE;
 new     Handle:         g_hForwardVomitLanded                               = INVALID_HANDLE;
+new     Handle:         g_hForwardBHopStreak                                = INVALID_HANDLE;
 
 new     Handle:         g_hTrieWeapons                                      = INVALID_HANDLE;   // weapon check
 new     Handle:         g_hTrieEntityCreated                                = INVALID_HANDLE;   // getting classname of entity created
@@ -274,6 +282,12 @@ new                     g_iTankRock             [MAXPLAYERS + 1];               
 new                     g_iRocksBeingThrown     [10];                                           // 10 tanks max simultanously throwing rocks should be ok (this stores the tank client)
 new                     g_iRocksBeingThrownCount                            = 0;                // so we can do a push/pop type check for who is throwing a created rock
 
+// hops
+new     bool:           g_bIsHopping            [MAXPLAYERS + 1];                               // currently in a hop streak
+new     bool:           g_bHopCheck             [MAXPLAYERS + 1];                               // flag to check whether a hopstreak has ended (if on ground for too long.. ends)
+new                     g_iHops                 [MAXPLAYERS + 1];                               // amount of hops in streak
+new     Float:          g_fLastHop              [MAXPLAYERS + 1][3];                            // velocity vector of last jump
+new     Float:          g_fHopTopVelocity       [MAXPLAYERS + 1];                               // maximum velocity in hopping streak
 
 // cvars
 new     Handle:         g_hCvarReport                                       = INVALID_HANDLE;   // cvar whether to report at all
@@ -289,6 +303,9 @@ new     Handle:         g_hCvarJockeyDPThresh                               = IN
 new     Handle:         g_hCvarHideFakeDamage                               = INVALID_HANDLE;   // cvar damage while self-clearing from smokers
 new     Handle:         g_hCvarDeathChargeHeight                            = INVALID_HANDLE;   // cvar how high a charger must have come in order for a DC to count
 new     Handle:         g_hCvarInstaTime                                    = INVALID_HANDLE;   // cvar clear within this time or lower for instaclear
+new     Handle:         g_hCvarBHopMinStreak                                = INVALID_HANDLE;   // cvar this many hops in a row+ = streak
+new     Handle:         g_hCvarBHopMinInitSpeed                             = INVALID_HANDLE;   // cvar lower than this and the first jump won't be seen as the start of a streak
+
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
@@ -337,9 +354,8 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     - sometimes (rarely) witch crowns are not counted/reported?
         - full crowns on sitting witches
         
-    fix:
-        Clear: 8 freed 2 from 7: time: 0.93 / 414.50 -- class: charger (with shove? 0)
-        - how is that 415 seconds?
+    - fix       Clear: 8 freed 2 from 7: time: 0.93 / 414.50 -- class: charger (with shove? 0)
+                - how is that 415 seconds?
     
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
@@ -366,6 +382,9 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         - ? show meatshots on teammates / report meatshots?
         - ? speedcrown detection?
         - ? bhop (streaks) detection
+            - cvar starting minimal speed
+            - speed change threshold (default: any)
+            
         - ? spit-on-cap detection
         
 */
@@ -407,6 +426,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardDeathCharge =     CreateGlobalForward("OnDeathCharge", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardClear =           CreateGlobalForward("OnSpecialClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardVomitLanded =     CreateGlobalForward("OnBoomerVomitLanded", ET_Ignore, Param_Cell, Param_Cell );
+    g_hForwardBHopStreak =      CreateGlobalForward("OnBunnyHopStreak", ET_Ignore, Param_Cell, Param_Cell, Param_Float );
     
     g_bLateLoad = late;
     
@@ -423,6 +443,7 @@ public OnPluginStart()
     HookEvent("lunge_pounce",               Event_LungePounce,              EventHookMode_Post);
     HookEvent("player_shoved",              Event_PlayerShoved,             EventHookMode_Post);
     HookEvent("player_jump",                Event_PlayerJumped,             EventHookMode_Post);
+    HookEvent("player_jump_apex",           Event_PlayerJumpApex,           EventHookMode_Post);
     
     HookEvent("player_now_it",              Event_PlayerBoomed,             EventHookMode_Post);
     HookEvent("boomer_exploded",            Event_BoomerExploded,           EventHookMode_Post);
@@ -465,6 +486,8 @@ public OnPluginStart()
     g_hCvarHideFakeDamage = CreateConVar(   "sm_skill_hidefakedamage",      "0", "If set, any damage done that exceeds the health of a victim is hidden in reports.", FCVAR_PLUGIN, true, 0.0, true, 1.0 );
     g_hCvarDeathChargeHeight = CreateConVar("sm_skill_deathcharge_height","400", "How much height distance a charger must take its victim for a deathcharge to be reported.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarInstaTime = CreateConVar(        "sm_skill_instaclear_time",     "0.75", "A clear within this time (in seconds) counts as an insta-clear.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarBHopMinStreak = CreateConVar(    "sm_skill_bhopstreak",          "3", "The lowest bunnyhop streak that will be reported.", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarBHopMinInitSpeed = CreateConVar( "sm_skill_bhopinitspeed",     "150", "The minimal speed of the first jump of a bunnyhopstreak (0 to allow 'hops' from standstill).", FCVAR_PLUGIN, true, 0.0, false );
     
     // cvars: built in
     g_hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
@@ -538,9 +561,15 @@ public OnClientDisconnect(client)
     Tracking
     --------
 */
+
 public Action: Event_RoundStart( Handle:event, const String:name[], bool:dontBroadcast )
 {
     g_iRocksBeingThrownCount = 0;
+    
+    for ( new i = 1; i <= MaxClients; i++ )
+    {
+        g_bIsHopping[i] = false;
+    }
 }
 
 public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBroadcast )
@@ -1182,18 +1211,155 @@ public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontB
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     
-    if ( !IS_VALID_INFECTED(client) ) { return Plugin_Continue; }
+    if ( IS_VALID_INFECTED(client) )
+    {
+        new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
+        if ( zClass != ZC_JOCKEY ) { return Plugin_Continue; }
     
-    new zClass = GetEntProp(client, Prop_Send, "m_zombieClass");
-    
-    if ( zClass != ZC_JOCKEY ) { return Plugin_Continue; }
-    
-    // where did jockey jump from?
-    GetClientAbsOrigin( client, g_fPouncePosition[client] );
+        // where did jockey jump from?
+        GetClientAbsOrigin( client, g_fPouncePosition[client] );
+    }
+    else if ( IS_VALID_SURVIVOR(client) )
+    {
+        // could be the start or part of a hopping streak
+        
+        new Float: fPos[3], Float: fVel[3];
+        GetClientAbsOrigin( client, fPos );
+        GetEntPropVector(client, Prop_Data, "m_vecVelocity", fVel ); 
+        fVel[2] = 0.0; // safeguard
+        
+        //PrintToChatAll("jump %i: loc: %.f,%.f,%.f - vel: %.f,%.f,%.f", client, fPos[0],fPos[1],fPos[2], fVel[0],fVel[1],fVel[2]);
+        
+        //GetVectorDistance(g_fLastHop[client], fVel)
+        new Float: fLengthNew, Float: fLengthOld;
+        fLengthNew = GetVectorLength(fVel);
+        
+        
+        g_bHopCheck[client] = false;
+        
+        if ( !g_bIsHopping[client] )
+        {
+            if ( fLengthNew >= GetConVarFloat(g_hCvarBHopMinInitSpeed) )
+            {
+                // starting potential hop streak
+                g_fHopTopVelocity[client] = fLengthNew;
+                g_bIsHopping[client] = true;
+                g_iHops[client] = 0;
+            }
+        }
+        else
+        {
+            // check for hopping streak
+            fLengthOld = GetVectorLength(g_fLastHop[client]);
+            
+            // if they picked up speed, count it as a hop, otherwise, we're done hopping
+            if ( fLengthNew - fLengthOld > HOP_ACCEL_THRESH )
+            {
+                g_iHops[client]++;
+                
+                // this should always be the case...
+                if ( fLengthNew > g_fHopTopVelocity[client] )
+                {
+                    g_fHopTopVelocity[client] = fLengthNew;
+                }
+                
+                PrintToChat( client, "bunnyhop %i: speed: %.1f / increase: %.1f", g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
+                //PrintDebug( 0, "%N: bunnyhop %i: speed: %.1f / increase: %.1f", client, g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
+            }
+            else
+            {
+                g_bIsHopping[client] = false;
+                
+                if ( g_iHops[client] )
+                {
+                    HandleBHopStreak( client, g_iHops[client], g_fHopTopVelocity[client] );
+                    g_iHops[client] = 0;
+                }
+            }
+            
+            //PrintToChatAll( "jump %i: hops: %i -- vel length: %.1f (prev %.1f) / change: %.1f", client, g_iHops[client], fLengthNew, fLengthOld, fLengthNew - fLengthOld );
+            
+        }
+        
+        g_fLastHop[client][0] = fVel[0];
+        g_fLastHop[client][1] = fVel[1];
+        g_fLastHop[client][2] = fVel[2];
+        
+        if ( g_iHops[client] != 0 )
+        {
+            // check when the player returns to the ground
+            CreateTimer( HOP_CHECK_TIME, Timer_CheckHop, client, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
+        }
+    }
     
     return Plugin_Continue;
 }
 
+public Action: Timer_CheckHop (Handle:timer, any:client)
+{
+    // player back to ground = end of hop (streak)?
+    
+    if ( !IS_VALID_INGAME(client) || !IsPlayerAlive(client) )
+    {
+        // streak stopped by dying / teamswitch / disconnect?
+        return Plugin_Stop;
+    }
+    else if ( GetEntityFlags(client) & FL_ONGROUND )
+    {
+        new Float: fVel[3];
+        GetEntPropVector(client, Prop_Data, "m_vecVelocity", fVel ); 
+        fVel[2] = 0.0; // safeguard
+        
+        //PrintToChatAll("grounded %i: vel length: %.1f", client, GetVectorLength(fVel) );
+        
+        g_bHopCheck[client] = true;
+        
+        CreateTimer( HOPEND_CHECK_TIME, Timer_CheckHopStreak, client, TIMER_FLAG_NO_MAPCHANGE );
+        
+        return Plugin_Stop;
+    }
+    
+    return Plugin_Continue;
+}
+
+public Action: Timer_CheckHopStreak (Handle:timer, any:client)
+{
+    if ( !IS_VALID_INGAME(client) || !IsPlayerAlive(client) ) { return Plugin_Continue; }
+    
+    // check if we have any sort of hop streak, and report
+    if ( g_bHopCheck[client] && g_iHops[client] )
+    {
+        HandleBHopStreak( client, g_iHops[client], g_fHopTopVelocity[client] );
+        g_bIsHopping[client] = false;
+        g_iHops[client] = 0;
+        g_fHopTopVelocity[client] = 0.0;
+    }
+    
+    g_bHopCheck[client] = false;
+    
+    return Plugin_Continue;
+}
+
+
+public Action: Event_PlayerJumpApex( Handle:event, const String:name[], bool:dontBroadcast )
+{
+    new client = GetClientOfUserId( GetEventInt(event, "userid") );
+    
+    if ( g_bIsHopping[client] )
+    {
+        new Float: fVel[3];
+        GetEntPropVector(client, Prop_Data, "m_vecVelocity", fVel ); 
+        fVel[2] = 0.0;
+        new Float: fLength = GetVectorLength(fVel);
+        
+        if ( fLength > g_fHopTopVelocity[client] )
+        {
+            g_fHopTopVelocity[client] = fLength;
+        }
+    }
+}
+
+    
 public Action: Event_JockeyRide( Handle:event, const String:name[], bool:dontBroadcast )
 {
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
@@ -1475,7 +1641,7 @@ public OnEntityDestroyed ( entity )
     if ( GetTrieArray(g_hRockTrie, witch_key, rock_array, sizeof(rock_array)) )
     {
         // tank rock
-        CreateTimer( SHOTGUN_BLAST_TIME, Timer_CheckRockSkeet, entity );
+        CreateTimer( ROCK_CHECK_TIME, Timer_CheckRockSkeet, entity );
         SDKUnhook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
     }
 }
@@ -1694,6 +1860,12 @@ stock CheckWitchCrown ( witch, attacker )
     // not a crown at all if anyone was hit, or if the killing damage wasn't a shotgun blast
     if ( witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] || !witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] ) { return; }
     
+    PrintDebug(0, "Witch Crown Check: crown shot: %i, harrassed: %i (full health: %i / drawthresh: %i)", 
+            witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT],
+            witch_dmg_array[MAXPLAYERS+WTCH_STARTLED],
+            iWitchHealth,
+            GetConVarInt(g_hCvarDrawCrownThresh)
+        );
     
     // full crown? unharrassed
     if ( !witch_dmg_array[MAXPLAYERS+WTCH_STARTLED] && witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] >= iWitchHealth )
@@ -1742,6 +1914,10 @@ stock CheckWitchCrown ( witch, attacker )
         
         // plus, set final shot as 'damage', and the rest as chip
         HandleDrawCrown( attacker, witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT], chipDamage );
+    }
+    else {
+        // not crowned
+        PrintDebug(0, "Not crowned..");
     }
 }
 
@@ -2381,6 +2557,27 @@ stock HandleVomitLanded( attacker, boomCount )
     Call_StartForward(g_hForwardVomitLanded);
     Call_PushCell(attacker);
     Call_PushCell(boomCount);
+    Call_Finish();
+}
+
+stock HandleBHopStreak( survivor, streak, Float: maxVelocity )
+{
+    if (    GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_BHOPSTREAK &&
+            IS_VALID_INGAME(survivor) && !IsFakeClient(survivor) &&
+            streak >= GetConVarInt(g_hCvarBHopMinStreak)
+    ) {
+        PrintToChatAll( "\x04%N\x01 got \x05%i\x01 bunnyhop%s in a row (top speed: \x05%.1f\x01).",
+                survivor,
+                streak,
+                ( streak > 1 ) ? "s" : "",
+                maxVelocity
+            );
+    }
+    
+    Call_StartForward(g_hForwardBHopStreak);
+    Call_PushCell(survivor);
+    Call_PushCell(streak);
+    Call_PushFloat(maxVelocity);
     Call_Finish();
 }
 
