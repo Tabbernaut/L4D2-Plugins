@@ -2840,7 +2840,15 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
     if (    GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_CARALARM &&
             IS_VALID_INGAME(survivor) && !IsFakeClient(survivor)
     ) {
-        PrintToChatAll( "\x04%N\x01 triggered a car-alarm!", survivor );
+        if ( reason == CALARM_SHOT ) {
+            PrintToChatAll( "\x04%N\x01 hit an alarmed car.", survivor );
+        }
+        else if ( reason == CALARM_SHOT ) {
+            PrintToChatAll( "\x04%N\x01 touched an alarmed car.", survivor );
+        }
+        else {
+            PrintToChatAll( "\x04%N\x01 triggered a car-alarm.", survivor );
+        }
     }
     
     Call_StartForward(g_hForwardAlarmTriggered);
