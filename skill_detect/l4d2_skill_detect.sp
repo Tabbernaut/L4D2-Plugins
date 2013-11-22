@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.12"
+#define PLUGIN_VERSION "0.9.13"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -1665,6 +1665,8 @@ public OnEntityCreated ( entity, const String:classname[] )
 
 public Action: Timer_CarAlarmCreated (Handle:timer, any:entity)
 {
+    if ( !IsValidEntity(entity) ) { return; }
+    
     decl String:car_key[10];
     FormatEx(car_key, sizeof(car_key), "%x", entity);
     
@@ -1677,6 +1679,8 @@ public Action: Timer_CarAlarmCreated (Handle:timer, any:entity)
 
 public Action: Timer_CarAlarmGlassCreated (Handle:timer, any:entity)
 {
+    if ( !IsValidEntity(entity) ) { return; }
+    
     // glass is parented to a car, link the two through the trie
     // find parent and save both
     decl String:car_key[10];
