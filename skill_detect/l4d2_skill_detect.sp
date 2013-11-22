@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.11"
+#define PLUGIN_VERSION "0.9.12"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -195,8 +195,9 @@ enum _:strWitchArray
 enum _:enAlarmReasons
 {
     CALARM_UNKNOWN,
-    CALARM_SHOT,
+    CALARM_HIT,
     CALARM_TOUCHED,
+    CALARM_EXPLOSION,
     CALARM_BOOMER
 };
 
@@ -307,6 +308,7 @@ new     Float:          g_fHopTopVelocity       [MAXPLAYERS + 1];               
 // alarms
 new     Float:          g_fLastCarAlarm                                     = 0.0;              // time when last car alarm went off
 new                     g_iLastCarAlarmReason   [MAXPLAYERS + 1];                               // what this survivor did to set the last alarm off
+new                     g_iLastCarAlarmBoomer;                                                  // if a boomer triggered an alarm, remember it
 
 // cvars
 new     Handle:         g_hCvarReport                                       = INVALID_HANDLE;   // cvar whether to report at all
@@ -381,7 +383,6 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     
     - test chargers getting dislodged with boomer pops?
     
-    - add car-alarm trigger check survivor/SI-assist
     - add commonhop check
     - add deathcharge assist check
         - smoker
@@ -1286,7 +1287,6 @@ public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontB
                 }
                 
                 //PrintToChat( client, "bunnyhop %i: speed: %.1f / increase: %.1f", g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
-                //PrintDebug( 0, "%N: bunnyhop %i: speed: %.1f / increase: %.1f", client, g_iHops[client], fLengthNew, fLengthNew - fLengthOld );
             }
             else
             {
@@ -2035,9 +2035,6 @@ public OnTouch_Rock ( entity )
     rock_array[rckDamage] = -1;
     SetTrieArray(g_hRockTrie, rock_key, rock_array, sizeof(rock_array), true);
     
-    // test
-    //PrintToChatAll("rock owner: %i", GetEntProp(entity, Prop_Send, "m_owner") );
-    
     SDKUnhook(entity, SDKHook_Touch, OnTouch_Rock);
 }
 
@@ -2058,9 +2055,6 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
             FloatSub( GetGameTime(), g_fPinTime[smoker][0]),
             bool:( reason != CUT_SLASH && reason != CUT_KILL )
         );
-    
-    //PrintDebug(0, "smoker %i: tongue broke (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
-    //PrintToChatAll("smoker %i: tongue broke (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
     
     if ( attacker != victim ) { return Plugin_Continue; }
     
@@ -2131,8 +2125,6 @@ public Action: Event_ChokeStop (Handle:event, const String:name[], bool:dontBroa
             FloatSub( GetGameTime(), g_fPinTime[smoker][0]),
             bool:( reason != CUT_SLASH && reason != CUT_KILL )
         );
-    
-    //PrintToChatAll("smoker %i: choke end (att: %i, vic: %i): reason: %i, shoved: %i", smoker, attacker, victim, reason, g_bSmokerShoved[smoker] );
 }
 
 // car alarm handling
@@ -2143,18 +2135,16 @@ public Action: Event_CarAlarmGoesOff( Handle:event, const String:name[], bool:do
 
 public Action: OnTakeDamage_Car ( victim, &attacker, &inflictor, &Float:damage, &damagetype )
 {
-    new zClass = 0;
-    
     if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
     
     /*
-    // check for either: boomer pop or survivor
+        boomer popped on alarmed car = 
+            DMG_BLAST_SURFACE| DMG_BLAST
+        and inflictor is the boomer
     
-    if ( IS_VALID_INFECTED(attacker) )
-    {
-        zClass = GetEntProp(attacker, Prop_Send, "m_zombieClass");
-    }
-    if ( !IS_VALID_SURVIVOR(attacker) && zClass != ZC_BOOMER ) { return Plugin_Continue; }
+        melee slash/club =
+            DMG_SLOWBURN|DMG_PREVENT_PHYSICS_FORCE + DMG_CLUB or DMG_SLASH
+        shove is without DMG_SLOWBURN
     */
     
     CreateTimer( 0.01, Timer_CheckAlarm, victim, TIMER_FLAG_NO_MAPCHANGE );
@@ -2162,21 +2152,23 @@ public Action: OnTakeDamage_Car ( victim, &attacker, &inflictor, &Float:damage, 
     decl String:car_key[10];
     FormatEx(car_key, sizeof(car_key), "%x", victim);
     SetTrieValue(g_hCarTrie, car_key, attacker);
-    
-    if ( zClass )
+
+    if ( damagetype & DMG_BLAST )
     {
-        // boomer popped / scratched?
-        //PrintToChatAll("damage to car: %.f  type %i", damage, damagetype );
+        if ( IS_VALID_INFECTED(inflictor) && GetEntProp(inflictor, Prop_Send, "m_zombieClass") == ZC_BOOMER ) {
+            g_iLastCarAlarmReason[attacker] = CALARM_BOOMER;
+            g_iLastCarAlarmBoomer = inflictor;
+        } else {
+            g_iLastCarAlarmReason[attacker] = CALARM_EXPLOSION;
+        }
+    }
+    else if ( damage == 0.0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) && !( damagetype & DMG_SLOWBURN) )
+    {
+        g_iLastCarAlarmReason[attacker] = CALARM_TOUCHED;
     }
     else
     {
-        // survivor
-        if ( damage == 0.0 ) {
-            g_iLastCarAlarmReason[attacker] = CALARM_TOUCHED;
-        }
-        else {
-            g_iLastCarAlarmReason[attacker] = CALARM_SHOT;
-        }
+        g_iLastCarAlarmReason[attacker] = CALARM_HIT;
     }
     
     return Plugin_Continue;
@@ -2202,24 +2194,33 @@ public Action: OnTakeDamage_CarGlass ( victim, &attacker, &inflictor, &Float:dam
     // check for either: boomer pop or survivor
     if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
     
-    
     decl String:car_key[10];
     FormatEx(car_key, sizeof(car_key), "%x", victim);
     new parentEntity;
     
     if ( GetTrieValue(g_hCarTrie, car_key, parentEntity) )
     {
-        //PrintToChatAll("car alarm damage (glass): parent: %i", parentEntity);
         CreateTimer( 0.01, Timer_CheckAlarm, parentEntity, TIMER_FLAG_NO_MAPCHANGE );
         
         FormatEx(car_key, sizeof(car_key), "%x", parentEntity);
         SetTrieValue(g_hCarTrie, car_key, attacker);
         
-        if ( damage == 0.0 ) {
+        if ( damagetype & DMG_BLAST )
+        {
+            if ( IS_VALID_INFECTED(inflictor) && GetEntProp(inflictor, Prop_Send, "m_zombieClass") == ZC_BOOMER ) {
+                g_iLastCarAlarmReason[attacker] = CALARM_BOOMER;
+                g_iLastCarAlarmBoomer = inflictor;
+            } else {
+                g_iLastCarAlarmReason[attacker] = CALARM_EXPLOSION;
+            }
+        }
+        else if ( damage == 0.0 && ( damagetype & DMG_CLUB || damagetype & DMG_SLASH ) && !( damagetype & DMG_SLOWBURN) )
+        {
             g_iLastCarAlarmReason[attacker] = CALARM_TOUCHED;
         }
-        else {
-            g_iLastCarAlarmReason[attacker] = CALARM_SHOT;
+        else
+        {
+            g_iLastCarAlarmReason[attacker] = CALARM_HIT;
         }
     }
     
@@ -2236,7 +2237,6 @@ public OnTouch_CarGlass ( entity, client )
     
     if ( GetTrieValue(g_hCarTrie, car_key, parentEntity) )
     {
-        //PrintToChatAll("car alarm touch (glass): %i / parent: %i", entity, parentEntity);
         CreateTimer( 0.01, Timer_CheckAlarm, parentEntity, TIMER_FLAG_NO_MAPCHANGE );
         
         FormatEx(car_key, sizeof(car_key), "%x", parentEntity);
@@ -2284,10 +2284,31 @@ public Action: Timer_CheckAlarm (Handle:timer, any:entity)
             SDKUnhook(entity, SDKHook_Touch, OnTouch_Car);
         }
         
-        // TO DO: add infected assistant check, add reason (if known)
+        // check for infected assistance
+        new infected = 0;
+        if ( IS_VALID_SURVIVOR(survivor) )
+        {
+            if ( g_iLastCarAlarmReason[survivor] == CALARM_BOOMER )
+            {
+                infected = g_iLastCarAlarmBoomer;
+            }
+            else if ( IS_VALID_INFECTED(GetEntPropEnt(survivor, Prop_Send, "m_carryAttacker")) )
+            {
+                infected = GetEntPropEnt(survivor, Prop_Send, "m_carryAttacker");
+            }
+            else if ( IS_VALID_INFECTED(GetEntPropEnt(survivor, Prop_Send, "m_jockeyAttacker")) )
+            {
+                infected = GetEntPropEnt(survivor, Prop_Send, "m_jockeyAttacker");
+            }
+            else if ( IS_VALID_INFECTED(GetEntPropEnt(survivor, Prop_Send, "m_tongueOwner")) )
+            {
+                infected = GetEntPropEnt(survivor, Prop_Send, "m_tongueOwner");
+            }
+        }
+
         HandleCarAlarmTriggered(
                 survivor,
-                0,
+                infected,
                 (IS_VALID_INGAME(survivor)) ? g_iLastCarAlarmReason[survivor] : CALARM_UNKNOWN
             );
     }
@@ -2828,26 +2849,52 @@ stock HandleBHopStreak( survivor, streak, Float: maxVelocity )
 // car alarms
 stock HandleCarAlarmTriggered( survivor, infected, reason )
 {
-    /*
-        TO DO:
-        reason can be:
-            0 (unknown)
-            1 shot
-            2 touched
-            3 popped a boomer next to it
-    */
-    
     if (    GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_CARALARM &&
             IS_VALID_INGAME(survivor) && !IsFakeClient(survivor)
     ) {
-        if ( reason == CALARM_SHOT ) {
-            PrintToChatAll( "\x04%N\x01 hit an alarmed car.", survivor );
+        if ( reason == CALARM_HIT ) {
+            PrintToChatAll( "\x05%N\x01 hit an alarmed car.", survivor );
         }
-        else if ( reason == CALARM_SHOT ) {
-            PrintToChatAll( "\x04%N\x01 touched an alarmed car.", survivor );
+        else if ( reason == CALARM_TOUCHED )
+        {
+            // if a survivor touches an alarmed car, it might be due to a special infected...
+            if ( IS_VALID_INFECTED(infected) )
+            {
+                if ( !IsFakeClient(infected) )
+                {
+                    PrintToChatAll( "\x04%N\x01 made \x05%N\x01 trigger a car alarm.", survivor );
+                }
+                else {
+                    switch ( GetEntProp(infected, Prop_Send, "m_zombieClass") )
+                    {
+                        case ZC_SMOKER: { PrintToChatAll( "\x01A hunter made \x05%N\x01 trigger a car alarm.", survivor ); }
+                        case ZC_JOCKEY: { PrintToChatAll( "\x01A jockey made \x05%N\x01 trigger a car alarm.", survivor ); }
+                        case ZC_CHARGER: { PrintToChatAll( "\x01A charger made \x05%N\x01 trigger a car alarm.", survivor ); }
+                        default: { PrintToChatAll( "\x01A bot infected made \x05%N\x01 trigger a car alarm.", survivor ); }
+                    }
+                }
+            }
+            else
+            {
+                PrintToChatAll( "\x05%N\x01 touched an alarmed car.", survivor );
+            }
+        }
+        else if ( reason == CALARM_EXPLOSION ) {
+            PrintToChatAll( "\x05%N\x01 triggered a car alarm with an explosion.", survivor );
+        }
+        else if ( reason == CALARM_BOOMER )
+        {
+            if ( IS_VALID_INFECTED(infected) && !IsFakeClient(infected) )
+            {
+                PrintToChatAll( "\x05%N\x01 triggered a car alarm by shooting boomer \x04%N\x01.", survivor, infected );
+            }
+            else
+            {
+                PrintToChatAll( "\x05%N\x01 triggered a car alarm by shooting a boomer.", survivor );
+            }
         }
         else {
-            PrintToChatAll( "\x04%N\x01 triggered a car-alarm.", survivor );
+            PrintToChatAll( "\x05%N\x01 triggered a car alarm.", survivor );
         }
     }
     
