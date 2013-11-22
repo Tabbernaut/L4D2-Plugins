@@ -262,9 +262,23 @@ forward OnBunnyHopStreak( survivor, streak, Float:maxVelocity );
  *
  *  @param  int     survivor      the survivor client that triggered the alarm (-1 or 0 if unknown)
  *  @param  int     infected      if > 0: the infected client that assisted in triggering it
- *  @param  int     reason        the reason for triggering (0: unknown; 1: shot; 2:touched; 3:popped boomer)
+ *  @param  int     reason        the reason for triggering (0:unknown; 1:hit; 2:touched; 3:explosion; 4:popped boomer - see CarAlarmTriggerType)
  */
-forward OnCarAlarmTriggered( survivor, infected, reason );
+forward OnCarAlarmTriggered( survivor, infected, CarAlarmTriggerReason:reason );
+
+
+
+/**
+ *  CarAlarmTriggerReason: the 'reason' parameter in OnCarAlarmTriggered() forward
+ */
+enum CarAlarmTriggerReason
+{
+  CarAlarmTrigger_Unknown,
+  CarAlarmTrigger_Hit,
+	CarAlarmTrigger_Touched,
+  CarAlarmTrigger_Explosion,
+  CarAlarmTrigger_Boomer
+};
 
 
 
