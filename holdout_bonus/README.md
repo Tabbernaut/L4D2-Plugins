@@ -1,5 +1,5 @@
-Penalty Bonus System
-====================
+Holdout Bonus
+=============
 
 Plugin
 ------
