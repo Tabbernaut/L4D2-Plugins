@@ -5,15 +5,15 @@
 	{
 		"holdout"	"1"
 		"pointfactor"	"0.125"
-		"time"		"20"
+		"time"		"38"
 
 		"t_start"	"minifinale_gates_button"
 		"t_s_class"	"func_button"
 		"t_s_hook"	"OnPressed"
 
-		"t_end"		"minifinale_gates_door1"
-		"t_e_class"	"func_door_rotating"
-		"t_e_hook"	"OnFullyOpen"
+		"t_end"		"relay_minifinale_gates_open"
+		"t_e_class"	"logic_relay"
+		"t_e_hook"	"OnTrigger"
 	}
 
 	// swamp fever 1 ferry
@@ -36,7 +36,7 @@
 	"c4m2_sugarmill_a"
 	{
 		"holdout"	"1"
-		"pointfactor"	"0.2"
+		"pointfactor"	"0.15"
 		"time"		"50"
 
 		"t_start"	"button_callelevator"
@@ -146,10 +146,6 @@
 		"t_start"	"tractor_button"
 		"t_s_class"	"func_button"
 		"t_s_hook"	"OnPressed"
-
-		//"t_end"	"float_path2"
-		//"t_e_class"	"path_track"
-		//"t_e_hook"	"OnPass"
 	}
 	
 	
