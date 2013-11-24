@@ -1,6 +1,20 @@
 "HoldoutEvents"
 {
-	//"c2m4_barns"	<= maybe, for pre-gate-opening? meh
+	// gate opening wait time
+	"c2m4_barns"
+	{
+		"holdout"	"1"
+		"pointfactor"	"0.125"
+		"time"		"20"
+
+		"t_start"	"minifinale_gates_button"
+		"t_s_class"	"func_button"
+		"t_s_hook"	"OnPressed"
+
+		"t_end"		"minifinale_gates_door1"
+		"t_e_class"	"func_door_rotating"
+		"t_e_hook"	"OnFullyOpen"
+	}
 
 	// swamp fever 1 ferry
 	"c3m1_plankcountry"
@@ -70,8 +84,8 @@
 	"c10m2_drainage"
 	{
 		"holdout"	"1"
-		"pointfactor"	"0.25"
-		"time"		"100"
+		"pointfactor"	"0.125"
+		"time"		"35"
 
 		"t_start"	"button_minifinale"
 		"t_s_class"	"func_button"
@@ -143,7 +157,7 @@
 	// "l4d_ihm03_underground" <= wait for gates to open?
 	// "l4d_ihm04_lumberyard" <= wait for house to collapse
 
-	//"cwm3_drain" <= wait for floodgates
+	// "cwm3_drain" <= wait for floodgates
 
 	// "l4d2_stadium2_riverwalk" <= wait for boat
 	// "l4d2_stadium3_city1" <= ?
