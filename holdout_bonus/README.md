@@ -1,5 +1,19 @@
+Penalty Bonus System
+====================
 
-/*
+Plugin
+------
+This, in combination with penalty_bonus, makes the game award a survival bonus to survivors
+for various camping events in the game.
+
+For example, if survivors make it halfway through waiting for the ferry on Swamp Fever map 1,
+they get half the bonus value for that map. They also get half the bonus if two survivors die
+before the event starts, and the other two make it onto the ferry.
+
+
+Plan:
+-----
+
     idea:
         for any map that has a camping/holdout event (say SF1 ferry, Par4 float, DT3 church door):
         turn a configured fraction of any map's distance into bonus points
@@ -34,4 +48,4 @@
             
     dependency
         penalty_bonus
-*/
+
