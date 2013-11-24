@@ -39,7 +39,7 @@ the same as without holdout_bonus.<br />
 
 <b>sm_hbonus_configpath</b><br />
 [configs/holdoutmapinfo.txt] Sets where the plugin should read its holdout bonus information for each map from.<br />
-You can use this to use map config-specific holdout setups. See /configs/holdoutmapinfo.txt for more details.<br />
+You can use this to make config-specific holdout setups. See /configs/holdoutmapinfo.txt for more details.<br />
 
 
 Dependencies
