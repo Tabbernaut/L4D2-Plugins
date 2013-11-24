@@ -96,7 +96,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.1",
+    version = "0.0.2",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -150,7 +150,7 @@ public OnPluginStart()
         );
     
     g_hCvarKeyValuesPath = CreateConVar(
-            "rand_randominfo_path",
+            "sm_hbonus_configpath",
             "configs/holdoutmapinfo.txt",
             "The path to the holdoutmapinfo.txt with keyvalues for per-map holdout bonus settings.",
             FCVAR_PLUGIN
