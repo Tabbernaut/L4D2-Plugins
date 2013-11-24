@@ -38,6 +38,10 @@
 
 new     bool:   g_bLateLoad             = false;
 
+new     Handle: g_hForwardSet           = INVALID_HANDLE;
+new     Handle: g_hForwardStart         = INVALID_HANDLE;
+new     Handle: g_hForwardEnd           = INVALID_HANDLE;
+
 new     bool:   g_bLGOAvailable         = false;                                        // whether lgofnoc is loaded
 new     bool:   g_bReadyUpAvailable     = false;
 new     bool:   g_bPauseAvailable       = false;
@@ -96,13 +100,20 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.2",
+    version = "0.0.3",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
+    RegPluginLibrary("holdout_bonus");
+    
+    g_hForwardSet =     CreateGlobalForward("OnHoldOutBonusSet", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
+    g_hForwardStart =   CreateGlobalForward("OnHoldOutBonusStart", ET_Ignore, Param_Cell );
+    g_hForwardEnd =     CreateGlobalForward("OnHoldOutBonusEnd", ET_Ignore, Param_Cell, Param_Cell );
+    
     g_bLateLoad = late;
+    
     return APLRes_Success;
 }
 
@@ -279,6 +290,13 @@ stock RoundReallyStarting()
             }
         }
         
+        Call_StartForward(g_hForwardSet);
+        Call_PushCell(g_iPointsBonus);
+        Call_PushCell(g_iMapDistance);
+        Call_PushCell(g_iHoldoutTime);
+        Call_PushCell( (GetConVarInt(g_hCvarPointsMode) == PMODE_DIST) ? 1 : 0);
+        Call_Finish();
+        
         // hook any triggers / buttons that may be required
         HookHoldOut();
     }
@@ -337,8 +355,12 @@ public HoldOutStarts ( const String:output[], caller, activator, Float:delay )
     // report
     if ( GetConVarInt(g_hCvarReportMode) > 2 )
     {
-        PrintToChatAll( "\x01Holdout event starts... (\x04%i\x01 bonus for \x05%i\x01 seconds)", g_iPointsBonus, g_iHoldoutTime );
+        PrintToChatAll( "\x01Holdout event starts... (\x04%i\x01 bonus over \x05%i\x01 seconds)", g_iPointsBonus, g_iHoldoutTime );
     }
+    
+    Call_StartForward(g_hForwardStart);
+    Call_PushCell(g_iHoldoutTime);
+    Call_Finish();
 }
 
 public HoldOutEnds_Hook ( const String:output[], caller, activator, Float:delay )
@@ -375,6 +397,11 @@ stock HoldOutEnds()
             DisplayBonusToAll();
         }
     }
+    
+    Call_StartForward(g_hForwardEnd);
+    Call_PushCell(g_iActualBonus);
+    Call_PushCell(g_iProgress);
+    Call_Finish();
 }
 
 // timer: every second while event is active
