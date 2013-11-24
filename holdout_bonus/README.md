@@ -1,5 +1,5 @@
-Penalty Bonus System
-====================
+Holdout Bonus
+=============
 
 Plugin
 ------
@@ -42,6 +42,11 @@ the same as without holdout_bonus.<br />
 <b>sm_hbonus_configpath</b><br />
 [configs/holdoutmapinfo.txt] Sets where the plugin should read its holdout bonus information for each map from.<br />
 You can use this to make config-specific holdout setups. See /configs/holdoutmapinfo.txt for more details.<br />
+
+Install
+-------
+Make sure you have all the plugins this depends on. Added the plugin to your config (and/or /sourcemod/plugins/ dir).
+Add the holdoutmapinfo.txt to /sourcemod/configs/.
 
 
 Dependencies
