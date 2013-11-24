@@ -4,7 +4,9 @@ Penalty Bonus System
 Plugin
 ------
 This, in combination with penalty_bonus, makes the game award a survival bonus to survivors
-for various camping events in the game.
+for various camping events in the game. The point of this is to make the round's score match
+actual survivor progress (in terms of performance) slightly better -- especially for harder
+or more wipable configs.
 
 For example, if survivors make it halfway through waiting for the ferry on Swamp Fever map 1,
 they get half the bonus value for that map. They also get half the bonus if two survivors die
