@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.13"
+#define PLUGIN_VERSION "0.9.15"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -266,7 +266,6 @@ new     bool:           g_bHunterKilledPouncing [MAXPLAYERS + 1];               
 new                     g_iPounceDamage         [MAXPLAYERS + 1];                               // how much damage on last 'highpounce' done
 new     Float:          g_fPouncePosition       [MAXPLAYERS + 1][3];                            // position that a hunter (jockey?) pounced from (or charger started his carry)
 
-
 // deadstops
 new     Float:          g_fVictimLastShove      [MAXPLAYERS + 1][MAXPLAYERS + 1];               // when was the player shoved last by attacker? (to prevent doubles)
 
@@ -372,11 +371,18 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     To Do
     -----
     
+    - bhopping check
+        - if speed is above a certain value, also accept 0-increase as actual hops
+    
     - sometimes (rarely) witch crowns are not counted/reported?
         - full crowns on sitting witches
+        - epi: use 'oneshot' (at least as a safeguard)
         
-    - fix       Clear: 8 freed 2 from 7: time: 0.93 / 414.50 -- class: charger (with shove? 0)
-                - how is that 415 seconds?
+    - fix:  tank rock owner is not reliable for the RockEaten forward
+    
+    - do a hookoutput on prop_car_alarm's and use that to track the actual alarm
+        going off (might help in the case 2 alarms go off exactly at the same time?)
+        - nitpick!
     
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
@@ -402,7 +408,10 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         - ? show meatshots on teammates / report meatshots?
         - ? speedcrown detection?
         - ? spit-on-cap detection
-        
+    
+    ---
+    done:
+        - removed tank's name from rock skeet print
 */
 
 public Plugin:myinfo = 
@@ -2318,6 +2327,21 @@ public Action: Timer_CheckAlarm (Handle:timer, any:entity)
     }
 }
 
+
+/* throwactivate .. for more reliable rock-tracking?
+public Action: L4D_OnCThrowActivate ( ability )
+{
+    // tank throws rock
+    if ( !IsValidEntity(ability) ) { return Plugin_Continue; }
+    
+    // find tank player
+    new tank = GetEntPropEnt(ability, Prop_Send, "m_owner");
+    if ( !IS_VALID_INGAME(tank) ) { return Plugin_Continue; }
+    
+    ...
+}
+*/
+
 /*
     Reporting and forwards
     ----------------------
@@ -2656,14 +2680,16 @@ HandleRockSkeeted( attacker, victim )
     // report?
     if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_ROCKSKEET )
     {
+        /*
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(victim) )
         {
             PrintToChatAll( "\x04%N\x01 skeeted \x05%N\x01's rock.", attacker, victim );
         }
         else if ( IS_VALID_INGAME(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 skeeted a tank rock.", attacker );
         }
+        */
+        PrintToChatAll( "\x04%N\x01 skeeted a tank rock.", attacker );
     }
     
     Call_StartForward(g_hForwardRockSkeeted);
@@ -2866,7 +2892,7 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
             {
                 if ( !IsFakeClient(infected) )
                 {
-                    PrintToChatAll( "\x04%N\x01 made \x05%N\x01 trigger a car alarm.", survivor );
+                    PrintToChatAll( "\x04%N\x01 made \x05%N\x01 trigger a car alarm.", infected, survivor );
                 }
                 else {
                     switch ( GetEntProp(infected, Prop_Send, "m_zombieClass") )
