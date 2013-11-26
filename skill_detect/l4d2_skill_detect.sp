@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.15"
+#define PLUGIN_VERSION "0.9.16"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -374,11 +374,12 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     - bhopping check
         - if speed is above a certain value, also accept 0-increase as actual hops
     
-    - sometimes (rarely) witch crowns are not counted/reported?
+    - sometimes (rarely) witch crowns are not counted/reported?y
         - full crowns on sitting witches
         - epi: use 'oneshot' (at least as a safeguard)
-        
+    
     - fix:  tank rock owner is not reliable for the RockEaten forward
+    - fix:  tank rock skeets still unreliable detection
     
     - do a hookoutput on prop_car_alarm's and use that to track the actual alarm
         going off (might help in the case 2 alarms go off exactly at the same time?)
@@ -1658,7 +1659,7 @@ public OnEntityCreated ( entity, const String:classname[] )
             SDKHook(entity, SDKHook_OnTakeDamage, OnTakeDamage_Car);
             SDKHook(entity, SDKHook_Touch, OnTouch_Car);
             
-            CreateTimer( 0.01, Timer_CarAlarmCreated, entity, TIMER_FLAG_NO_MAPCHANGE );
+            SDKHook(entity, SDKHook_Spawn, OnEntitySpawned_CarAlarm); 
         }
         
         case OEC_CARGLASS:
@@ -1667,12 +1668,12 @@ public OnEntityCreated ( entity, const String:classname[] )
             SDKHook(entity, SDKHook_Touch, OnTouch_CarGlass);
             
             //SetTrieValue(g_hCarTrie, car_key, );
-            CreateTimer( 0.02, Timer_CarAlarmGlassCreated, entity, TIMER_FLAG_NO_MAPCHANGE );
+            SDKHook(entity, SDKHook_Spawn, OnEntitySpawned_CarAlarmGlass); 
         }
     }
 }
 
-public Action: Timer_CarAlarmCreated (Handle:timer, any:entity)
+public OnEntitySpawned_CarAlarm ( entity )
 {
     if ( !IsValidEntity(entity) ) { return; }
     
@@ -1686,7 +1687,7 @@ public Action: Timer_CarAlarmCreated (Handle:timer, any:entity)
     SetTrieValue( g_hCarTrie, car_key, 0 );         // who shot the car?
 }
 
-public Action: Timer_CarAlarmGlassCreated (Handle:timer, any:entity)
+public OnEntitySpawned_CarAlarmGlass ( entity )
 {
     if ( !IsValidEntity(entity) ) { return; }
     
