@@ -27,22 +27,16 @@ static const String:MAPINFO_PATH[] = "configs/saferoominfo.txt";
     Changelog
     =========
     
-        0.0.5
+        0.0.6
+            - Fixed problems with entities that don't have location data
+            
+        0.0.1 - 0.0.5
             - Got rid of dependency on l4d2lib. Now falls back on lgofnoc, if loaded.
             - Now regged as 'saferoom_detect'
-            
-        0.0.4
             - Fixed swapped start/end saferoom problem.
-            
-        0.0.3
             - Better saferoom detection for weird saferooms (Death Toll church, Dead Air greenhouse), two-part saferoom checks.
             - Uses KeyValues file now: saferoominfo.txt in sourcemod/configs/
-            
-        0.0.2
             - All official maps done (even Cold Stream).
-            
-        0.0.1
-            - Added ugly maptable and maps for all standard L4D2 campaigns (L4D1 still to do)
         
 */
 
@@ -159,7 +153,7 @@ public OnMapEnd()
 
 public IsEntityInStartSaferoom(entity)
 {
-    if (!IsValidEntity(entity)) { return false; }
+    if ( !IsValidEntity(entity) || GetEntSendPropOffs(entity, "m_vecOrigin", true) == -1 ) { return false; }
     
     // get entity location
     new Float: location[3];
@@ -170,7 +164,7 @@ public IsEntityInStartSaferoom(entity)
 
 public IsEntityInEndSaferoom(entity)
 {
-    if (!IsValidEntity(entity)) { return false; }
+    if ( !IsValidEntity(entity) || GetEntSendPropOffs(entity, "m_vecOrigin", true) == -1 ) { return false; }
     
     // get entity location
     new Float: location[3];
@@ -265,7 +259,7 @@ IsPointInStartSaferoom(Float:location[3], entity=-1)
         new Float:saferoom[3];
         LGO_GetMapValueVector("start_point", saferoom, NULL_VECTOR);
         
-        if ( entity != -1 && IsValidEntity(entity) )
+        if ( entity != -1 && IsValidEntity(entity) && GetEntSendPropOffs(entity, "m_vecOrigin", true) != -1 )
         {
             GetEntPropVector(entity, Prop_Send, "m_vecOrigin", location);
         }
@@ -332,7 +326,7 @@ IsPointInEndSaferoom(Float:location[3], entity = -1)
         new Float:saferoom[3];
         LGO_GetMapValueVector("end_point", saferoom, NULL_VECTOR);
         
-        if ( entity != -1 && IsValidEntity(entity) )
+        if ( entity != -1 && IsValidEntity(entity) && GetEntSendPropOffs(entity, "m_vecOrigin", true) != -1 )
         {
             GetEntPropVector(entity, Prop_Send, "m_vecOrigin", location);
         }
