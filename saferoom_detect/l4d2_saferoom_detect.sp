@@ -45,7 +45,7 @@ public Plugin:myinfo =
     name = "Precise saferoom detection",
     author = "Tabun",
     description = "Allows checks whether a coordinate/entity/player is in start or end saferoom (uses saferoominfo.txt).",
-    version = "0.0.5",
+    version = "0.0.6",
     url = ""
 }
 
