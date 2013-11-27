@@ -1958,7 +1958,12 @@ stock CheckWitchCrown ( witch, attacker )
     */
     
     // not a crown at all if anyone was hit, or if the killing damage wasn't a shotgun blast
-    if ( witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] || !witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] ) { return; }
+    
+    if ( witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] || !witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] )
+    {
+        PrintDebug(0, "Witch Crown Check: Failed: bungled: %i / crowntype: %i", witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH], witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] );
+        return;
+    }
     
     PrintDebug(0, "Witch Crown Check: crown shot: %i, harrassed: %i (full health: %i / drawthresh: %i)", 
             witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT],
@@ -2884,7 +2889,7 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
             IS_VALID_INGAME(survivor) && !IsFakeClient(survivor)
     ) {
         if ( reason == CALARM_HIT ) {
-            PrintToChatAll( "\x05%N\x01 hit an alarmed car.", survivor );
+            PrintToChatAll( "\x05%N\x01 triggered an alarm with a hit.", survivor );
         }
         else if ( reason == CALARM_TOUCHED )
         {
@@ -2893,15 +2898,15 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
             {
                 if ( !IsFakeClient(infected) )
                 {
-                    PrintToChatAll( "\x04%N\x01 made \x05%N\x01 trigger a car alarm.", infected, survivor );
+                    PrintToChatAll( "\x04%N\x01 made \x05%N\x01 trigger an alarm.", infected, survivor );
                 }
                 else {
                     switch ( GetEntProp(infected, Prop_Send, "m_zombieClass") )
                     {
-                        case ZC_SMOKER: { PrintToChatAll( "\x01A hunter made \x05%N\x01 trigger a car alarm.", survivor ); }
-                        case ZC_JOCKEY: { PrintToChatAll( "\x01A jockey made \x05%N\x01 trigger a car alarm.", survivor ); }
-                        case ZC_CHARGER: { PrintToChatAll( "\x01A charger made \x05%N\x01 trigger a car alarm.", survivor ); }
-                        default: { PrintToChatAll( "\x01A bot infected made \x05%N\x01 trigger a car alarm.", survivor ); }
+                        case ZC_SMOKER: { PrintToChatAll( "\x01A hunter made \x05%N\x01 trigger an alarm.", survivor ); }
+                        case ZC_JOCKEY: { PrintToChatAll( "\x01A jockey made \x05%N\x01 trigger an alarm.", survivor ); }
+                        case ZC_CHARGER: { PrintToChatAll( "\x01A charger made \x05%N\x01 trigger an alarm.", survivor ); }
+                        default: { PrintToChatAll( "\x01A bot infected made \x05%N\x01 trigger an alarm.", survivor ); }
                     }
                 }
             }
@@ -2911,21 +2916,21 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
             }
         }
         else if ( reason == CALARM_EXPLOSION ) {
-            PrintToChatAll( "\x05%N\x01 triggered a car alarm with an explosion.", survivor );
+            PrintToChatAll( "\x05%N\x01 triggered an alarm with an explosion.", survivor );
         }
         else if ( reason == CALARM_BOOMER )
         {
             if ( IS_VALID_INFECTED(infected) && !IsFakeClient(infected) )
             {
-                PrintToChatAll( "\x05%N\x01 triggered a car alarm by shooting boomer \x04%N\x01.", survivor, infected );
+                PrintToChatAll( "\x05%N\x01 triggered an alarm by shooting boomer \x04%N\x01.", survivor, infected );
             }
             else
             {
-                PrintToChatAll( "\x05%N\x01 triggered a car alarm by shooting a boomer.", survivor );
+                PrintToChatAll( "\x05%N\x01 triggered an alarm by shooting a boomer.", survivor );
             }
         }
         else {
-            PrintToChatAll( "\x05%N\x01 triggered a car alarm.", survivor );
+            PrintToChatAll( "\x05%N\x01 triggered an alarm.", survivor );
         }
     }
     
