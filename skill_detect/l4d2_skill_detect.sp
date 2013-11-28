@@ -599,6 +599,11 @@ public Action: Event_RoundStart( Handle:event, const String:name[], bool:dontBro
     for ( new i = 1; i <= MaxClients; i++ )
     {
         g_bIsHopping[i] = false;
+        
+        for ( new j = 1; j <= MaxClients; j++ )
+        {
+            g_fVictimLastShove[i][j] = 0.0;
+        }
     }
 }
 
@@ -1125,9 +1130,13 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
     new victim = GetClientOfUserId(GetEventInt(event, "userid"));
     new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
     
+    //PrintDebug(1, "Shove from %i on %i", attacker, victim);
+    
     if ( !IS_VALID_SURVIVOR(attacker) || !IS_VALID_INFECTED(victim) ) { return Plugin_Continue; }
     
     new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
+    
+    //PrintDebug(1, " --> Shove from %N on %N (class: %i) -- (last shove time: %.2f / %.2f)", attacker, victim, zClass, g_fVictimLastShove[victim][attacker], FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) );
     
     // track on boomers
     if ( zClass == ZC_BOOMER )
@@ -2922,7 +2931,7 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
         {
             if ( IS_VALID_INFECTED(infected) && !IsFakeClient(infected) )
             {
-                PrintToChatAll( "\x05%N\x01 triggered an alarm by shooting boomer \x04%N\x01.", survivor, infected );
+                PrintToChatAll( "\x05%N\x01 triggered an alarm by killing a boomer \x04%N\x01.", survivor, infected );
             }
             else
             {
