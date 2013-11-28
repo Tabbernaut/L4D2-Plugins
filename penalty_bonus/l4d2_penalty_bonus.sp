@@ -12,7 +12,8 @@
 
     Changelog
     =========
-        0.1.0
+        0.1.1
+            - added PBONUS_RequestFinalUpdate() forward.
             - replaced netprop round tracking with bool. (odd behaviour fix?)
             
         0.0.1 - 0.0.9
@@ -43,11 +44,12 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached.",
-    version = "0.1.0",
+    version = "0.1.1",
     url = ""
 }
 
 
+new     Handle:         g_hForwardRequestUpdate                             = INVALID_HANDLE;       // request final update before round ends
 
 new     Handle:         g_hCvarEnabled                                      = INVALID_HANDLE;
 new     Handle:         g_hCvarDoDisplay                                    = INVALID_HANDLE;
@@ -75,6 +77,11 @@ new                     g_iBonus[2]                                         = {0
  
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
+    // this forward requests all plugins to return their final modifications
+    //  the cell parameter will be updated for each plugin responding to this forward
+    //  so the last return value is the total of the final update modifications
+    g_hForwardRequestUpdate = CreateGlobalForward("PBONUS_RequestFinalUpdate", ET_Single, Param_CellByRef );
+    
     CreateNative("PBONUS_GetRoundBonus", Native_GetRoundBonus);
     CreateNative("PBONUS_ResetRoundBonus", Native_ResetRoundBonus);
     CreateNative("PBONUS_SetRoundBonus", Native_SetRoundBonus);
@@ -119,6 +126,7 @@ public Native_SetRoundBonus(Handle:plugin, numParams)
 
 public Native_AddRoundBonus(Handle:plugin, numParams)
 {
+    new bool: bNoReport = false;
     new bonus = GetNativeCell(1);
     g_iBonus[RoundNum()] += bonus;
     
@@ -129,7 +137,15 @@ public Native_AddRoundBonus(Handle:plugin, numParams)
         g_bSetSameChange = false;
     }
     
-    if (GetConVarBool(g_hCvarReportChange)) { ReportChange(bonus); }
+    if ( numParams > 1 )
+    {
+        bNoReport = bool: GetNativeCell(2);
+    }
+    
+    if ( !bNoReport )
+    {
+        if (GetConVarBool(g_hCvarReportChange)) { ReportChange(bonus); }
+    }
 }
 
 public Native_GetDefibsUsed(Handle:plugin, numParams)
@@ -301,27 +317,19 @@ public Action: Event_WitchKilled(Handle:event, const String:name[], bool:dontBro
 
 public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
 {
+    new updateScore = 0, updateResult = 0;
+    
+    // get update before setting the bonus
+    Call_StartForward(g_hForwardRequestUpdate);
+    Call_PushCellRef( updateScore );
+    Call_Finish(_:updateResult);
+    
+    // add the update to the round's bonus
+    g_iBonus[RoundNum()] += updateResult;
+    g_iSameChange = 0;
+    g_bSetSameChange = false;
+    
     SetBonus();
-    
-    /*
-        note: logicalTeam is A/B tracked correctly throughout the game
-                that's not how the gamerules prop index works though: that simply uses 'teams-are-flipped' values for first and second round...
-        also: manipulating the score directly does not work -- the SetBonus() defib penalty works fine.
-    
-    //new logicalTeam = (GameRules_GetProp("m_bAreTeamsFlipped", 4, 0)) ? ((RoundNum()) ? 0 : 1)  : RoundNum();
-    new logicalTeam = GameRules_GetProp("m_bAreTeamsFlipped", 4, 0);
-    
-    LogMessage("[penbonus] OnEndVersusModeRound: round %i / flip: %i: Bonus: %i -- defibs used: %i -- defib penalty: %i -- survscore: %i -- chapter score: %i -- camp.score %i",
-            RoundNum(),
-            GameRules_GetProp("m_bAreTeamsFlipped", 4, 0),
-            g_iBonus[ RoundNum() ],
-            GameRules_GetProp("m_iVersusDefibsUsed", 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) ),
-            GetConVarInt( g_hCvarDefibPenalty ),
-            GameRules_GetProp("m_iSurvivorScore", 4, logicalTeam),
-            GameRules_GetProp("m_iChapterScore", 4, logicalTeam),
-            GameRules_GetProp("m_iCampaignScore", 4, logicalTeam)
-        );
-    */
 }
 
 
@@ -359,8 +367,6 @@ public SetBonus()
     
     // only set the amount of defibs used to 1 if there is a bonus to set
     GameRules_SetProp("m_iVersusDefibsUsed", (bonus != 0) ? fakeDefibs : 0, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0) );
-    
-    //PrintDebug("[penbon] set bonus to %i * %i.", (bonus != 0) ? 1 : 0, bonus);
 }
 
 public CalculateBonus()

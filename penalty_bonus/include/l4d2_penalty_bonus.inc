@@ -3,6 +3,18 @@
   ------------------------------------------------------
 */
 
+/**
+ *  Called when a round is about to end. 
+ *  The update value is passed by reference and increased by any plugin using this forward
+ *  before the next. Do an update += <update value> and return the new update.
+ *  PBonus will apply the last value of that update to the round's penalty bonus (without reporting).
+ *
+ *  @param  int     update              (by reference) the value of the cumulative update PBonus needs to know
+ *  @return int     the update value to add to the round's bonus
+ */
+forward OnHoldOutBonusSet( &update );
+
+
 // Get the bonus for the current round
 //    returns int
 native PBONUS_GetRoundBonus();
@@ -14,7 +26,7 @@ native PBONUS_ResetRoundBonus();
 native PBONUS_SetRoundBonus(bonus);
 
 // Adds points to the bonus for the current round
-native PBONUS_AddRoundBonus(bonus);
+native PBONUS_AddRoundBonus(bonus, bool:bNoReport);
 
 // Get the amount of defibs used in the current round
 //    returns int
