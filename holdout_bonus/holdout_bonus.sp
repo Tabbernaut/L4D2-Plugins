@@ -100,7 +100,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.3",
+    version = "0.0.4",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -235,6 +235,20 @@ public Action: L4D_OnFirstSurvivorLeftSafeArea( client )
     }
 }
 
+// penalty_bonus: requesting final update before setting score, pass it the holdout bonus
+public PBONUS_RequestFinalUpdate( &update )
+{
+    if ( g_bHoldoutActive )
+    {
+        // hold out ends, but note it's by request
+        HoldOutEnds( true );
+        update += g_iActualBonus;
+    }
+    
+    return update;
+}
+
+// this is not called before penalty_bonus, so useless
 public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
 {
     if ( g_bHoldoutThisRound )
@@ -378,7 +392,9 @@ public HoldOutEnds_Hook ( const String:output[], caller, activator, Float:delay 
     }
 }
 
-stock HoldOutEnds()
+
+
+stock HoldOutEnds( bool:bByRequest = false )
 {
     g_bHoldoutActive = false;
     
@@ -389,7 +405,10 @@ stock HoldOutEnds()
     // only give bonus if enabled
     if ( GetConVarBool(g_hCvarPointsMode) )
     {
-        PBONUS_AddRoundBonus( g_iActualBonus );
+        if ( !bByRequest )
+        {
+            PBONUS_AddRoundBonus( g_iActualBonus );
+        }
         
         // only show bonus on event over if report 2+
         if ( GetConVarInt(g_hCvarReportMode) > 1 )
