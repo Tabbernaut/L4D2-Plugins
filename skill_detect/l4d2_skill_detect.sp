@@ -31,8 +31,8 @@
  *      OnSmokerSelfClear( survivor, smoker, withShove )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
- *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height )
- *      OnJockeyHighPounce( jockey, victim, Float:height )
+ *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height, bool:bReportedHigh )
+ *      OnJockeyHighPounce( jockey, victim, Float:height, bool:bReportedHigh )
  *      OnDeathCharge( charger, victim, Float: height, Float: distance, wasCarried )
  *      OnSpecialShoved( survivor, infected, zombieClass )
  *      OnSpecialClear( clearer, pinner, pinvictim, zombieClass, Float:timeA, Float:timeB, withShove )
@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.16"
+#define PLUGIN_VERSION "0.9.17"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -81,7 +81,7 @@
 #define CHARGE_END_CHECK        2.5     // after client hits ground after getting impact-charged: when to check whether it was a death
 #define CHARGE_END_RECHECK      3.0     // safeguard wait to recheck on someone getting incapped out of bounds
 #define VOMIT_DURATION_TIME     2.25    // how long the boomer vomit stream lasts -- when to check for boom count
-#define ROCK_CHECK_TIME         1.0     // how long to wait after rock entity is destroyed before checking for skeet/eat (high to avoid lag issues)
+#define ROCK_CHECK_TIME         0.34    // how long to wait after rock entity is destroyed before checking for skeet/eat (high to avoid lag issues)
 #define CARALARM_MIN_TIME       0.11    // maximum time after touch/shot => alarm to connect the two events (test this for LAG)
 
 #define MIN_DC_TRIGGER_DMG      300     // minimum amount a 'trigger' / drown must do before counted as a death action
@@ -325,7 +325,7 @@ new     Handle:         g_hCvarDeathChargeHeight                            = IN
 new     Handle:         g_hCvarInstaTime                                    = INVALID_HANDLE;   // cvar clear within this time or lower for instaclear
 new     Handle:         g_hCvarBHopMinStreak                                = INVALID_HANDLE;   // cvar this many hops in a row+ = streak
 new     Handle:         g_hCvarBHopMinInitSpeed                             = INVALID_HANDLE;   // cvar lower than this and the first jump won't be seen as the start of a streak
-
+new     Handle:         g_hCvarBHopContSpeed                                = INVALID_HANDLE;   // cvar
 
 new     Handle:         g_hCvarPounceInterrupt                              = INVALID_HANDLE;   // z_pounce_damage_interrupt
 new                     g_iPounceInterrupt                                  = 150;
@@ -371,19 +371,22 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     To Do
     -----
     
-    - bhopping check
-        - if speed is above a certain value, also accept 0-increase as actual hops
-    
-    - sometimes (rarely) witch crowns are not counted/reported?y
+    - sometimes (rarely) witch crowns are not counted/reported?
         - full crowns on sitting witches
+            - doesn't detect shotgun blast somehow.. maybe shove on witch?
+                L 12/01/2013 - 00:02:09: [optional/l4d2_skill_detect.smx] Witch Crown Check: Failed: bungled: 0 / crowntype: 0
+                L 12/01/2013 - 00:02:09: [optional/l4d2_random.smx] [rand] witch died: entity: 410; bungled: 0
         - epi: use 'oneshot' (at least as a safeguard)
     
     - fix:  tank rock owner is not reliable for the RockEaten forward
     - fix:  tank rock skeets still unreliable detection
     
-    - do a hookoutput on prop_car_alarm's and use that to track the actual alarm
-        going off (might help in the case 2 alarms go off exactly at the same time?)
-        - nitpick!
+    - fix:  apparently some HR4 cars generate car alarm messages when shot, even when no alarm goes off
+            (combination with car equalize plugin?)
+            - see below: the single hook might also fix this.. -- if not, hook for sound
+            - do a hookoutput on prop_car_alarm's and use that to track the actual alarm
+                going off (might help in the case 2 alarms go off exactly at the same time?)
+
     
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
@@ -404,6 +407,9 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     - count rock hits even if they do no damage [epi request]    
     - sir
         - make separate teamskeet forward, with (for now, up to) 4 skeeters + the damage each did
+    - xan
+        - add detection/display of unsuccesful witch crowns (witch death + info)
+        
     detect...
         - ? add jockey deadstops (and change forward to reflect type)
         - ? show meatshots on teammates / report meatshots?
@@ -413,6 +419,7 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     ---
     done:
         - removed tank's name from rock skeet print
+        - 300+ speed hops are considered hops even if no increase
 */
 
 public Plugin:myinfo = 
@@ -447,8 +454,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardRockSkeeted =     CreateGlobalForward("OnTankRockSkeeted", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float );
-    g_hForwardJockeyDP =        CreateGlobalForward("OnJockeyHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float );
+    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
+    g_hForwardJockeyDP =        CreateGlobalForward("OnJockeyHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Cell );
     g_hForwardDeathCharge =     CreateGlobalForward("OnDeathCharge", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardClear =           CreateGlobalForward("OnSpecialClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardVomitLanded =     CreateGlobalForward("OnBoomerVomitLanded", ET_Ignore, Param_Cell, Param_Cell );
@@ -517,6 +524,7 @@ public OnPluginStart()
     g_hCvarInstaTime = CreateConVar(        "sm_skill_instaclear_time",     "0.75", "A clear within this time (in seconds) counts as an insta-clear.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarBHopMinStreak = CreateConVar(    "sm_skill_bhopstreak",          "3", "The lowest bunnyhop streak that will be reported.", FCVAR_PLUGIN, true, 0.0, false );
     g_hCvarBHopMinInitSpeed = CreateConVar( "sm_skill_bhopinitspeed",     "150", "The minimal speed of the first jump of a bunnyhopstreak (0 to allow 'hops' from standstill).", FCVAR_PLUGIN, true, 0.0, false );
+    g_hCvarBHopContSpeed = CreateConVar(    "sm_skill_bhopkeepspeed",     "300", "The minimal speed at which hops are considered succesful even if not speed increase is made.", FCVAR_PLUGIN, true, 0.0, false );
     
     // cvars: built in
     g_hCvarPounceInterrupt = FindConVar("z_pounce_damage_interrupt");
@@ -1227,15 +1235,12 @@ public Action: Event_LungePounce( Handle:event, const String:name[], bool:dontBr
     // damage in this is expressed as a float because my server has competitive hunter pouncing where the decimal counts
     new Float: fDamage = ( ( (float(distance) - fMin) / (fMax - fMin) ) * fMaxDmg ) + 1.0;
     
-    if ( fDamage >= GetConVarFloat(g_hCvarHunterDPThresh) )
-    {
-        new Handle: pack = CreateDataPack();
-        WritePackCell( pack, client );
-        WritePackCell( pack, victim );
-        WritePackFloat( pack, fDamage );
-        WritePackFloat( pack, fHeight );
-        CreateTimer( 0.05, Timer_HunterDP, pack );
-    }
+    new Handle: pack = CreateDataPack();
+    WritePackCell( pack, client );
+    WritePackCell( pack, victim );
+    WritePackFloat( pack, fDamage );
+    WritePackFloat( pack, fHeight );
+    CreateTimer( 0.05, Timer_HunterDP, pack );
     
     return Plugin_Continue;
 }
@@ -1295,7 +1300,7 @@ public Action: Event_PlayerJumped( Handle:event, const String:name[], bool:dontB
             fLengthOld = GetVectorLength(g_fLastHop[client]);
             
             // if they picked up speed, count it as a hop, otherwise, we're done hopping
-            if ( fLengthNew - fLengthOld > HOP_ACCEL_THRESH )
+            if ( fLengthNew - fLengthOld > HOP_ACCEL_THRESH || fLengthNew >= GetConVarFloat(g_hCvarBHopContSpeed) )
             {
                 g_iHops[client]++;
                 
@@ -1417,11 +1422,8 @@ public Action: Event_JockeyRide( Handle:event, const String:name[], bool:dontBro
     
     //PrintToChatAll("jockey height: %.3f", fHeight);
     
-    if ( fHeight >= GetConVarFloat(g_hCvarJockeyDPThresh) )
-    {
-        // high pounce
-        HandleJockeyDP( client, victim, fHeight );
-    }
+    // (high) pounce
+    HandleJockeyDP( client, victim, fHeight );
     
     return Plugin_Continue;
 }
@@ -1694,6 +1696,8 @@ public OnEntitySpawned_CarAlarm ( entity )
     
     SetTrieValue( g_hCarTrie, target, entity );
     SetTrieValue( g_hCarTrie, car_key, 0 );         // who shot the car?
+    
+    HookSingleEntityOutput( entity, "OnCarAlarmStart", Hook_CarAlarmStart );
 }
 
 public OnEntitySpawned_CarAlarmGlass ( entity )
@@ -1754,6 +1758,7 @@ public OnEntityDestroyed ( entity )
         SDKUnhook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
     }
 }
+
 
 public Action: Timer_CheckRockSkeet (Handle:timer, any:rock)
 {
@@ -1840,8 +1845,10 @@ public Action: Event_WitchKilled ( Handle:event, const String:name[], bool:dontB
     
     if ( !IS_VALID_SURVIVOR(attacker) ) { return Plugin_Continue; }
     
+    new bool: bOneShot = GetEventBool(event, "oneshot");
+    
     // is it a crown / drawcrown?
-    CheckWitchCrown( witch, attacker );
+    CheckWitchCrown( witch, attacker, bOneShot );
     
     return Plugin_Continue;
 }
@@ -1950,7 +1957,7 @@ public OnTakeDamagePost_Witch ( victim, attacker, inflictor, Float:damage, damag
     }
 }
 
-stock CheckWitchCrown ( witch, attacker )
+stock CheckWitchCrown ( witch, attacker, bool: bOneShot = false )
 {
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", witch);
@@ -1968,21 +1975,32 @@ stock CheckWitchCrown ( witch, attacker )
     
     // not a crown at all if anyone was hit, or if the killing damage wasn't a shotgun blast
     
+    // safeguard: if it was a 'oneshot' witch kill, must've been a shotgun
+    if ( bOneShot )
+    {
+        witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] = 1;
+    }
+    
     if ( witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] || !witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] )
     {
-        PrintDebug(0, "Witch Crown Check: Failed: bungled: %i / crowntype: %i", witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH], witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] );
+        PrintDebug(0, "Witch Crown Check: Failed: bungled: %i / crowntype: %i",
+                witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH],
+                witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE]
+            );
+            
         return;
     }
     
-    PrintDebug(0, "Witch Crown Check: crown shot: %i, harrassed: %i (full health: %i / drawthresh: %i)", 
+    PrintDebug(0, "Witch Crown Check: crown shot: %i, harrassed: %i (full health: %i / drawthresh: %i / oneshot %i)", 
             witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT],
             witch_dmg_array[MAXPLAYERS+WTCH_STARTLED],
             iWitchHealth,
-            GetConVarInt(g_hCvarDrawCrownThresh)
+            GetConVarInt(g_hCvarDrawCrownThresh),
+            bOneShot
         );
     
     // full crown? unharrassed
-    if ( !witch_dmg_array[MAXPLAYERS+WTCH_STARTLED] && witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] >= iWitchHealth )
+    if ( !witch_dmg_array[MAXPLAYERS+WTCH_STARTLED] && ( bOneShot || witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT] >= iWitchHealth ) )
     {
         // make sure that we don't count any type of chip
         if ( GetConVarBool(g_hCvarHideFakeDamage) )
@@ -2028,10 +2046,6 @@ stock CheckWitchCrown ( witch, attacker )
         
         // plus, set final shot as 'damage', and the rest as chip
         HandleDrawCrown( attacker, witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT], chipDamage );
-    }
-    else {
-        // not crowned
-        PrintDebug(0, "Not crowned..");
     }
 }
 
@@ -2156,6 +2170,13 @@ public Action: Event_ChokeStop (Handle:event, const String:name[], bool:dontBroa
 }
 
 // car alarm handling
+public Hook_CarAlarmStart ( const String:output[], caller, activator, Float:delay )
+{
+    //decl String:car_key[10];
+    //FormatEx(car_key, sizeof(car_key), "%x", entity);
+    
+    PrintDebug( 0, "calarm trigger: caller %i / activator %i / delay: %.2f", caller, activator, delay );
+}
 public Action: Event_CarAlarmGoesOff( Handle:event, const String:name[], bool:dontBroadcast )
 {
     g_fLastCarAlarm = GetGameTime();
@@ -2717,8 +2738,10 @@ HandleRockSkeeted( attacker, victim )
 stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Float:height )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_HUNTERDP )
-    {
+    if (    GetConVarBool(g_hCvarReport)
+        &&  GetConVarInt(g_hCvarReportFlags) & REP_HUNTERDP
+        &&  height >= GetConVarFloat(g_hCvarHunterDPThresh)
+    ) {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
         {
             PrintToChatAll( "\x04%N\x01 high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", attacker,  victim, actualDamage, RoundFloat(height) );
@@ -2735,13 +2758,16 @@ stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Fl
     Call_PushCell(actualDamage);
     Call_PushFloat(calculatedDamage);
     Call_PushFloat(height);
+    Call_PushCell( (height >= GetConVarFloat(g_hCvarHunterDPThresh)) ? 1 : 0 );
     Call_Finish();
 }
 stock HandleJockeyDP( attacker, victim, Float:height )
 {
     // report?
-    if ( GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_JOCKEYDP )
-    {
+    if (    GetConVarBool(g_hCvarReport)
+        &&  GetConVarInt(g_hCvarReportFlags) & REP_JOCKEYDP
+        &&  height >= GetConVarFloat(g_hCvarJockeyDPThresh)
+    ) {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
         {
             PrintToChatAll( "\x04%N\x01 jockey high-pounced \x05%N\x01 (height: \x05%i\x01).", attacker,  victim, RoundFloat(height) );
@@ -2756,6 +2782,7 @@ stock HandleJockeyDP( attacker, victim, Float:height )
     Call_PushCell(attacker);
     Call_PushCell(victim);
     Call_PushFloat(height);
+    Call_PushCell( (height >= GetConVarFloat(g_hCvarJockeyDPThresh)) ? 1 : 0 );
     Call_Finish();
 }
 

@@ -173,8 +173,9 @@ forward OnTankRockEaten( tank, survivor );
  *  @param  int     actualDamage        the actual damage the pounce did to the survivor
  *  @param  Float   calculatedDamage    how much damage (going by pounceannounce parameters) the pounce would be expected to do
  *  @param  Float   height              the vertical distance between the pounce origin and its landing
+ *  @param  bool    reportedHigh        whether skill_detect considers it a high pounce for reporting purposes
  */
-forward OnHunterHighPounce( hunter, survivor, actualDamage, Float:calculatedDamage, Float:height );
+forward OnHunterHighPounce( hunter, survivor, actualDamage, Float:calculatedDamage, Float:height, bool:reportedHigh );
 
 /**
  *  Called whenever a jockey lands a high-pounce on a survivor.
@@ -182,11 +183,12 @@ forward OnHunterHighPounce( hunter, survivor, actualDamage, Float:calculatedDama
  *  Note: due to the nature of the tracking, it only gets the height right if a jockey actually
  *  jumped or pounced from his perch. If they simple walk off and land, it may be incorrect.
  *
- *  @param  int     jockey      the infected client that performed the feat
- *  @param  int     survivor    the survivor client that underwent it
- *  @param  Float   height      the vertical distance between the pounce origin and its landing
+ *  @param  int     jockey          the infected client that performed the feat
+ *  @param  int     survivor        the survivor client that underwent it
+ *  @param  Float   height          the vertical distance between the pounce origin and its landing
+ *  @param  bool    reportedHigh    whether skill_detect considers it a high pounce for reporting purposes
  */
-forward OnJockeyHighPounce( jockey, victim, Float:height );
+forward OnJockeyHighPounce( jockey, victim, Float:height, bool:reportedHigh );
 
 /**
  *  Called whenever a charger lands a death-charge on a survivor.
