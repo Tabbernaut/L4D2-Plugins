@@ -92,5 +92,9 @@ REP_CARALARM            524288          *
 <b>sm_skill_bhopinitspeed</b><br />
 [150] The minimum initial speed at the first hop, before the streak counts (if the flag is set).<br />
 
+<b>sm_skill_bhopkeepspeed</b><br />
+[300] The minimum speed at which non-accelerating hops will still count as continued bhaps.<br />
+
+
 <b>sm_skill_hidefakedamage</b><br />
 [0/1], whether hide any damage on witch or level that exceeds the maximum health (this WILL make it harder to get drawcrowns and full levels!)<br />
