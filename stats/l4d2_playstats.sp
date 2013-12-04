@@ -479,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.26",
+    version = "0.9.27",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -2533,16 +2533,20 @@ public OnTankRockSkeeted ( attacker, victim )
     g_strRoundPlayerData[index][g_iCurTeam][plyRockSkeets]++;
 }
 // highpounces
-public OnHunterHighPounce ( attacker, victim, actualDamage, Float:damage, Float:height )
+public OnHunterHighPounce ( attacker, victim, actualDamage, Float:damage, Float:height, bool:bReportedHigh )
 {
+    if ( !bReportedHigh ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
     g_strRoundPlayerInfData[index][g_iCurTeam][infHunterDPs]++;
     g_strRoundPlayerInfData[index][g_iCurTeam][infHunterDPDmg] += RoundToFloor( damage );
 }
-public OnJockeyHighPounce ( attacker, victim, Float:height )
+public OnJockeyHighPounce ( attacker, victim, Float:height, bool:bReportedHigh )
 {
+    if ( !bReportedHigh ) { return; }
+    
     new index = GetPlayerIndexForClient( attacker );
     if ( index == -1 ) { return; }
     
