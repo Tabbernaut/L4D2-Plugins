@@ -26,16 +26,6 @@
 #include <sourcemod>
 #include <sdktools>
 #include <sdkhooks>
-#include <left4downtown>
-#include <l4d2_direct>
-#include <l4d2util>
-
-/*
-    Problem:
-        - godframes overlap: color goes away after first godframe action ends
-            reset timeout and only reset color on last godframe action ending..
-        
-*/
 
 new     Float:  g_fGodFramesEnd[MAXPLAYERS+1];
 
@@ -43,7 +33,7 @@ public Plugin:myinfo =
 {
     name = "L4D2 Godframes Color (Default timings)",
     author = "Tabun",
-    version = "0.1.1",
+    version = "0.1.2",
     description = "Simple coloring of godframed survivors."
 };
 
@@ -116,7 +106,7 @@ public Action:Timer_ResetGlow ( Handle:timer, any:client )
 
 stock ResetGlow ( client )
 {
-    if ( !IS_VALID_CLIENT(client) ) { return; }
+    if ( !IS_VALID_SURVIVOR(client) && ( !IS_VALID_INFECTED(client) || !IsPlayerAlive(client) ) ) { return; }
     
     // only reset glow if not extended
     if ( g_fGodFramesEnd[client] == 0.0 || GetGameTime() - g_fGodFramesEnd[client] > 0 )
