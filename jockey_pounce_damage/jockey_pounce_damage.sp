@@ -24,7 +24,7 @@ public Plugin:myinfo =
     name = "Jockey Pounce Damage (Skill Detect Version)",
     author = "Tabun",
     description = "Does damage based on jockey pounce height.",
-    version = "0.9.1",
+    version = "0.9.2",
     url = "none"
 }
 
@@ -41,6 +41,9 @@ public OnJockeyHighPounce(attacker, victim, Float:height, bool:bReportedHigh)
 
     if (damage <= 0) {
         return;
+    }
+    if (damage > g_iPounceUncapDamageMax + 1) {
+        damage = g_iPounceUncapDamageMax + 1;
     }
     
     // do damage
