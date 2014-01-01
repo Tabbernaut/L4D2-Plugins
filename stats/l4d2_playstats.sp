@@ -479,10 +479,9 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.27",
+    version = "0.9.28",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
-
 
 /*
     todo
@@ -496,7 +495,9 @@ public Plugin: myinfo =
               can be unproblematically written to (yes, I was afraid to
               just try this without doing some serious testing with it
               first).
-        
+
+        - end of round MVP chat prints: doesn't show your rank
+
         - full game stats don't show before round is live
         - full game stat: shows last round time, instead of full game time
         
@@ -512,7 +513,6 @@ public Plugin: myinfo =
     - instead of hits/shots, display average multiplier for shotgun pellets
         (can just do that per hitgroup, if we use what we know about the SI)
 */
-
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
@@ -542,7 +542,6 @@ public OnLibraryAdded(const String:name[])
     else if ( StrEqual(name, "pause") ) { g_bPauseAvailable = true; }
     else if ( StrEqual(name, "skill_detect") ) { g_bSkillDetectLoaded = true; }
 }
-
 
 public OnPluginStart()
 {
@@ -2307,8 +2306,6 @@ public Action: Event_WeaponFire (Handle:event, const String:name[], bool:dontBro
     // ignore otherwise
 }
 
-
-
 // spawncount
 public Action: Event_PlayerSpawn (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
@@ -3140,8 +3137,8 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
     
     // also find the three non-mvp survivors and tell them they sucked
     // tell them they sucked with SI
-    if (    ( bRound && g_strRoundData[g_iRound][team][rndSIDamage] > 0 || !bRound && g_strAllRoundData[team][rndSIDamage] > 0 ) &&
-            !(iBrevityFlags & BREV_RANK) && !(iBrevityFlags & BREV_SI)
+    if (    ( bRound && g_strRoundData[g_iRound][team][rndSIDamage] > 0 || !bRound && g_strAllRoundData[team][rndSIDamage] > 0 )
+        &&  !(iBrevityFlags & BREV_RANK) && !(iBrevityFlags & BREV_SI)
     ) {
         // skip 0, since that is the MVP
         for ( i = 1; i < g_iTeamSize && i < g_iPlayers; i++ )
@@ -3207,8 +3204,8 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
 
     // tell them they sucked with Common
     listNumber = 0;
-    if (    ( bRound && g_strRoundData[g_iRound][team][rndCommon] || !bRound && g_strAllRoundData[team][rndCommon] ) &&
-            !(iBrevityFlags & BREV_RANK) && !(iBrevityFlags & BREV_CI)
+    if (    ( bRound && g_strRoundData[g_iRound][team][rndCommon] || !bRound && g_strAllRoundData[team][rndCommon] )
+        &&  !(iBrevityFlags & BREV_RANK) && !(iBrevityFlags & BREV_CI)
     ) {
         
         // skip 0, since that is the MVP
@@ -3240,7 +3237,7 @@ stock DisplayStatsMVPChat( client, bool:bRound = true, bool:bTeam = true, iTeam 
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] Your rank - CI: #\x03%d \x01(kills \x04%i%%\x01)",
                             (bRound) ? "" : " - Game",
                             (i+1),
-                            RoundFloat( (bRound) ? 
+                            RoundFloat( (bRound) ?
                                     ((float(g_strRoundPlayerData[index][team][plyCommon]) / float(g_strRoundData[g_iRound][team][rndCommon])) * 100) :
                                     ((float(g_strPlayerData[index][plyCommon]) / float(g_strAllRoundData[team][rndCommon])) * 100) 
                                 )
@@ -3326,9 +3323,7 @@ String: GetMVPChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 )
     if ( bTeam && !bRound ) {
         for ( new i = 0; i < g_iPlayers; i++ ) {
             if ( g_iPlayerRoundTeam[team][i] == team ) {
-                mvp_SI = i;
-                mvp_Common = i;
-                mvp_FF = i;
+                mvp_SI = mvp_Common = mvp_FF = i;
                 break;
             }
         }
@@ -3400,8 +3395,11 @@ String: GetMVPChatString( bool:bRound = true, bool:bTeam = true, iTeam = -1 )
         
         if ( !(iBrevityFlags & BREV_CI) )
         {
-            if ( mvp_Common > -1 )
-            {
+            // only print if there is a common mvp, and if they killed more than 0 commons
+            //  safeguarded to only show if total common kills logged in scope
+            if (    mvp_Common > -1
+                &&  (bRound && g_strRoundData[g_iRound][team][rndCommon] || !bRound && g_strAllRoundData[team][rndCommon])
+            ) {
                 if ( iBrevityFlags & BREV_PERCENT ) {
                     Format(tmpBuffer, sizeof(tmpBuffer), "[MVP%s] CI:\x03 %s \x01(\x05%d \x01common)\n",
                             (bRound) ? "" : " - Game",
@@ -6180,7 +6178,7 @@ stock AutomaticRoundEndPrint ( bool:doDelay = true )
 }
 
 public Action: Timer_AutomaticRoundEndPrint ( Handle:timer )
-{   
+{
     new iFlags = GetConVarInt( ( g_bModeCampaign ) ? g_hCvarAutoPrintCoop : g_hCvarAutoPrintVs );
     
     // do automatic prints (only for clients that don't have cookie flags set)
@@ -6488,7 +6486,6 @@ stock AutomaticPrintPerClient( iFlags, client = -1, iTeam = -1, bool: bNoDelay =
     // - inf
 }
 
-
 public Action: Timer_DelayedPrint( Handle:timer, Handle:pack )
 {
     ResetPack( pack );
@@ -6503,7 +6500,7 @@ public Action: Timer_DelayedPrint( Handle:timer, Handle:pack )
     AutomaticPrintPerClient( flags, client, team, true, true, bSortedRound, bSortedGame );
 }
 
-/*  
+/*
     Support
     -------
 */
@@ -6516,7 +6513,6 @@ stock GetCurrentTeamSurvivor()
         return GameRules_GetProp("m_bAreTeamsFlipped");
     }
 }
-
 stock GetWeaponTypeForId ( weaponId )
 {
     if ( weaponId == WP_PISTOL || weaponId == WP_PISTOL_MAGNUM )
@@ -6541,7 +6537,6 @@ stock GetWeaponTypeForId ( weaponId )
     
     return 0;
 }
-
 stock GetWeaponTypeForClassname ( const String:classname[] )
 {
     new strWeaponType: weaponType;
@@ -6552,7 +6547,6 @@ stock GetWeaponTypeForClassname ( const String:classname[] )
     
     return weaponType;
 }
-
 stock GetPlayerIndexForClient ( client )
 {
     if ( !IS_VALID_INGAME(client) ) { return -1; }
@@ -6571,7 +6565,6 @@ stock GetPlayerIndexForClient ( client )
     
     return GetPlayerIndexForSteamId( sSteamId, client );
 }
-
 // if not found, stores the steamid for a new index, stores the name and safe name too
 stock GetPlayerIndexForSteamId ( const String:steamId[], client=-1 )
 {
@@ -6603,7 +6596,6 @@ stock GetPlayerIndexForSteamId ( const String:steamId[], client=-1 )
     
     return pIndex;
 }
-
 stock GetPlayerCharacter ( client )
 {
     new tmpChr = GetEntProp(client, Prop_Send, "m_survivorCharacter");
@@ -6627,8 +6619,6 @@ stock GetPlayerCharacter ( client )
     
     return tmpChr;
 }
-
-
 stock IsIndexSurvivor ( index, bool: bInfectedInstead = false )
 {
     // assume bots are always survivors
@@ -6700,7 +6690,6 @@ stock bool: IsPlayerIncapacitatedAtAll ( client )
 {
     return bool: ( IsPlayerIncapacitated(client) || IsHangingFromLedge(client) );
 }
-
 stock bool: AreClientsConnected()
 {
     for (new i = 1; i <= MaxClients; i++)
@@ -6967,7 +6956,6 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     }
 }
 
-
 /*
     Tries
     -----
@@ -7041,6 +7029,7 @@ stock InitTries()
     SetTrieValue(g_hTrieMaps, "c12m5_cornfield",                MP_FINALE);
     SetTrieValue(g_hTrieMaps, "c13m4_cutthroatcreek",           MP_FINALE);
 }
+
 /*
     General functions
     -----------------
@@ -7086,7 +7075,6 @@ stock RightPadString ( String:text[], maxlength, cutOff = 20 )
     
     strcopy( text, maxlength, tmp );
 }
-
 
 stock FormatTimeAsDuration ( String:text[], maxlength, time, bool:bPad = true )
 {
@@ -7154,6 +7142,7 @@ stock FormatPercentage ( String:text[], maxlength, part, whole, bool: bDecimal =
     
     strcopy( text, maxlength, strTmp );
 }
+
 stock CheckGameMode()
 {
     // check gamemode for 'coop'
@@ -7187,6 +7176,7 @@ stock IsMissionFinalMap()
     if ( !GetTrieValue(g_hTrieMaps, g_sMapName[g_iRound], mapType) ) { return false; }
     return bool:( mapType == MP_FINALE );
 }
+
 stock stripUnicode ( String:testString[MAXNAME], maxLength = 20 )
 {
     if ( maxLength < 1 ) { maxLength = MAXNAME; }
