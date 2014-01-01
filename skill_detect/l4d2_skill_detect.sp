@@ -31,7 +31,7 @@
  *      OnSmokerSelfClear( survivor, smoker, withShove )
  *      OnTankRockSkeeted( survivor, tank )
  *      OnTankRockEaten( tank, survivor )
- *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height, bool:bReportedHigh )
+ *      OnHunterHighPounce( hunter, victim, actualDamage, Float:calculatedDamage, Float:height, bool:bReportedHigh, bool:bPlayerIncapped )
  *      OnJockeyHighPounce( jockey, victim, Float:height, bool:bReportedHigh )
  *      OnDeathCharge( charger, victim, Float: height, Float: distance, wasCarried )
  *      OnSpecialShoved( survivor, infected, zombieClass )
@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.17"
+#define PLUGIN_VERSION "0.9.18"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -371,24 +371,19 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
     To Do
     -----
     
-    - sometimes (rarely) witch crowns are not counted/reported?
-        - full crowns on sitting witches
-            - doesn't detect shotgun blast somehow.. maybe shove on witch?
-                L 12/01/2013 - 00:02:09: [optional/l4d2_skill_detect.smx] Witch Crown Check: Failed: bungled: 0 / crowntype: 0
-                L 12/01/2013 - 00:02:09: [optional/l4d2_random.smx] [rand] witch died: entity: 410; bungled: 0
-        - epi: use 'oneshot' (at least as a safeguard)
-    
     - fix:  tank rock owner is not reliable for the RockEaten forward
-    - fix:  tank rock skeets still unreliable detection
+    - fix:  tank rock skeets still unreliable detection (often triggers a 'skeet' when actually landed on someone)
     
     - fix:  apparently some HR4 cars generate car alarm messages when shot, even when no alarm goes off
             (combination with car equalize plugin?)
             - see below: the single hook might also fix this.. -- if not, hook for sound
             - do a hookoutput on prop_car_alarm's and use that to track the actual alarm
                 going off (might help in the case 2 alarms go off exactly at the same time?)
+    - fix:  double prints on car alarms (sometimes? epi + m60)
 
-    - fix:  damage calculation for hunter pounces
-    
+    - fix:  sometimes instaclear reports double for single clear (0.16s / 0.19s) epi saw this, was for hunter
+    - fix:  deadstops and m2s don't always register .. no idea why..
+
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
     
@@ -413,12 +408,12 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
         
     detect...
         - ? add jockey deadstops (and change forward to reflect type)
-        - ? show meatshots on teammates / report meatshots?
         - ? speedcrown detection?
         - ? spit-on-cap detection
     
     ---
     done:
+        - applied sanity bounds to calculated damage for hunter dps
         - removed tank's name from rock skeet print
         - 300+ speed hops are considered hops even if no increase
 */
@@ -431,7 +426,6 @@ public Plugin:myinfo =
     version = PLUGIN_VERSION,
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 }
-
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
@@ -455,7 +449,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSmokerSelfClear = CreateGlobalForward("OnSmokerSelfClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardRockSkeeted =     CreateGlobalForward("OnTankRockSkeeted", ET_Ignore, Param_Cell, Param_Cell );
     g_hForwardRockEaten =       CreateGlobalForward("OnTankRockEaten", ET_Ignore, Param_Cell, Param_Cell );
-    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
+    g_hForwardHunterDP =        CreateGlobalForward("OnHunterHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell, Param_Cell );
     g_hForwardJockeyDP =        CreateGlobalForward("OnJockeyHighPounce", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Cell );
     g_hForwardDeathCharge =     CreateGlobalForward("OnDeathCharge", ET_Ignore, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
     g_hForwardClear =           CreateGlobalForward("OnSpecialClear", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Float, Param_Float, Param_Cell );
@@ -1215,7 +1209,12 @@ public Action: Event_LungePounce( Handle:event, const String:name[], bool:dontBr
     
     // check if it was a DP    
     // ignore if no real pounce start pos
-    if ( g_fPouncePosition[client][0] == 0.0 && g_fPouncePosition[client][1] == 0.0 && g_fPouncePosition[client][2] == 0.0 ) { return Plugin_Continue; }
+    if (    g_fPouncePosition[client][0] == 0.0
+        &&  g_fPouncePosition[client][1] == 0.0
+        &&  g_fPouncePosition[client][2] == 0.0
+    ) {
+        return Plugin_Continue;
+    }
         
     new Float: endPos[3];
     GetClientAbsOrigin( client, endPos );
@@ -1233,8 +1232,15 @@ public Action: Event_LungePounce( Handle:event, const String:name[], bool:dontBr
     new distance = RoundToNearest( GetVectorDistance(g_fPouncePosition[client], endPos) );
     
     // get damage using hunter damage formula
-    // damage in this is expressed as a float because my server has competitive hunter pouncing where the decimal counts
+    // check if this is accurate, seems to differ from actual damage done!
     new Float: fDamage = ( ( (float(distance) - fMin) / (fMax - fMin) ) * fMaxDmg ) + 1.0;
+
+    // apply bounds
+    if (fDamage < 0.0) {
+        fDamage = 0.0;
+    } else if (fDamage > fMaxDmg + 1.0) {
+        fDamage = fMaxDmg + 1.0;
+    }
     
     new Handle: pack = CreateDataPack();
     WritePackCell( pack, client );
@@ -1626,8 +1632,6 @@ stock ResetHunter(client)
     }
     g_iHunterOverkill[client] = 0;
 }
-
-
 
 
 // entity creation
@@ -2736,20 +2740,21 @@ HandleRockSkeeted( attacker, victim )
 }
 
 // highpounces
-stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Float:height )
+stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Float:height, bool:playerIncapped = false )
 {
     // report?
     if (    GetConVarBool(g_hCvarReport)
         &&  GetConVarInt(g_hCvarReportFlags) & REP_HUNTERDP
         &&  height >= GetConVarFloat(g_hCvarHunterDPThresh)
+        &&  !playerIncapped
     ) {
         if ( IS_VALID_INGAME(attacker) && IS_VALID_INGAME(victim) && !IsFakeClient(attacker) )
         {
-            PrintToChatAll( "\x04%N\x01 high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", attacker,  victim, actualDamage, RoundFloat(height) );
+            PrintToChatAll( "\x04%N\x01 high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", attacker,  victim, RoundFloat(calculatedDamage), RoundFloat(height) );
         }
         else if ( IS_VALID_INGAME(victim) )
         {
-            PrintToChatAll( "A hunter high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", victim, actualDamage, RoundFloat(height) );
+            PrintToChatAll( "A hunter high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", victim, RoundFloat(calculatedDamage), RoundFloat(height) );
         }
     }
     
@@ -2760,6 +2765,7 @@ stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Fl
     Call_PushFloat(calculatedDamage);
     Call_PushFloat(height);
     Call_PushCell( (height >= GetConVarFloat(g_hCvarHunterDPThresh)) ? 1 : 0 );
+    Call_PushCell( (playerIncapped) ? 1 : 0 );
     Call_Finish();
 }
 stock HandleJockeyDP( attacker, victim, Float:height )
