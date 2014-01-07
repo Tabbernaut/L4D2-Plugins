@@ -27,6 +27,9 @@ static const String:MAPINFO_PATH[] = "configs/saferoominfo.txt";
     Changelog
     =========
     
+        0.0.7
+            - Built in safeguard against trying to find values before keyvalues file is loaded.
+
         0.0.6
             - Fixed problems with entities that don't have location data
             
@@ -45,7 +48,7 @@ public Plugin:myinfo =
     name = "Precise saferoom detection",
     author = "Tabun",
     description = "Allows checks whether a coordinate/entity/player is in start or end saferoom (uses saferoominfo.txt).",
-    version = "0.0.6",
+    version = "0.0.7",
     url = ""
 }
 
@@ -366,6 +369,11 @@ SI_KV_Load()
 
 bool: SI_KV_UpdateSaferoomInfo()
 {
+    if (g_kSIData == INVALID_HANDLE) {
+        LogError("[SI] No saferoom keyvalues loaded!");
+        return false;
+    }
+
     // defaults
     g_bHasStart = false;        g_bHasStartExtra = false;
     g_bHasEnd = false;          g_bHasEndExtra = false;
