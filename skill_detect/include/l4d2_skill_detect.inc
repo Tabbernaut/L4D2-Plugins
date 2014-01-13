@@ -108,7 +108,7 @@ forward OnChargerLevel( survivor, charger );
 forward OnChargerLevelHurt( survivor, charger, damage );
 
 /**
- *  Called whenever a witch as crown without it being angered first.
+ *  Called whenever a witch was crowned without her being angered first.
  *
  *  @param  int     survivor    the survivor client that performed the feat
  *  @param  int     damage      damage done in the killing hit
@@ -116,8 +116,8 @@ forward OnChargerLevelHurt( survivor, charger, damage );
 forward OnWitchCrown( survivor, damage );
 
 /**
- *  Called whenever a witch after she got angered/triggered. This is referred
- *  to (depending on the community) as a 'draw crown' or 'remote'.
+ *  Called whenever a witch gets crowned after she got angered/triggered.
+ *  This is referred to (depending on the community) as a 'draw crown' or 'remote'.
  *
  *  @param  int     survivor    the survivor client that performed the feat
  *  @param  int     damage      damage done in the killing hit
