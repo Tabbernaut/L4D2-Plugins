@@ -59,7 +59,7 @@
 #include <sdktools>
 #include <l4d2_direct>
 
-#define PLUGIN_VERSION "0.9.18"
+#define PLUGIN_VERSION "0.9.19"
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
 #define IS_SURVIVOR(%1)         (GetClientTeam(%1) == 2)
@@ -83,6 +83,9 @@
 #define VOMIT_DURATION_TIME     2.25    // how long the boomer vomit stream lasts -- when to check for boom count
 #define ROCK_CHECK_TIME         0.34    // how long to wait after rock entity is destroyed before checking for skeet/eat (high to avoid lag issues)
 #define CARALARM_MIN_TIME       0.11    // maximum time after touch/shot => alarm to connect the two events (test this for LAG)
+
+#define WITCH_CHECK_TIME        0.1     // time to wait before checking for witch crown after shoots fired
+#define WITCH_DELETE_TIME       0.15    // time to wait before deleting entry from witch trie after entity is destroyed
 
 #define MIN_DC_TRIGGER_DMG      300     // minimum amount a 'trigger' / drown must do before counted as a death action
 #define MIN_DC_FALL_DMG         175     // minimum amount of fall damage counts as death-falling for a deathcharge
@@ -383,6 +386,7 @@ new     Handle:         g_hCvarMaxPounceDamage                              = IN
 
     - fix:  sometimes instaclear reports double for single clear (0.16s / 0.19s) epi saw this, was for hunter
     - fix:  deadstops and m2s don't always register .. no idea why..
+    - fix:  sometimes a (first?) round doesn't work for skeet detection.. no hurt/full skeets are reported or counted
 
     - make forwards fire for every potential action,
         - include the relevant values, so other plugins can decide for themselves what to consider it
@@ -1747,21 +1751,31 @@ public OnEntityDestroyed ( entity )
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", entity);
     
-    if ( RemoveFromTrie(g_hWitchTrie, witch_key) )
-    {
-        // witch
-        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
-        return;
-    }
-    
     decl rock_array[3];
-    
     if ( GetTrieArray(g_hRockTrie, witch_key, rock_array, sizeof(rock_array)) )
     {
         // tank rock
         CreateTimer( ROCK_CHECK_TIME, Timer_CheckRockSkeet, entity );
         SDKUnhook(entity, SDKHook_TraceAttack, TraceAttack_Rock);
+        return;
     }
+
+    decl witch_array[MAXPLAYERS+DMGARRAYEXT];
+    if ( GetTrieArray(g_hWitchTrie, witch_key, witch_array, sizeof(witch_array)) )
+    {
+        // witch
+        //  delayed deletion, to avoid potential problems with crowns not detecting
+        CreateTimer( WITCH_DELETE_TIME, Timer_WitchKeyDelete, entity );
+        SDKUnhook(entity, SDKHook_OnTakeDamagePost, OnTakeDamagePost_Witch);
+        return;
+    }
+}
+
+public Action: Timer_WitchKeyDelete (Handle:timer, any:witch)
+{
+    decl String:witch_key[10];
+    FormatEx(witch_key, sizeof(witch_key), "%x", witch);
+    RemoveFromTrie(g_hWitchTrie, witch_key);
 }
 
 
@@ -1853,7 +1867,11 @@ public Action: Event_WitchKilled ( Handle:event, const String:name[], bool:dontB
     new bool: bOneShot = GetEventBool(event, "oneshot");
     
     // is it a crown / drawcrown?
-    CheckWitchCrown( witch, attacker, bOneShot );
+    new Handle: pack = CreateDataPack();
+    WritePackCell( pack, attacker );
+    WritePackCell( pack, witch );
+    WritePackCell( pack, (bOneShot) ? 1 : 0 );
+    CreateTimer( WITCH_CHECK_TIME, Timer_CheckWitchCrown, pack );
     
     return Plugin_Continue;
 }
@@ -1962,12 +1980,26 @@ public OnTakeDamagePost_Witch ( victim, attacker, inflictor, Float:damage, damag
     }
 }
 
+public Action: Timer_CheckWitchCrown(Handle:timer, Handle:pack)
+{
+    ResetPack( pack );
+    new attacker = ReadPackCell( pack );
+    new witch = ReadPackCell( pack );
+    new bool:bOneShot = bool:ReadPackCell( pack );
+    CloseHandle( pack );
+
+    CheckWitchCrown( witch, attacker, bOneShot );
+}
+
 stock CheckWitchCrown ( witch, attacker, bool: bOneShot = false )
 {
     decl String:witch_key[10];
     FormatEx(witch_key, sizeof(witch_key), "%x", witch);
     decl witch_dmg_array[MAXPLAYERS+DMGARRAYEXT];
-    if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) ) { return; }
+    if ( !GetTrieArray(g_hWitchTrie, witch_key, witch_dmg_array, MAXPLAYERS+DMGARRAYEXT) ) {
+        PrintDebug(0, "Witch Crown Check: Error: Trie entry missing (entity: %i, oneshot: %i)", witch, bOneShot);
+        return;
+    }
     
     new chipDamage = 0;
     new iWitchHealth = GetConVarInt(g_hCvarWitchHealth);
@@ -1981,6 +2013,8 @@ stock CheckWitchCrown ( witch, attacker, bool: bOneShot = false )
     // not a crown at all if anyone was hit, or if the killing damage wasn't a shotgun blast
     
     // safeguard: if it was a 'oneshot' witch kill, must've been a shotgun
+    //      this is not enough: sometimes a shotgun crown happens that is not even reported as a oneshot...
+    //      seems like the cause is that the witch post ontakedamage is not called in time?
     if ( bOneShot )
     {
         witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] = 1;
@@ -1988,11 +2022,16 @@ stock CheckWitchCrown ( witch, attacker, bool: bOneShot = false )
     
     if ( witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH] || !witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE] )
     {
-        PrintDebug(0, "Witch Crown Check: Failed: bungled: %i / crowntype: %i",
+        PrintDebug(0, "Witch Crown Check: Failed: bungled: %i / crowntype: %i (entity: %i)",
                 witch_dmg_array[MAXPLAYERS+WTCH_GOTSLASH],
-                witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE]
+                witch_dmg_array[MAXPLAYERS+WTCH_CROWNTYPE],
+                witch
             );
-            
+        PrintDebug(1, "Witch Crown Check: Further details: attacker: %N, attacker dmg: %i, teamless dmg: %i",
+                attacker,
+                witch_dmg_array[attacker],
+                witch_dmg_array[0]
+            );
         return;
     }
     
@@ -2052,6 +2091,9 @@ stock CheckWitchCrown ( witch, attacker, bool: bOneShot = false )
         // plus, set final shot as 'damage', and the rest as chip
         HandleDrawCrown( attacker, witch_dmg_array[MAXPLAYERS+WTCH_CROWNSHOT], chipDamage );
     }
+
+    // remove trie
+
 }
 
 // tank rock
