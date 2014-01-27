@@ -35,6 +35,8 @@
 #define PMODE_NODIST            1
 #define PMODE_DIST              2
 
+#define REPORT_ONLYEVENT        4
+
 
 new     bool:   g_bLateLoad             = false;
 
@@ -100,7 +102,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.4",
+    version = "0.0.5",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -149,7 +151,7 @@ public OnPluginStart()
     g_hCvarReportMode = CreateConVar(
             "sm_hbonus_report",
             "2",                                        // 0: disable; 1: leave distance unchanged; 2: substract points from distance
-            "The way the bonus is reported. 0: no report; 1: report only on round end; 2: also report after event; 3: also report when event starts.",
+            "The way the bonus is reported. 0: no report; 1: report only on round end; 2: also report after event; 3: also report when event starts; 4: only report on event end",
             FCVAR_PLUGIN, true, 0.0, false
         );
     
@@ -260,7 +262,8 @@ public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
         }
         
         // display the puny bonus (if enabled)
-        if ( GetConVarBool(g_hCvarReportMode) && GetConVarBool(g_hCvarPointsMode) )
+        new iReport = GetConVarInt(g_hCvarReportMode);
+        if (iReport && iReport != REPORT_ONLYEVENT && GetConVarBool(g_hCvarPointsMode) )
         {
             DisplayBonusToAll();
         }
@@ -367,7 +370,8 @@ public HoldOutStarts ( const String:output[], caller, activator, Float:delay )
     }
     
     // report
-    if ( GetConVarInt(g_hCvarReportMode) > 2 )
+    new iReport = GetConVarInt(g_hCvarReportMode);
+    if ( iReport > 2 && iReport != REPORT_ONLYEVENT )
     {
         PrintToChatAll( "\x01Holdout event starts... (\x04%i\x01 bonus over \x05%i\x01 seconds)", g_iPointsBonus, g_iHoldoutTime );
     }
@@ -410,7 +414,7 @@ stock HoldOutEnds( bool:bByRequest = false )
             PBONUS_AddRoundBonus( g_iActualBonus );
         }
         
-        // only show bonus on event over if report 2+
+        // only show bonus on event over if report 2+ (REPORT_ONLYEVENT is fine for this too)
         if ( GetConVarInt(g_hCvarReportMode) > 1 )
         {
             DisplayBonusToAll();
