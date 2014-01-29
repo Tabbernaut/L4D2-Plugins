@@ -479,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.28",
+    version = "0.9.29",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -6902,12 +6902,23 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:]\n" );
         StrCat( sStats, sizeof(sStats), strTmpLine );
 
-        FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
-                g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
-                g_iScores[LTEAM_A],
-                g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
-                g_iScores[LTEAM_B]
-            );
+        // the scores don't match A/B logical teams, but first/second team to play
+        // survivor! so swap them if B went first (and thus iTeam == A for !bFirstWrite)
+        if (iTeam == LTEAM_A) {
+            FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
+                    g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
+                    g_iScores[LTEAM_B],
+                    g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
+                    g_iScores[LTEAM_A]
+                );
+        } else {
+            FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
+                    g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
+                    g_iScores[LTEAM_A],
+                    g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
+                    g_iScores[LTEAM_B]
+                );
+        }
         StrCat( sStats, sizeof(sStats), strTmpLine );
         
         
