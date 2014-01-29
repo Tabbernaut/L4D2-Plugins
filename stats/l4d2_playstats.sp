@@ -1203,8 +1203,18 @@ public OnUnpause()
 
 public Action: L4D_OnSetCampaignScores ( &scoreA, &scoreB )
 {
-    g_iScores[LTEAM_A] = scoreA;
-    g_iScores[LTEAM_B] = scoreB;
+    // take swapping into account
+    // scoreA = first to play survivor, scoreB = second to play survivor
+    if (    g_bSecondHalf && GetCurrentTeamSurvivor() == LTEAM_A
+        ||  !g_bSecondHalf && GetCurrentTeamSurvivor() == LTEAM_B
+    ) {
+        g_iScores[LTEAM_B] = scoreA;
+        g_iScores[LTEAM_A] = scoreB;
+    } else {
+        g_iScores[LTEAM_A] = scoreA;
+        g_iScores[LTEAM_B] = scoreB;
+    }
+    
     return Plugin_Continue;
 }
 /*
@@ -6902,23 +6912,15 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         FormatEx( strTmpLine, sizeof(strTmpLine), "[Scoring:]\n" );
         StrCat( sStats, sizeof(sStats), strTmpLine );
 
-        // the scores don't match A/B logical teams, but first/second team to play
-        // survivor! so swap them if B went first (and thus iTeam == A for !bFirstWrite)
-        if (iTeam == LTEAM_A) {
-            FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
-                    g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
-                    g_iScores[LTEAM_B],
-                    g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
-                    g_iScores[LTEAM_A]
-                );
-        } else {
-            FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
-                    g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
-                    g_iScores[LTEAM_A],
-                    g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
-                    g_iScores[LTEAM_B]
-                );
-        }
+        // the scores don't match A/B logical teams, but first/second team to play survivor
+        // this should be fixed now by checking the teams on the score-setting forward
+        FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
+                g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
+                g_iScores[LTEAM_B],
+                g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
+                g_iScores[LTEAM_A]
+            );
+        
         StrCat( sStats, sizeof(sStats), strTmpLine );
         
         
