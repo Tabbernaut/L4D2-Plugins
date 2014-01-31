@@ -436,7 +436,7 @@ new     bool:   g_bPaused               = false;                                
 new             g_iPauseStart           = 0;                                            // time the current pause started
 
 new             g_iScores               [2];                                            // scores for both teams, as currently known
-new             g_iOldScores            [2];                                            // scores for both teams, as in previous round
+new             g_iFirstScoresSet       [3];                                            // scores when first set for a new map (index 3 = 0 if not yet set)
 
 new             g_iBoomedBy             [MAXPLAYERS+1];                                 // if someone is boomed, by whom?
 
@@ -479,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.29",
+    version = "0.9.30",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -631,7 +631,7 @@ public OnPluginStart()
         );
     
     g_iTeamSize = 4;
-    
+    g_iFirstScoresSet[2] = 1;   // don't save scores for first map
     
     // commands:
     RegConsoleCmd( "sm_stats",      Cmd_StatsDisplayGeneral,    "Prints stats for survivors" );
@@ -787,21 +787,23 @@ public OnMapStart()
         //  so also using the bool to make sure it only happens once
         SetConVarInt(g_hCvarSkipMap, 0);
         g_bLoadSkipDone = true;
+
+        g_iFirstScoresSet[0] = 0;
+        g_iFirstScoresSet[1] = 0;
+        g_iFirstScoresSet[2] = 1;
     }
     else if ( g_bFirstLoadDone )
     {
         // reset stats for previous round
         PrintDebug( 2, "OnMapStart: Reset stats for round (Timer_ResetStats)" );
         CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
+
+        g_iFirstScoresSet[0] = 0;
+        g_iFirstScoresSet[1] = 0;
+        g_iFirstScoresSet[2] = 1;
     }
     
     g_bFirstLoadDone = true;
-    
-    if ( !g_bModeCampaign )
-    {
-        g_iOldScores[LTEAM_A] = g_iScores[LTEAM_A];
-        g_iOldScores[LTEAM_B] = g_iScores[LTEAM_B];
-    }
     
     // start flow-check timer
     CreateTimer( FREQ_FLOWCHECK, Timer_SaveFlows, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
@@ -880,7 +882,7 @@ public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 stock HandleRoundEnd ( bool: bFailed = false )
 {
     PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i, current round: %i", bFailed, g_bInRound, g_iRound);
-    
+
     // only do once
     if ( !g_bInRound ) { return; }
     
@@ -929,6 +931,11 @@ stock HandleRoundEnd ( bool: bFailed = false )
     
     if ( !g_bModeCampaign )
     {
+        // prepare for storing 'previous scores' after second roundhalf's roundend
+        if (g_bSecondHalf) {
+            g_iFirstScoresSet[2] = 0;           // unset, so first scores A/B will be stored on next L4D_OnSetCampaignScores
+        }
+
         g_bSecondHalf = true;
     }
     else
@@ -1203,18 +1210,33 @@ public OnUnpause()
 
 public Action: L4D_OnSetCampaignScores ( &scoreA, &scoreB )
 {
+    /* PrintDebug(0, "SetScores called: a:%d, b:%d -- half: %d -- currentsurvivorteam: %d -- cmt swapped: %d -- game swapped: %d",
+            scoreA,
+            scoreB,
+            g_bSecondHalf,
+            GetCurrentTeamSurvivor(),
+            g_bCMTSwapped,
+            GameRules_GetProp("m_bAreTeamsFlipped")
+    ); */
+
     // take swapping into account
-    // scoreA = first to play survivor, scoreB = second to play survivor
-    if (    g_bSecondHalf && GetCurrentTeamSurvivor() == LTEAM_A
-        ||  !g_bSecondHalf && GetCurrentTeamSurvivor() == LTEAM_B
-    ) {
+    
+    if (g_bCMTSwapped) {
         g_iScores[LTEAM_B] = scoreA;
         g_iScores[LTEAM_A] = scoreB;
     } else {
         g_iScores[LTEAM_A] = scoreA;
         g_iScores[LTEAM_B] = scoreB;
     }
-    
+
+    // if first scores weren't set yet, we cannot trust the roundhalf or currentsurvivorteam values!
+    // all we know is that order of the scores is as they were at the end of the last round
+    if (g_iFirstScoresSet[2] == 0) {
+        g_iFirstScoresSet[0] = scoreA;
+        g_iFirstScoresSet[1] = scoreB;
+        g_iFirstScoresSet[2] = 1;
+    }
+
     return Plugin_Continue;
 }
 /*
@@ -1624,9 +1646,18 @@ public OnCMTEnd()
 public OnCMTTeamSwap()
 {
     PrintDebug(2, "CMT TeamSwap.");
-    
+
     // toggle CMT swap
     g_bCMTSwapped = !g_bCMTSwapped;
+
+    // swap scores (they were stored for reversed teams)
+    new iTmp = g_iScores[LTEAM_A];
+    g_iScores[LTEAM_A] = g_iScores[LTEAM_B];
+    g_iScores[LTEAM_B] = iTmp;
+
+    iTmp = g_iFirstScoresSet[0];
+    g_iFirstScoresSet[0] = g_iFirstScoresSet[1];
+    g_iFirstScoresSet[1] = iTmp;
 }
 
 /*
@@ -2650,7 +2681,6 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
         
         for ( j = 0; j < 2; j++ ) {
             g_iScores[j] = 0;
-            g_iOldScores[j] = 0;
         }
     }
     else
@@ -6904,7 +6934,6 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
     StrCat( sStats, sizeof(sStats), "\n" );
     
     
-
     // only print this once (after both rounds played)
     if ( !bFirstWrite )
     {
@@ -6915,10 +6944,10 @@ stock WriteStatsToFile( iTeam, bool:bSecondHalf )
         // the scores don't match A/B logical teams, but first/second team to play survivor
         // this should be fixed now by checking the teams on the score-setting forward
         FormatEx( strTmpLine, sizeof(strTmpLine), "A;%i;%i;B;%i;%i;\n\n",
-                g_iScores[LTEAM_B] - g_iOldScores[LTEAM_B],
-                g_iScores[LTEAM_B],
-                g_iScores[LTEAM_A] - g_iOldScores[LTEAM_A],
-                g_iScores[LTEAM_A]
+                g_iScores[LTEAM_A] - g_iFirstScoresSet[((g_bCMTSwapped)?1:0)],
+                g_iScores[LTEAM_A],
+                g_iScores[LTEAM_B] - g_iFirstScoresSet[((g_bCMTSwapped)?0:1)],
+                g_iScores[LTEAM_B]
             );
         
         StrCat( sStats, sizeof(sStats), strTmpLine );
