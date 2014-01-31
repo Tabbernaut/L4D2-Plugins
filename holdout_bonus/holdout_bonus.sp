@@ -68,6 +68,7 @@ new             g_iCharProgress [MAXCHARACTERS];                                
 
 new     bool:   g_bHoldoutThisRound     = false;                                        // whether this map has a holdout event
 new     Float:  g_fHoldoutPointFactor   = 0.0;
+new             g_iHoldoutPointAbsolute = 0;                                            // either this or factor is used, not both
 new             g_iHoldoutTime          = 0;
 
 new             g_iHoldoutStartTime     = 0;                                            // absolute time it started
@@ -102,7 +103,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.5",
+    version = "0.0.6",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -287,7 +288,11 @@ stock RoundReallyStarting()
             if ( GetConVarInt(g_hCvarPointsMode) == PMODE_DIST && L4D_GetVersusMaxCompletionScore() != (g_iMapDistance - g_iPointsBonus) )
             {
                 g_iMapDistance = L4D_GetVersusMaxCompletionScore();
-                g_iPointsBonus = RoundFloat( float(g_iMapDistance) * g_fHoldoutPointFactor );
+                if (g_iHoldoutPointAbsolute) {
+                    g_iPointsBonus = g_iHoldoutPointAbsolute;
+                } else {
+                    g_iPointsBonus = RoundFloat( float(g_iMapDistance) * g_fHoldoutPointFactor );
+                }
                 
                 // change distance
                 if ( GetConVarInt(g_hCvarPointsMode) == PMODE_DIST )
@@ -298,7 +303,11 @@ stock RoundReallyStarting()
         }
         else {
             g_iMapDistance = L4D_GetVersusMaxCompletionScore();
-            g_iPointsBonus = RoundFloat( float(g_iMapDistance) * g_fHoldoutPointFactor );
+            if (g_iHoldoutPointAbsolute) {
+                g_iPointsBonus = g_iHoldoutPointAbsolute;
+            } else {
+                g_iPointsBonus = RoundFloat( float(g_iMapDistance) * g_fHoldoutPointFactor );
+            }
             
             // change distance
             if ( GetConVarInt(g_hCvarPointsMode) == PMODE_DIST )
@@ -628,6 +637,7 @@ bool: KV_UpdateHoldoutMapInfo()
 {
     g_bHoldoutThisRound = false;    // whether the map has a holdout event
     g_fHoldoutPointFactor = 0.0;    // how much the event is worth as a fraction of map distance
+    g_iHoldoutPointAbsolute = 0;
     g_iHoldoutTime = 0;             // how long the event lasts
     
     /*
@@ -644,6 +654,7 @@ bool: KV_UpdateHoldoutMapInfo()
     {
         g_bHoldoutThisRound = bool: (KvGetNum(g_kHIData, "holdout", 0));
         g_fHoldoutPointFactor = KvGetFloat(g_kHIData, "pointfactor", 0.0);
+        g_iHoldoutPointAbsolute = KvGetNum(g_kHIData, "pointabsolute", 0);
         g_iHoldoutTime = KvGetNum(g_kHIData, "time", 0);
         
         if ( g_bHoldoutThisRound )
@@ -659,7 +670,10 @@ bool: KV_UpdateHoldoutMapInfo()
             KvGetString( g_kHIData, "t_e_hook", g_sHoldoutEndHook, MAXSTR, "" );
         }
         
-        PrintDebug( 1, "Read holdout mapinfo for '%s': %i / %.2f.", mapname, g_bHoldoutThisRound, g_fHoldoutPointFactor );
+        PrintDebug( 1, "Read holdout mapinfo for '%s': %i / (factor: %.2f; abs: %i).",
+            mapname, g_bHoldoutThisRound,
+            g_fHoldoutPointFactor, g_iHoldoutPointAbsolute
+        );
         
         return true;
     }
