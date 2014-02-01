@@ -103,7 +103,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.6",
+    version = "0.0.7",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -172,12 +172,8 @@ public OnPluginStart()
     
     g_iTeamSize = 4;
     
-    
     // commands:
     RegConsoleCmd( "sm_hbonus", Cmd_DisplayBonus, "Shows current holdout bonus" );
-    
-    // load KeyValues
-    KV_Load();
     
     if ( g_bLateLoad )
     {
@@ -194,6 +190,8 @@ public OnPluginEnd()
 public OnConfigsExecuted()
 {
     g_iTeamSize = GetConVarInt( FindConVar("survivor_limit") );
+
+    KV_Load();
 }
 
 public OnMapStart()
