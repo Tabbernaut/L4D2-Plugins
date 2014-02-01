@@ -38,8 +38,6 @@
 #define REPORT_ONLYEVENT        4
 
 
-new     bool:   g_bLateLoad             = false;
-
 new     Handle: g_hForwardSet           = INVALID_HANDLE;
 new     Handle: g_hForwardStart         = INVALID_HANDLE;
 new     Handle: g_hForwardEnd           = INVALID_HANDLE;
@@ -103,7 +101,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.7",
+    version = "0.0.8",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -114,8 +112,6 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
     g_hForwardSet =     CreateGlobalForward("OnHoldOutBonusSet", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardStart =   CreateGlobalForward("OnHoldOutBonusStart", ET_Ignore, Param_Cell );
     g_hForwardEnd =     CreateGlobalForward("OnHoldOutBonusEnd", ET_Ignore, Param_Cell, Param_Cell );
-    
-    g_bLateLoad = late;
     
     return APLRes_Success;
 }
@@ -175,11 +171,6 @@ public OnPluginStart()
     // commands:
     RegConsoleCmd( "sm_hbonus", Cmd_DisplayBonus, "Shows current holdout bonus" );
     
-    if ( g_bLateLoad )
-    {
-        g_bInRound = true;
-        g_bPlayersLeftStart = true;
-    }
 }
 
 public OnPluginEnd()
@@ -221,6 +212,24 @@ public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
     
     // reset progress
     ResetTracking();
+
+    if (!g_bSecondHalf) {
+        CreateTimer(1.0, Timer_SetDisplayPoints, _, TIMER_FLAG_NO_MAPCHANGE);
+    }
+}
+
+public Action: Timer_SetDisplayPoints(Handle:timer)
+{
+    // store holdout bonus points (will get set again if round goes live for real)
+    // this is just for display purposes
+    
+    if (g_iHoldoutPointAbsolute) {
+        g_iPointsBonus = g_iHoldoutPointAbsolute;
+    } else {
+        g_iPointsBonus = RoundFloat(float(L4D_GetVersusMaxCompletionScore()) * g_fHoldoutPointFactor);
+    }
+
+    return Plugin_Continue;
 }
 
 public OnRoundIsLive()
@@ -638,6 +647,8 @@ bool: KV_UpdateHoldoutMapInfo()
     g_iHoldoutPointAbsolute = 0;
     g_iHoldoutTime = 0;             // how long the event lasts
     
+    if ( g_kHIData == INVALID_HANDLE ) { return false; }
+
     /*
         To Do:
         figure out a way to get information about how the event is started
