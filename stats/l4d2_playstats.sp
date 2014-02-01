@@ -797,10 +797,6 @@ public OnMapStart()
         // reset stats for previous round
         PrintDebug( 2, "OnMapStart: Reset stats for round (Timer_ResetStats)" );
         CreateTimer( STATS_RESET_DELAY, Timer_ResetStats, 1, TIMER_FLAG_NO_MAPCHANGE );
-
-        g_iFirstScoresSet[0] = 0;
-        g_iFirstScoresSet[1] = 0;
-        g_iFirstScoresSet[2] = 1;
     }
     
     g_bFirstLoadDone = true;
