@@ -101,7 +101,7 @@ public Plugin: myinfo =
     name = "Holdout Bonus",
     author = "Tabun",
     description = "Gives bonus for (partially) surviving holdout/camping events. (Requires penalty_bonus.)",
-    version = "0.0.8",
+    version = "0.0.9",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -166,6 +166,8 @@ public OnPluginStart()
             FCVAR_PLUGIN
         );
     
+    HookConVarChange(g_hCvarKeyValuesPath, ConvarChange_KeyValuesPath);
+
     g_iTeamSize = 4;
     
     // commands:
@@ -183,6 +185,17 @@ public OnConfigsExecuted()
     g_iTeamSize = GetConVarInt( FindConVar("survivor_limit") );
 
     KV_Load();
+}
+
+public ConvarChange_KeyValuesPath(Handle:convar, const String:oldValue[], const String:newValue[])
+{
+    // reload the keyvalues file
+    if (g_kHIData != INVALID_HANDLE) {
+        KV_Close();
+    }
+
+    KV_Load();
+    KV_UpdateHoldoutMapInfo();
 }
 
 public OnMapStart()
@@ -634,10 +647,12 @@ KV_Load()
     
     if ( !FileToKeyValues(g_kHIData, sNameBuff) )
     {
-        LogError("Couldn't load HoldOutMapInfo data!");
+        LogError("Couldn't load HoldOutMapInfo data! (file: %s)", sNameBuff);
         KV_Close();
         return;
     }
+
+    PrintDebug( 1, "Holdout data loaded from file: %s.", sNameBuff );
 }
 
 bool: KV_UpdateHoldoutMapInfo()
