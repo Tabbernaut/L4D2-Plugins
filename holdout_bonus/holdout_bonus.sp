@@ -150,21 +150,21 @@ public OnPluginStart()
             "sm_hbonus_report",
             "2",                                        // 0: disable; 1: leave distance unchanged; 2: substract points from distance
             "The way the bonus is reported. 0: no report; 1: report only on round end; 2: also report after event; 3: also report when event starts; 4: only report on event end",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     
     g_hCvarPointsMode = CreateConVar(
             "sm_hbonus_pointsmode",
             "2",                                        // 0: disable; 1: leave distance unchanged; 2: substract points from distance
             "The way the holdout bonus is awarded. 0: disable; 1: leave distance unchanged; 2: substract points from distance.",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     
     g_hCvarKeyValuesPath = CreateConVar(
             "sm_hbonus_configpath",
             "configs/holdoutmapinfo.txt",
             "The path to the holdoutmapinfo.txt with keyvalues for per-map holdout bonus settings.",
-            FCVAR_PLUGIN
+            FCVAR_NONE
         );
     
     HookConVarChange(g_hCvarKeyValuesPath, ConvarChange_KeyValuesPath);
@@ -173,12 +173,12 @@ public OnPluginStart()
     
     // commands:
     RegConsoleCmd( "sm_hbonus", Cmd_DisplayBonus, "Shows current holdout bonus" );
-    
-}
 
 public OnPluginEnd()
 {
     KV_Close();
+    
+}
 }
 
 public OnConfigsExecuted()
