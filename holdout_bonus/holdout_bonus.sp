@@ -123,12 +123,14 @@ public OnAllPluginsLoaded()
     g_bReadyUpAvailable = LibraryExists("readyup");
     g_bPauseAvailable = LibraryExists("pause");
 }
+
 public OnLibraryRemoved(const String:name[])
 {
     if ( StrEqual(name, "lgofnoc") ) { g_bLGOAvailable = false; }
     else if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = false; }
     else if ( StrEqual(name, "pause") ) { g_bPauseAvailable = false; }
 }
+
 public OnLibraryAdded(const String:name[])
 {
     if ( StrEqual(name, "lgofnoc") ) { g_bLGOAvailable = true; }
