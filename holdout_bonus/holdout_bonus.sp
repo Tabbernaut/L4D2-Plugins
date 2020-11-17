@@ -6,9 +6,7 @@
 #include <left4dhooks>
 #include <l4d2_penalty_bonus>
 #undef REQUIRE_PLUGIN
-#include <lgofnoc>
 #include <readyup>
-#include <pause>
 #define REQUIRE_PLUGIN
 
 #define IS_VALID_CLIENT(%1)     (%1 > 0 && %1 <= MaxClients)
@@ -41,16 +39,13 @@ new     Handle: g_hForwardSet           = INVALID_HANDLE;
 new     Handle: g_hForwardStart         = INVALID_HANDLE;
 new     Handle: g_hForwardEnd           = INVALID_HANDLE;
 
-new     bool:   g_bLGOAvailable         = false;                                        // whether lgofnoc is loaded
 new     bool:   g_bReadyUpAvailable     = false;
-new     bool:   g_bPauseAvailable       = false;
 
 new     bool:   g_bInRound              = false;
 new     bool:   g_bPlayersLeftStart     = false;
 new     bool:   g_bSecondHalf           = false;                                        // second roundhalf in a versus round
 
 new     bool:   g_bPaused               = false;                                        // whether paused with pause.smx
-new             g_iPauseStart           = 0;                                            // time the current pause started
 
 new     Handle: g_hCvarPointsMode       = INVALID_HANDLE;
 new     Handle: g_hCvarKeyValuesPath    = INVALID_HANDLE;
@@ -117,23 +112,17 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 // crox readyup usage
 public OnAllPluginsLoaded()
 {
-    g_bLGOAvailable = LibraryExists("lgofnoc");
     g_bReadyUpAvailable = LibraryExists("readyup");
-    g_bPauseAvailable = LibraryExists("pause");
 }
 
 public OnLibraryRemoved(const String:name[])
 {
-    if ( StrEqual(name, "lgofnoc") ) { g_bLGOAvailable = false; }
-    else if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = false; }
-    else if ( StrEqual(name, "pause") ) { g_bPauseAvailable = false; }
+    if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = false; }
 }
 
 public OnLibraryAdded(const String:name[])
 {
-    if ( StrEqual(name, "lgofnoc") ) { g_bLGOAvailable = true; }
-    else if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = true; }
-    else if ( StrEqual(name, "pause") ) { g_bPauseAvailable = true; }
+    if ( StrEqual(name, "readyup") ) { g_bReadyUpAvailable = true; }
 }
 
 
@@ -358,14 +347,11 @@ public OnPause()
 {
     if ( g_bPaused ) { return; }
     g_bPaused = true;
-    g_iPauseStart = GetTime();
 }
 
 public OnUnpause()
 {
     g_bPaused = false;
-    //new pauseTime = GetTime() - g_iPauseStart;
-    g_iPauseStart = 0;
 }
 
 // event tracking
