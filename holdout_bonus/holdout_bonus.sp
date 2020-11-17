@@ -48,7 +48,6 @@ new     bool:   g_bPauseAvailable       = false;
 new     bool:   g_bInRound              = false;
 new     bool:   g_bPlayersLeftStart     = false;
 new     bool:   g_bSecondHalf           = false;                                        // second roundhalf in a versus round
-new             g_iTeamSize             = 4;
 
 new     bool:   g_bPaused               = false;                                        // whether paused with pause.smx
 new             g_iPauseStart           = 0;                                            // time the current pause started
@@ -166,10 +165,8 @@ public OnPluginStart()
             "The path to the holdoutmapinfo.txt with keyvalues for per-map holdout bonus settings.",
             FCVAR_NONE
         );
-    
-    HookConVarChange(g_hCvarKeyValuesPath, ConvarChange_KeyValuesPath);
 
-    g_iTeamSize = 4;
+    HookConVarChange(g_hCvarKeyValuesPath, ConvarChange_KeyValuesPath);
     
     // commands:
     RegConsoleCmd( "sm_hbonus", Cmd_DisplayBonus, "Shows current holdout bonus" );
@@ -183,8 +180,6 @@ public OnPluginEnd()
 
 public OnConfigsExecuted()
 {
-    g_iTeamSize = GetConVarInt( FindConVar("survivor_limit") );
-
     KV_Load();
 }
 
