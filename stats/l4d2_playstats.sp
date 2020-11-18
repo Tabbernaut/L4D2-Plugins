@@ -7294,4 +7294,3 @@ stock PrintDebug( debugLevel, const String:Message[], any:... )
         //PrintToServer(DebugBuff);
     }
 }
-
