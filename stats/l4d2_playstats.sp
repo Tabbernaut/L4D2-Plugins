@@ -211,7 +211,7 @@
 
 
 // types of statistic table(sets)
-enum _:strStatType
+enum strStatType
 {
     typGeneral,
     typMVP,
@@ -223,14 +223,14 @@ enum _:strStatType
 };
 
 // information for entire game
-enum _:strGameData
+enum strGameData
 {
             gmFailed,               // survivors lost the mission * times
             gmStartTime             // GetTime() value when starting
 };
 
 // information per round
-enum _:strRoundData
+enum strRoundData
 {
             rndRestarts,            // how many times retried?
             rndPillsUsed,
@@ -255,7 +255,7 @@ enum _:strRoundData
 #define MAXRNDSTATS                 18
 
 // information per player
-enum _:strPlayerData
+enum strPlayerData
 {
             plyShotsShotgun,        // 0 pellets
             plyShotsSmg,            // all bullets from smg/rifle
@@ -338,7 +338,7 @@ enum _:strPlayerData
 #define MAXPLYSTATS                 76
 
 // information per infected player (during other team's survivor round)
-enum _:strInfData
+enum strInfData
 {
             infDmgTotal,            //      including on incapped, excluding all tank damage!
             infDmgUpright,          // 1
@@ -584,49 +584,49 @@ public OnPluginStart()
             "sm_stats_debug",
             "0",
             "Debug mode",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarMVPBrevityFlags = CreateConVar(
             "sm_survivor_mvp_brevity",
             "4",
             "Flags for setting brevity of MVP chat report (hide 1:SI, 2:CI, 4:FF, 8:rank, 32:perc, 64:abs).",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarAutoPrintVs = CreateConVar(
             "sm_stats_autoprint_vs_round",
             "8325",                                     // default = 1 (mvpchat) + 4 (mvpcon-round) + 128 (special round) = 133 + (funfact round) 8192 = 8325
             "Flags for automatic print [versus round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32,64:FF, 128,256:special, 512,1024,2048,4096:accuracy).",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarAutoPrintCoop = CreateConVar(
             "sm_stats_autoprint_coop_round",
             "1289",                                     // default = 1 (mvpchat) + 8 (mvpcon-all) + 256 (special all) + 1024 (acc all) = 1289
             "Flags for automatic print [campaign round] (show 1,4:MVP-chat, 4,8,16:MVP-console, 32,64:FF, 128,256:special, 512,1024,2048,4096:accuracy).",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarShowBots = CreateConVar(
             "sm_stats_showbots",
             "1",
             "Show bots in all tables (0 = show them in MVP and FF tables only)",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarDetailPercent = CreateConVar(
             "sm_stats_percentdecimal",
             "0",
             "Show the first decimal for (most) MVP percent in console tables.",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarWriteStats = CreateConVar(
             "sm_stats_writestats",
             "0",
             "Whether to store stats in logs/ dir (1 = write csv; 2 = write csv & pretty tables). Versus only.",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     g_hCvarSkipMap = CreateConVar(
             "sm_stats_resetnextmap",
             "0",
             "First round is ignored (for use with confogl/matchvotes - this will be automatically unset after a new map is loaded).",
-            FCVAR_PLUGIN, true, 0.0, false
+            FCVAR_NONE, true, 0.0, false
         );
     
     g_iTeamSize = 4;
@@ -978,7 +978,7 @@ stock HandleRoundAddition()
     // also sets end time to NOW for any 'ongoing' times for round/player
     
     // round data
-    for ( i = 0; i < rndStartTime; i++ )
+    for ( i = 0; i < _:rndStartTime; i++ )
     {
         g_strAllRoundData[g_iCurTeam][i] += g_strRoundData[g_iRound][g_iCurTeam][i];
     }
@@ -999,7 +999,7 @@ stock HandleRoundAddition()
     // player data
     for ( j = 0; j < g_iPlayers; j++ )
     {
-        for ( i = 0; i < plyTimeStartPresent; i++ )
+        for ( i = 0; i < _:plyTimeStartPresent; i++ )
         {
             g_strPlayerData[j][i] += g_strRoundPlayerData[j][g_iCurTeam][i];
         }
@@ -1017,7 +1017,7 @@ stock HandleRoundAddition()
         }
         
         // same for infected data
-        for ( i = 0; i < infTimeStartPresent; i++ )
+        for ( i = 0; i < _:infTimeStartPresent; i++ )
         {
             g_strPlayerInfData[j][i] += g_strRoundPlayerInfData[j][g_iCurTeam][i];
         }
@@ -1729,11 +1729,11 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
             
             switch ( weaponType )
             {
-                case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsSIShotgun;  }
-                case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsSISmg;      storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
-                case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsSISniper;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
+                case WPTYPE_SHOTGUN: { storeA = _:plyHitsShotgun; storeB = _:plyHitsSIShotgun;  }
+                case WPTYPE_SMG: {     storeA = _:plyHitsSmg;     storeB = _:plyHitsSISmg;      storeC = ( hitgroup == HITGROUP_HEAD ) ? (_:plyHeadshotsSmg) : -1; }
+                case WPTYPE_SNIPER: {  storeA = _:plyHitsSniper;  storeB = _:plyHitsSISniper;   storeC = ( hitgroup == HITGROUP_HEAD ) ? (_:plyHeadshotsSniper) : -1; }
                 case WPTYPE_PISTOL: {
-                        storeA = plyHitsPistol;  storeB = plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1;
+                        storeA = _:plyHitsPistol;  storeB = _:plyHitsSIPistol;   storeC = ( hitgroup == HITGROUP_HEAD ) ? (_:plyHeadshotsPistol) : -1;
                         // incapped: don't count hits
                         if ( IsPlayerIncapacitated(attacker) ) { storeA = -1; }
                     }
@@ -1753,11 +1753,11 @@ public Action: Event_PlayerHurt ( Handle:event, const String:name[], bool:dontBr
             {
                 switch ( weaponType )
                 {
-                    case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; storeB = plyHitsTankShotgun;  }
-                    case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeB = plyHitsTankSmg; }
-                    case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeB = plyHitsTankSniper; }
+                    case WPTYPE_SHOTGUN: { storeA = _:plyHitsShotgun; storeB = _:plyHitsTankShotgun;  }
+                    case WPTYPE_SMG: {     storeA = _:plyHitsSmg;     storeB = _:plyHitsTankSmg; }
+                    case WPTYPE_SNIPER: {  storeA = _:plyHitsSniper;  storeB = _:plyHitsTankSniper; }
                     case WPTYPE_PISTOL: {
-                            storeA = plyHitsPistol;  storeB = plyHitsTankPistol;
+                            storeA = _:plyHitsPistol;  storeB = _:plyHitsTankPistol;
                             // incapped: don't count hits
                             if ( IsPlayerIncapacitated(attacker) ) { storeA = -1; }
                         }
@@ -1984,11 +1984,11 @@ public Action: Event_InfectedHurt ( Handle:event, const String:name[], bool:dont
     
     switch ( weaponType )
     {
-        case WPTYPE_SHOTGUN: { storeA = plyHitsShotgun; }
-        case WPTYPE_SMG: {     storeA = plyHitsSmg;     storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSmg : -1; }
-        case WPTYPE_SNIPER: {  storeA = plyHitsSniper;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsSniper : -1; }
+        case WPTYPE_SHOTGUN: { storeA = _:plyHitsShotgun; }
+        case WPTYPE_SMG: {     storeA = _:plyHitsSmg;     storeC = ( hitgroup == HITGROUP_HEAD ) ? (_:plyHeadshotsSmg) : -1; }
+        case WPTYPE_SNIPER: {  storeA = _:plyHitsSniper;  storeC = ( hitgroup == HITGROUP_HEAD ) ? (_:plyHeadshotsSniper) : -1; }
         case WPTYPE_PISTOL: {
-                storeA = plyHitsPistol;  storeC = ( hitgroup == HITGROUP_HEAD ) ? plyHeadshotsPistol : -1;
+                storeA = _:plyHitsPistol;  storeC = ( hitgroup == HITGROUP_HEAD ) ? (_:plyHeadshotsPistol) : -1;
                 // incapped: don't count hits
                 if ( IsPlayerIncapacitated(attacker) ) { storeA = -1; }
             }
@@ -2682,14 +2682,14 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
     {
         if ( iTeam == -1 ) {
             for ( k = 0; k <= MAXRNDSTATS; k++ ) {
-                if ( bFailedRound && k == rndRestarts ) { continue; }
+                if ( bFailedRound && k == _:rndRestarts ) { continue; }
                 g_strRoundData[g_iRound][LTEAM_A][k] = 0;
                 g_strRoundData[g_iRound][LTEAM_B][k] = 0;
             }
         }
         else {
             for ( k = 0; k <= MAXRNDSTATS; k++ ) {
-                if ( bFailedRound && k == rndRestarts ) { continue; }
+                if ( bFailedRound && k == _:rndRestarts ) { continue; }
                 g_strRoundData[g_iRound][iTeam][k] = 0;
             }
         }
@@ -6595,7 +6595,7 @@ stock GetPlayerIndexForClient ( client )
     }
     else
     {
-        GetClientAuthString( client, sSteamId, sizeof(sSteamId) );
+        GetClientAuthId(client, AuthId_Steam2, sSteamId, sizeof(sSteamId));
     }
     
     return GetPlayerIndexForSteamId( sSteamId, client );
