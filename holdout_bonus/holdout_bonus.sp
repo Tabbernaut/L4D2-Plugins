@@ -86,7 +86,7 @@ new     String: g_sHoldoutEndHook       [MAXSTR];
         actually arrives (not when they press the ferry button!).
         If they lived long enough for the ferry to arrive, they get
         the full holdout bonus.
-        
+
 */
 
 public Plugin: myinfo =
@@ -101,11 +101,11 @@ public Plugin: myinfo =
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
     RegPluginLibrary("holdout_bonus");
-    
+
     g_hForwardSet =     CreateGlobalForward("OnHoldOutBonusSet", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell );
     g_hForwardStart =   CreateGlobalForward("OnHoldOutBonusStart", ET_Ignore, Param_Cell );
     g_hForwardEnd =     CreateGlobalForward("OnHoldOutBonusEnd", ET_Ignore, Param_Cell, Param_Cell );
-    
+
     return APLRes_Success;
 }
 
@@ -128,11 +128,11 @@ public OnLibraryAdded(const String:name[])
 
 public OnPluginStart()
 {
-    // events    
+    // events
     HookEvent("round_start",                Event_RoundStart,               EventHookMode_PostNoCopy);
     HookEvent("player_death",               Event_PlayerDeath,              EventHookMode_Post);
-    HookEvent("defibrillator_used",         Event_DefibUsed,                EventHookMode_Post);    
-    
+    HookEvent("defibrillator_used",         Event_DefibUsed,                EventHookMode_Post);
+
     // cvars
     g_hCvarReportMode = CreateConVar(
             "sm_hbonus_report",
@@ -140,14 +140,14 @@ public OnPluginStart()
             "The way the bonus is reported. 0: no report; 1: report only on round end; 2: also report after event; 3: also report when event starts; 4: only report on event end",
             FCVAR_NONE, true, 0.0, false
         );
-    
+
     g_hCvarPointsMode = CreateConVar(
             "sm_hbonus_pointsmode",
             "2",                                        // 0: disable; 1: leave distance unchanged; 2: substract points from distance
             "The way the holdout bonus is awarded. 0: disable; 1: leave distance unchanged; 2: substract points from distance.",
             FCVAR_NONE, true, 0.0, false
         );
-    
+
     g_hCvarKeyValuesPath = CreateConVar(
             "sm_hbonus_configpath",
             "configs/holdoutmapinfo.txt",
@@ -156,14 +156,14 @@ public OnPluginStart()
         );
 
     HookConVarChange(g_hCvarKeyValuesPath, ConvarChange_KeyValuesPath);
-    
+
     // commands:
     RegConsoleCmd( "sm_hbonus", Cmd_DisplayBonus, "Shows current holdout bonus" );
 
 public OnPluginEnd()
 {
     KV_Close();
-    
+
 }
 }
 
@@ -186,7 +186,7 @@ public ConvarChange_KeyValuesPath(Handle:convar, const String:oldValue[], const 
 public OnMapStart()
 {
     g_bSecondHalf = false;
-    
+
     // check for holdout event
     KV_UpdateHoldoutMapInfo();
 }
@@ -194,7 +194,7 @@ public OnMapStart()
 public OnMapEnd()
 {
     g_bInRound = false;
-    
+
     if ( g_kHIData != INVALID_HANDLE )
     {
         KvRewind(g_kHIData);
@@ -204,10 +204,10 @@ public OnMapEnd()
 public Event_RoundStart (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
     if ( g_bInRound ) { return; }
-    
+
     g_bInRound = true;
     g_bPaused = false;
-    
+
     // reset progress
     ResetTracking();
 
@@ -220,7 +220,7 @@ public Action: Timer_SetDisplayPoints(Handle:timer)
 {
     // store holdout bonus points (will get set again if round goes live for real)
     // this is just for display purposes
-    
+
     if (g_iHoldoutPointAbsolute) {
         g_iPointsBonus = g_iHoldoutPointAbsolute;
     } else {
@@ -252,7 +252,7 @@ public PBONUS_RequestFinalUpdate( &update )
         HoldOutEnds( true );
         update += g_iActualBonus;
     }
-    
+
     return update;
 }
 
@@ -266,7 +266,7 @@ public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
             // game ended while holdout was active! wipe before they made it - apply partial bonus
             HoldOutEnds();
         }
-        
+
         // display the puny bonus (if enabled)
         new iReport = GetConVarInt(g_hCvarReportMode);
         if (iReport && iReport != REPORT_ONLYEVENT && GetConVarBool(g_hCvarPointsMode) )
@@ -274,7 +274,7 @@ public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
             DisplayBonusToAll();
         }
     }
-    
+
     g_bInRound = false;
     g_bSecondHalf = true;
     g_bPlayersLeftStart = false;
@@ -283,7 +283,7 @@ public Action:L4D2_OnEndVersusModeRound(bool:countSurvivors)
 stock RoundReallyStarting()
 {
     g_bPlayersLeftStart = true;
-    
+
     if ( g_bHoldoutThisRound )
     {
         // get map distance and bonus points value
@@ -298,7 +298,7 @@ stock RoundReallyStarting()
                 } else {
                     g_iPointsBonus = RoundFloat( float(g_iMapDistance) * g_fHoldoutPointFactor );
                 }
-                
+
                 // change distance
                 if ( GetConVarInt(g_hCvarPointsMode) == PMODE_DIST )
                 {
@@ -313,30 +313,30 @@ stock RoundReallyStarting()
             } else {
                 g_iPointsBonus = RoundFloat( float(g_iMapDistance) * g_fHoldoutPointFactor );
             }
-            
+
             // change distance
             if ( GetConVarInt(g_hCvarPointsMode) == PMODE_DIST )
             {
                 L4D_SetVersusMaxCompletionScore( g_iMapDistance - g_iPointsBonus );
             }
         }
-        
+
         Call_StartForward(g_hForwardSet);
         Call_PushCell(g_iPointsBonus);
         Call_PushCell(g_iMapDistance);
         Call_PushCell(g_iHoldoutTime);
         Call_PushCell( (GetConVarInt(g_hCvarPointsMode) == PMODE_DIST) ? 1 : 0);
         Call_Finish();
-        
+
         // hook any triggers / buttons that may be required
         HookHoldOut();
     }
-    
+
     /*
         remember distance, if we're changing it
         second half: check if distance is different from what we expect it to be
             if so: recalculate (so it's compatible with randumb :))
-    
+
         only change if   g_hCvarPointsMode == PMODE_DIST
     */
 }
@@ -358,17 +358,17 @@ public OnUnpause()
 public HoldOutStarts ( const String:output[], caller, activator, Float:delay )
 {
     if ( g_bHoldoutActive ) { return; }
-    
+
     PrintDebug( 1, "Holdout Starts (hooked)." );
-    
+
     g_bHoldoutActive = true;
     g_iHoldoutStartTime = GetTime();
-    
+
     // check every second
     CreateTimer( 1.0, Timer_HoldOutCheck, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
-    
+
     ResetTracking();
-    
+
     // take into account current survivor status
     new chr;
     for ( new client = 1; client <= MaxClients; client++ )
@@ -379,14 +379,14 @@ public HoldOutStarts ( const String:output[], caller, activator, Float:delay )
             g_iCharProgress[chr] = -1;
         }
     }
-    
+
     // report
     new iReport = GetConVarInt(g_hCvarReportMode);
     if ( iReport > 2 && iReport != REPORT_ONLYEVENT )
     {
         PrintToChatAll( "\x01Holdout event starts... (\x04%i\x01 bonus over \x05%i\x01 seconds)", g_iPointsBonus, g_iHoldoutTime );
     }
-    
+
     Call_StartForward(g_hForwardStart);
     Call_PushCell(g_iHoldoutTime);
     Call_Finish();
@@ -396,9 +396,9 @@ public HoldOutEnds_Hook ( const String:output[], caller, activator, Float:delay 
 {
     // hooked on map logic
     // only use as safeguard / check for time
-    
+
     PrintDebug( 1, "Holdout Ends (hooked): abs: %i / prg %i / defined %i.", GetTime() - g_iHoldoutStartTime, g_iProgress, g_iHoldoutTime );
-    
+
     if ( g_bHoldoutActive )
     {
         // safeguard: make sure the whole time is awarded
@@ -412,11 +412,11 @@ public HoldOutEnds_Hook ( const String:output[], caller, activator, Float:delay 
 stock HoldOutEnds( bool:bByRequest = false )
 {
     g_bHoldoutActive = false;
-    
+
     PrintDebug( 1, "Holdout over, awarding bonus: prg %i / defined %i.", g_iProgress, g_iHoldoutTime );
-    
+
     g_iActualBonus = CalculateHoldOutBonus();
-    
+
     // only give bonus if enabled
     if ( GetConVarBool(g_hCvarPointsMode) )
     {
@@ -424,14 +424,14 @@ stock HoldOutEnds( bool:bByRequest = false )
         {
             PBONUS_AddRoundBonus( g_iActualBonus );
         }
-        
+
         // only show bonus on event over if report 2+ (REPORT_ONLYEVENT is fine for this too)
         if ( GetConVarInt(g_hCvarReportMode) > 1 )
         {
             DisplayBonusToAll();
         }
     }
-    
+
     Call_StartForward(g_hForwardEnd);
     Call_PushCell(g_iActualBonus);
     Call_PushCell(g_iProgress);
@@ -443,19 +443,19 @@ public Action: Timer_HoldOutCheck ( Handle: timer )
 {
     // stop if hook trigger already caught
     if ( !g_bHoldoutActive ) { return Plugin_Stop; }
-    
+
     // ignore while paused
     if ( g_bPaused ) { return Plugin_Continue; }
-    
+
     g_iProgress++;
-    
+
     // if set time entirely passed, stop the clock
     if ( g_iProgress == g_iHoldoutTime )
     {
         HoldOutEnds();
         return Plugin_Stop;
     }
-    
+
     return Plugin_Continue;
 }
 
@@ -464,13 +464,13 @@ stock HookHoldOut()
 {
     new iEntity = -1;
     decl String:sTargetName[128];
-    
+
     // find and hook start entity
     if ( strlen(g_sHoldoutStart) || g_iHoldoutStartHamId )
     {
         while ( (iEntity = FindEntityByClassname(iEntity, g_sHoldoutStartClass)) != -1 )
         {
-            if ( strlen(g_sHoldoutStart) ) 
+            if ( strlen(g_sHoldoutStart) )
             {
                 GetEntityName( iEntity, sTargetName, sizeof(sTargetName) );
                 if ( StrEqual( sTargetName, g_sHoldoutStart, false ) )
@@ -486,13 +486,13 @@ stock HookHoldOut()
             }
         }
     }
-    
+
     // end
     if ( strlen(g_sHoldoutEnd) || g_iHoldoutEndHamId)
     {
         while ( (iEntity = FindEntityByClassname(iEntity, g_sHoldoutEndClass)) != -1 )
         {
-            if ( strlen(g_sHoldoutEnd) ) 
+            if ( strlen(g_sHoldoutEnd) )
             {
                 GetEntityName( iEntity, sTargetName, sizeof(sTargetName) );
                 if ( StrEqual( sTargetName, g_sHoldoutEnd, false ) )
@@ -514,19 +514,19 @@ stock CalculateHoldOutBonus()
 {
     // check status (of all survivors)
     // calculate bonus
-    
+
     new Float: fBonusPart = float(g_iPointsBonus) / float(TEAM_SIZE);
     new tmpProg = 0;
     new Float: fBonus = 0.0;
-    
+
     for ( new chr = 0; chr < MAXCHARACTERS; chr++ )
     {
         // skip ones dead from the start
         if ( g_iCharProgress[chr] == -1 ) { continue; }
-        
+
         // 0 means they made it until 'now'
         tmpProg = ( g_iCharProgress[chr] == 0 ) ? g_iProgress : g_iCharProgress[chr];
-        
+
         // add bonus for char
         if ( g_iHoldoutTime != tmpProg ) {
             fBonus += fBonusPart / float(g_iHoldoutTime) * float(tmpProg);
@@ -534,7 +534,7 @@ stock CalculateHoldOutBonus()
             fBonus += fBonusPart;
         }
     }
-    
+
     return RoundFloat( fBonus );
 }
 
@@ -542,10 +542,10 @@ stock CalculateHoldOutBonus()
 public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontBroadcast )
 {
     if ( !g_bPlayersLeftStart || !g_bHoldoutActive ) { return; }
-    
+
     new client = GetClientOfUserId( GetEventInt(event, "userid") );
     if ( !IS_VALID_SURVIVOR(client) ) { return; }
-    
+
     // stop progress for this character
     new chr = GetPlayerCharacter(client);
     g_iCharProgress[chr] = g_iProgress;
@@ -554,10 +554,10 @@ public Action: Event_PlayerDeath ( Handle:event, const String:name[], bool:dontB
 public Action: Event_DefibUsed (Handle:event, const String:name[], bool:dontBroadcast)
 {
     if ( !g_bPlayersLeftStart || !g_bHoldoutActive ) { return; }
-    
+
     new client = GetClientOfUserId( GetEventInt(event, "subject") );
     if ( !IS_VALID_SURVIVOR(client) ) { return; }
-    
+
     // reset progress so it will be matched to g_iProgress
     new chr = GetPlayerCharacter(client);
     g_iCharProgress[chr] = 0;
@@ -569,7 +569,7 @@ public Action: Event_DefibUsed (Handle:event, const String:name[], bool:dontBroa
 public Action: Cmd_DisplayBonus (client, args)
 {
     new String: sMsg[128];
-    
+
     // build message: current / round's bonus
     if ( !g_bHoldoutThisRound )
     {
@@ -590,7 +590,7 @@ public Action: Cmd_DisplayBonus (client, args)
             Format( sMsg, sizeof(sMsg), "\x04%i\x01 out of \x05%i\x01 [not started yet].", g_iActualBonus, g_iPointsBonus );
         }
     }
-    
+
     // display message
     if ( IS_VALID_INGAME(client) )
     {
@@ -624,9 +624,9 @@ KV_Load()
     decl String:sNameBuff[PLATFORM_MAX_PATH];
     GetConVarString( g_hCvarKeyValuesPath, sNameBuff, sizeof(sNameBuff) );
     BuildPath(Path_SM, sNameBuff, sizeof(sNameBuff), sNameBuff);
-    
+
     g_kHIData = CreateKeyValues("HoldoutEvents");
-    
+
     if ( !FileToKeyValues(g_kHIData, sNameBuff) )
     {
         LogError("Couldn't load HoldOutMapInfo data! (file: %s)", sNameBuff);
@@ -643,7 +643,7 @@ bool: KV_UpdateHoldoutMapInfo()
     g_fHoldoutPointFactor = 0.0;    // how much the event is worth as a fraction of map distance
     g_iHoldoutPointAbsolute = 0;
     g_iHoldoutTime = 0;             // how long the event lasts
-    
+
     if ( g_kHIData == INVALID_HANDLE ) { return false; }
 
     /*
@@ -651,10 +651,10 @@ bool: KV_UpdateHoldoutMapInfo()
         figure out a way to get information about how the event is started
         so we can do tracking.. targetname listening, I assume..
     */
-    
+
     new String: mapname[64];
     GetCurrentMap(mapname, sizeof(mapname));
-    
+
     // get keyvalues
     if ( KvJumpToKey(g_kHIData, mapname) )
     {
@@ -662,28 +662,28 @@ bool: KV_UpdateHoldoutMapInfo()
         g_fHoldoutPointFactor = KvGetFloat(g_kHIData, "pointfactor", 0.0);
         g_iHoldoutPointAbsolute = KvGetNum(g_kHIData, "pointabsolute", 0);
         g_iHoldoutTime = KvGetNum(g_kHIData, "time", 0);
-        
+
         if ( g_bHoldoutThisRound )
         {
             KvGetString( g_kHIData, "t_start", g_sHoldoutStart, MAXSTR, "" );
             g_iHoldoutStartHamId = KvGetNum( g_kHIData, "t_s_hamid", 0 );
             KvGetString( g_kHIData, "t_s_class", g_sHoldoutStartClass, MAXSTR, "" );
             KvGetString( g_kHIData, "t_s_hook", g_sHoldoutStartHook, MAXSTR, "" );
-            
+
             KvGetString( g_kHIData, "t_end", g_sHoldoutEnd, MAXSTR, "" );
             g_iHoldoutEndHamId = KvGetNum( g_kHIData, "t_e_hamid", 0 );
             KvGetString( g_kHIData, "t_e_class", g_sHoldoutEndClass, MAXSTR, "" );
             KvGetString( g_kHIData, "t_e_hook", g_sHoldoutEndHook, MAXSTR, "" );
         }
-        
+
         PrintDebug( 1, "Read holdout mapinfo for '%s': %i / (factor: %.2f; abs: %i).",
             mapname, g_bHoldoutThisRound,
             g_fHoldoutPointFactor, g_iHoldoutPointAbsolute
         );
-        
+
         return true;
     }
-    
+
     return false;
 }
 
@@ -694,7 +694,7 @@ stock ResetTracking()
 {
     g_iProgress = 0;
     g_iActualBonus = 0;
-    
+
     for ( new i = 0; i < MAXCHARACTERS; i++ )
     {
         g_iCharProgress[i] = 0;
@@ -709,13 +709,13 @@ GetEntityName( iEntity, String:sTargetName[], iSize )
 stock GetPlayerCharacter ( client )
 {
     new tmpChr = GetEntProp(client, Prop_Send, "m_survivorCharacter");
-    
+
     // use models when incorrect character returned
     if ( tmpChr < 0 || tmpChr >= MAXCHARACTERS )
     {
         decl String:model[256];
         GetEntPropString(client, Prop_Data, "m_ModelName", model, sizeof(model));
-        
+
         if (StrContains(model, "gambler") != -1) {          tmpChr = 0; }
         else if (StrContains(model, "coach") != -1) {       tmpChr = 2; }
         else if (StrContains(model, "mechanic") != -1) {    tmpChr = 3; }
@@ -726,7 +726,7 @@ stock GetPlayerCharacter ( client )
         else if (StrContains(model, "manager") != -1) {     tmpChr = 2; }
         else {                                              tmpChr = 0; }
     }
-    
+
     return tmpChr;
 }
 
