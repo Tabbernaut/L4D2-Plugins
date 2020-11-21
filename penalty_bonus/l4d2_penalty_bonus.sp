@@ -2,8 +2,7 @@
 
 #include <sourcemod>
 #include <sdktools>
-#include <left4downtown>
-#include <l4d2_direct>
+#include <left4dhooks>
 #include <l4d2util>
 
 #define DEBUG_MODE false
@@ -44,7 +43,7 @@ public Plugin:myinfo =
     name = "Penalty bonus system",
     author = "Tabun",
     description = "Allows other plugins to set bonuses for a round that will be given even if the saferoom is not reached.",
-    version = "0.1.1",
+    version = "0.2",
     url = ""
 }
 
@@ -170,12 +169,12 @@ public OnPluginStart()
     g_hCvarDefibPenalty = FindConVar("vs_defib_penalty");
 
     // cvars
-    g_hCvarEnabled = CreateConVar(      "sm_pbonus_enable",         "1",    "Whether the penalty-bonus system is enabled.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-    g_hCvarDoDisplay = CreateConVar(    "sm_pbonus_display",        "1",    "Whether to display bonus at round-end and with !bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-    g_hCvarReportChange = CreateConVar( "sm_pbonus_reportchanges",  "1",    "Whether to report changes when they are made to the current bonus.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-    g_hCvarBonusTank = CreateConVar(    "sm_pbonus_tank",           "0",    "Give this much bonus when a tank is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
-    g_hCvarBonusWitch = CreateConVar(   "sm_pbonus_witch",          "0",    "Give this much bonus when a witch is killed (0 to disable entirely).", FCVAR_PLUGIN, true, 0.0);
-    
+    g_hCvarEnabled = CreateConVar(      "sm_pbonus_enable",         "1",    "Whether the penalty-bonus system is enabled.", FCVAR_NONE, true, 0.0, true, 1.0);
+    g_hCvarDoDisplay = CreateConVar(    "sm_pbonus_display",        "1",    "Whether to display bonus at round-end and with !bonus.", FCVAR_NONE, true, 0.0, true, 1.0);
+    g_hCvarReportChange = CreateConVar( "sm_pbonus_reportchanges",  "1",    "Whether to report changes when they are made to the current bonus.", FCVAR_NONE, true, 0.0, true, 1.0);
+    g_hCvarBonusTank = CreateConVar(    "sm_pbonus_tank",           "0",    "Give this much bonus when a tank is killed (0 to disable entirely).", FCVAR_NONE, true, 0.0);
+    g_hCvarBonusWitch = CreateConVar(   "sm_pbonus_witch",          "0",    "Give this much bonus when a witch is killed (0 to disable entirely).", FCVAR_NONE, true, 0.0);
+
     // hook events
     HookEvent("defibrillator_used",     Event_DefibUsed,            EventHookMode_PostNoCopy);
     HookEvent("witch_killed",           Event_WitchKilled,          EventHookMode_PostNoCopy);
