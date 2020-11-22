@@ -662,7 +662,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 /*
                     handle old shotgun blast: too long ago? not the same blast
                 */
-                if ( g_iHunterShotDmg[victim][attacker] > 0 && FloatSub(GetGameTime(), g_fHunterShotStart[victim][attacker]) > SHOTGUN_BLAST_TIME )
+                if ( g_iHunterShotDmg[victim][attacker] > 0 && (GetGameTime() - g_fHunterShotStart[victim][attacker]) > SHOTGUN_BLAST_TIME )
                 {
                     g_fHunterShotStart[victim][attacker] = 0.0;
                 }
@@ -674,7 +674,7 @@ public Action: Event_PlayerHurt( Handle:event, const String:name[], bool:dontBro
                 */
                 new bool: isPouncing = bool:(
                         GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce")     ||
-                        g_fHunterTracePouncing[victim] != 0.0 && FloatSub( GetGameTime(), g_fHunterTracePouncing[victim] ) < 0.001
+                        g_fHunterTracePouncing[victim] != 0.0 && ( GetGameTime() - g_fHunterTracePouncing[victim] ) < 0.001
                     );
 
                 if ( isPouncing )
@@ -1054,7 +1054,7 @@ public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontB
                     {
                         HandleClear( attacker, victim, g_iSpecialVictim[victim],
                                 ZC_HUNTER,
-                                FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                                ( GetGameTime() - g_fPinTime[victim][0]),
                                 -1.0
                             );
                     }
@@ -1087,7 +1087,7 @@ public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontB
                 {
                     HandleClear( attacker, victim, g_iSpecialVictim[victim],
                             ZC_JOCKEY,
-                            FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                            ( GetGameTime() - g_fPinTime[victim][0]),
                             -1.0
                         );
                 }
@@ -1106,8 +1106,8 @@ public Action: Event_PlayerDeath( Handle:hEvent, const String:name[], bool:dontB
                 {
                     HandleClear( attacker, victim, g_iSpecialVictim[victim],
                             ZC_CHARGER,
-                            (g_fPinTime[victim][1] > 0.0) ? FloatSub( GetGameTime(), g_fPinTime[victim][1]) : -1.0,
-                            FloatSub( GetGameTime(), g_fPinTime[victim][0])
+                            (g_fPinTime[victim][1] > 0.0) ? ( GetGameTime() - g_fPinTime[victim][1]) : -1.0,
+                            ( GetGameTime() - g_fPinTime[victim][0])
                         );
                 }
             }
@@ -1146,7 +1146,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
 
     new zClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
 
-    //PrintDebug(1, " --> Shove from %N on %N (class: %i) -- (last shove time: %.2f / %.2f)", attacker, victim, zClass, g_fVictimLastShove[victim][attacker], FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) );
+    //PrintDebug(1, " --> Shove from %N on %N (class: %i) -- (last shove time: %.2f / %.2f)", attacker, victim, zClass, g_fVictimLastShove[victim][attacker], ( GetGameTime() - g_fVictimLastShove[victim][attacker] ) );
 
     // track on boomers
     if ( zClass == ZC_BOOMER )
@@ -1162,7 +1162,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
                 {
                     HandleClear( attacker, victim, GetEntPropEnt(victim, Prop_Send, "m_pounceVictim"),
                             ZC_HUNTER,
-                            FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                            ( GetGameTime() - g_fPinTime[victim][0]),
                             -1.0,
                             true
                         );
@@ -1173,7 +1173,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
                 {
                     HandleClear( attacker, victim, GetEntPropEnt(victim, Prop_Send, "m_jockeyVictim"),
                             ZC_JOCKEY,
-                            FloatSub( GetGameTime(), g_fPinTime[victim][0]),
+                            ( GetGameTime() - g_fPinTime[victim][0]),
                             -1.0,
                             true
                         );
@@ -1182,7 +1182,7 @@ public Action: Event_PlayerShoved( Handle:event, const String:name[], bool:dontB
         }
     }
 
-    if ( g_fVictimLastShove[victim][attacker] == 0.0 || FloatSub( GetGameTime(), g_fVictimLastShove[victim][attacker] ) >= SHOVE_TIME )
+    if ( g_fVictimLastShove[victim][attacker] == 0.0 || ( GetGameTime() - g_fVictimLastShove[victim][attacker] ) >= SHOVE_TIME )
     {
         if ( GetEntProp(victim, Prop_Send, "m_isAttemptingToPounce") )
         {
@@ -1550,7 +1550,7 @@ public Action: Timer_ChargeCarryEnd( Handle:timer, any:client )
 public Action: Timer_ChargeCheck( Handle:timer, any:client )
 {
     // if something went wrong with the survivor or it was too long ago, forget about it
-    if ( !IS_VALID_SURVIVOR(client) || !g_iVictimCharger[client] || g_fChargeTime[client] == 0.0 || FloatSub( GetGameTime(), g_fChargeTime[client]) > MAX_CHARGE_TIME )
+    if ( !IS_VALID_SURVIVOR(client) || !g_iVictimCharger[client] || g_fChargeTime[client] == 0.0 || ( GetGameTime() - g_fChargeTime[client]) > MAX_CHARGE_TIME )
     {
         return Plugin_Stop;
     }
@@ -1840,7 +1840,7 @@ public Action: Event_BoomerExploded (Handle:event, const String:name[], bool:don
         new attacker = GetClientOfUserId( GetEventInt(event, "attacker") );
         if ( IS_VALID_SURVIVOR(attacker) )
         {
-            HandlePop( attacker, client, g_iBoomerGotShoved[client], FloatSub(GetGameTime(), g_fSpawnTime[client]) );
+            HandlePop( attacker, client, g_iBoomerGotShoved[client], (GetGameTime() - g_fSpawnTime[client]) );
         }
     }
 }
@@ -1960,7 +1960,7 @@ public OnTakeDamagePost_Witch ( victim, attacker, inflictor, Float:damage, damag
         witch_dmg_array[MAXPLAYERS+WTCH_HEALTH] -= RoundToFloor(damage);
 
         // remember last shot
-        if ( g_fWitchShotStart[attacker] == 0.0 || FloatSub(GetGameTime(), g_fWitchShotStart[attacker]) > SHOTGUN_BLAST_TIME )
+        if ( g_fWitchShotStart[attacker] == 0.0 || (GetGameTime() - g_fWitchShotStart[attacker]) > SHOTGUN_BLAST_TIME )
         {
             // reset last shot damage count and attacker
             g_fWitchShotStart[attacker] = GetGameTime();
@@ -2143,8 +2143,8 @@ public Action: Event_TonguePullStopped (Handle:event, const String:name[], bool:
     // clear check -  if the smoker itself was not shoved, handle the clear
     HandleClear( attacker, smoker, victim,
             ZC_SMOKER,
-            (g_fPinTime[smoker][1] > 0.0) ? FloatSub( GetGameTime(), g_fPinTime[smoker][1]) : -1.0,
-            FloatSub( GetGameTime(), g_fPinTime[smoker][0]),
+            (g_fPinTime[smoker][1] > 0.0) ? ( GetGameTime() - g_fPinTime[smoker][1]) : -1.0,
+            ( GetGameTime() - g_fPinTime[smoker][0]),
             bool:( reason != CUT_SLASH && reason != CUT_KILL )
         );
 
@@ -2213,8 +2213,8 @@ public Action: Event_ChokeStop (Handle:event, const String:name[], bool:dontBroa
     // if the smoker itself was not shoved, handle the clear
     HandleClear( attacker, smoker, victim,
             ZC_SMOKER,
-            (g_fPinTime[smoker][1] > 0.0) ? FloatSub( GetGameTime(), g_fPinTime[smoker][1]) : -1.0,
-            FloatSub( GetGameTime(), g_fPinTime[smoker][0]),
+            (g_fPinTime[smoker][1] > 0.0) ? ( GetGameTime() - g_fPinTime[smoker][1]) : -1.0,
+            ( GetGameTime() - g_fPinTime[smoker][0]),
             bool:( reason != CUT_SLASH && reason != CUT_KILL )
         );
 }
@@ -2351,7 +2351,7 @@ public Action: Timer_CheckAlarm (Handle:timer, any:entity)
 {
     //PrintToChatAll( "checking alarm: time: %.3f", GetGameTime() - g_fLastCarAlarm );
 
-    if ( FloatSub(GetGameTime(), g_fLastCarAlarm) < CARALARM_MIN_TIME )
+    if ( (GetGameTime() - g_fLastCarAlarm) < CARALARM_MIN_TIME )
     {
         // got a match, drop stuff from trie and handle triggering
         decl String:car_key[10];
@@ -2447,7 +2447,7 @@ stock HandlePop( attacker, victim, shoveCount, Float:timeAlive )
             PrintToChatAll( "\x04%N\x01 popped a boomer.", attacker );
         }
     }
-    
+
     Call_StartForward(g_hForwardBoomerPop);
     Call_PushCell(attacker);
     Call_PushCell(victim);
