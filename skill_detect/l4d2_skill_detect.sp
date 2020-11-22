@@ -2524,7 +2524,7 @@ stock HandleDeadstop( attacker, victim )
             PrintToChatAll( "\x04%N\x01 deadstopped a hunter.", attacker );
         }
     }
-    
+
     Call_StartForward(g_hForwardHunterDeadstop);
     Call_PushCell(attacker);
     Call_PushCell(victim);
@@ -2545,7 +2545,7 @@ stock HandleShove( attacker, victim, zombieClass )
             PrintToChatAll( "\x04%N\x01 shoved an SI.", attacker );
         }
     }
-    
+
     Call_StartForward(g_hForwardSIShove);
     Call_PushCell(attacker);
     Call_PushCell(victim);
@@ -2584,7 +2584,7 @@ stock HandleSkeet( attacker, victim, bool:bMelee = false, bool:bSniper = false, 
                 );
         }
     }
-    
+
     // call forward
     if ( bSniper )
     {
@@ -2632,7 +2632,7 @@ stock HandleNonSkeet( attacker, victim, damage, bool:bOverKill = false, bool:bMe
             PrintToChatAll( "\x01Hunter was \x04not\x01 skeeted (\x03%i\x01 damage).%s", damage, (bOverKill) ? "(Would've skeeted if hunter were unchipped!)" : "" );
         }
     }
-    
+
     // call forward
     if ( bSniper )
     {
@@ -2678,7 +2678,7 @@ HandleCrown( attacker, damage )
             PrintToChatAll( "A witch was crowned." );
         }
     }
-    
+
     // call forward
     Call_StartForward(g_hForwardCrown);
     Call_PushCell(attacker);
@@ -2699,7 +2699,7 @@ HandleDrawCrown( attacker, damage, chipdamage )
             PrintToChatAll( "A witch was draw-crowned (\x03%i\x01 damage, \x05%i\x01 chip).", damage, chipdamage );
         }
     }
-    
+
     // call forward
     Call_StartForward(g_hForwardDrawCrown);
     Call_PushCell(attacker);
@@ -2723,7 +2723,7 @@ HandleTongueCut( attacker, victim )
             PrintToChatAll( "\x04%N\x01 cut smoker tongue.", attacker );
         }
     }
-    
+
     // call forward
     Call_StartForward(g_hForwardTongueCut);
     Call_PushCell(attacker);
@@ -2746,7 +2746,7 @@ HandleSmokerSelfClear( attacker, victim, bool:withShove = false )
             PrintToChatAll( "\x04%N\x01 self-cleared from a smoker tongue%s.", attacker, (withShove) ? " by shoving" : "" );
         }
     }
-    
+
     // call forward
     Call_StartForward(g_hForwardSmokerSelfClear);
     Call_PushCell(attacker);
@@ -2779,7 +2779,7 @@ HandleRockSkeeted( attacker, victim )
         */
         PrintToChatAll( "\x04%N\x01 skeeted a tank rock.", attacker );
     }
-    
+
     Call_StartForward(g_hForwardRockSkeeted);
     Call_PushCell(attacker);
     Call_PushCell(victim);
@@ -2804,7 +2804,7 @@ stock HandleHunterDP( attacker, victim, actualDamage, Float:calculatedDamage, Fl
             PrintToChatAll( "A hunter high-pounced \x05%N\x01 (\x03%i\x01 damage, height: \x05%i\x01).", victim, RoundFloat(calculatedDamage), RoundFloat(height) );
         }
     }
-    
+
     Call_StartForward(g_hForwardHunterDP);
     Call_PushCell(attacker);
     Call_PushCell(victim);
@@ -2839,7 +2839,7 @@ stock HandleJockeyDP( attacker, victim, Float:height )
     Call_PushCell( (height >= GetConVarFloat(g_hCvarJockeyDPThresh)) ? 1 : 0 );
     Call_Finish();
 }
-    
+
 // deathcharges
 stock HandleDeathCharge( attacker, victim, Float:height, Float:distance, bool:bCarried = true )
 {
@@ -2884,7 +2884,7 @@ stock HandleClear( attacker, victim, pinVictim, zombieClass, Float:clearTimeA, F
     if ( clearTimeB < 0 && clearTimeB != -1.0 ) { clearTimeB = 0.0; }
 
     PrintDebug(0, "Clear: %i freed %i from %i: time: %.2f / %.2f -- class: %s (with shove? %i)", attacker, pinVictim, victim, clearTimeA, clearTimeB, g_csSIClassName[zombieClass], bWithShove );
-    
+
     if ( attacker != pinVictim && GetConVarBool(g_hCvarReport) && GetConVarInt(g_hCvarReportFlags) & REP_INSTACLEAR )
     {
         new Float: fMinTime = GetConVarFloat(g_hCvarInstaTime);
@@ -3023,7 +3023,7 @@ stock HandleCarAlarmTriggered( survivor, infected, reason )
             PrintToChatAll( "\x05%N\x01 triggered an alarm.", survivor );
         }
     }
-    
+
     Call_StartForward(g_hForwardAlarmTriggered);
     Call_PushCell(survivor);
     Call_PushCell(infected);
