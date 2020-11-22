@@ -2497,7 +2497,6 @@ stock HandleLevelHurt( attacker, victim, damage )
         }
         else {
             PrintToChatAll( "A charger was chip-leveled (\x03%i\x01 damage).", damage );
-            CPrintToChatAll( "{green}★ {olive}%N {blue}chip-leveled {default}a charger ({blue}%i dmg{default})", attacker, damage );
         }
     }
 
