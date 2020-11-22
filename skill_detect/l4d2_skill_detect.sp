@@ -176,15 +176,16 @@ enum strAbility
     ABL_ROCKTHROW
 };
 
-enum _:strRockData
+enum
 {
     rckDamage,
     rckTank,
-    rckSkeeter
+    rckSkeeter,
+    strRockData
 };
 
 // witch array entries (maxplayers+index)
-enum _:strWitchArray
+enum
 {
     WTCH_NONE,
     WTCH_HEALTH,
@@ -192,16 +193,18 @@ enum _:strWitchArray
     WTCH_STARTLED,
     WTCH_CROWNER,
     WTCH_CROWNSHOT,
-    WTCH_CROWNTYPE
+    WTCH_CROWNTYPE,
+    strWitchArray
 };
 
-enum _:enAlarmReasons
+enum
 {
     CALARM_UNKNOWN,
     CALARM_HIT,
     CALARM_TOUCHED,
     CALARM_EXPLOSION,
-    CALARM_BOOMER
+    CALARM_BOOMER,
+    enAlarmReasons
 };
 
 new const String: g_csSIClassName[][] =
