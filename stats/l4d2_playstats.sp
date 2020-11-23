@@ -7188,10 +7188,11 @@ stock CheckGameMode()
     GetConVarString( FindConVar("mp_gamemode"), tmpStr, sizeof(tmpStr) );
 
     if (    StrEqual(tmpStr, "coop", false)         ||
-            StrEqual(tmpStr, "mutation4", false)    ||      // hard eight
-            StrEqual(tmpStr, "mutation14", false)   ||      // gib fest
-            StrEqual(tmpStr, "mutation20", false)   ||      // healing gnome
-            StrEqual(tmpStr, "mutationrandomcoop", false)   // healing gnome
+            StrEqual(tmpStr, "mutation4", false)    ||          // hard eight
+            StrEqual(tmpStr, "mutation14", false)   ||          // gib fest
+            StrEqual(tmpStr, "mutation20", false)   ||          // healing gnome
+            StrEqual(tmpStr, "mutationrandomcoop", false) ||    // my random mutation
+            StrEqual(tmpStr, "mutationrandomcoopeasy", false)
     ) {
         g_bModeCampaign = true;
         g_bModeScavenge = false;
