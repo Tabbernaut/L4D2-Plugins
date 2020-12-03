@@ -479,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.30",
+    version = "0.9.40",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -516,6 +516,11 @@ public Plugin: myinfo =
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
+    RegPluginLibrary("playstats");
+
+    CreateNative("PLAYSTATS_BroadcastRoundStats",  Native_BroadcastRoundStats);
+    CreateNative("PLAYSTATS_BroadcastGameStats",  Native_BroadcastGameStats);
+
     g_bLateLoad = late;
     return APLRes_Success;
 }
@@ -7294,5 +7299,38 @@ stock PrintDebug( debugLevel, const String:Message[], any:... )
         VFormat(DebugBuff, sizeof(DebugBuff), Message, 3);
         LogMessage(DebugBuff);
         //PrintToServer(DebugBuff);
+    }
+}
+
+// --------------------------------
+//      Natives
+// --------------------------------
+
+// Forces broadcasting/print of current round stats
+public Native_BroadcastRoundStats(Handle:plugin, numParams)
+{
+    new iFlags = GetConVarInt(g_bModeCampaign ? g_hCvarAutoPrintCoop : g_hCvarAutoPrintVs);
+
+    AutomaticPrintPerClient(iFlags, -1);
+
+    for (new client = 1; client <= MaxClients; client++) {
+        if (g_iCookieValue[client] > 0) {
+            AutomaticPrintPerClient(g_iCookieValue[client], client);
+        }
+    }
+}
+
+// Forces broadcasting/print of current full game stats
+public Native_BroadcastGameStats(Handle:plugin, numParams)
+{
+    // No distinction between round stat printing and game stat printing, so just default to the other native for now.
+    new iFlags = GetConVarInt(g_bModeCampaign ? g_hCvarAutoPrintCoop : g_hCvarAutoPrintVs);
+
+    AutomaticPrintPerClient(iFlags, -1);
+
+    for (new client = 1; client <= MaxClients; client++) {
+        if (g_iCookieValue[client] > 0) {
+            AutomaticPrintPerClient(g_iCookieValue[client], client);
+        }
     }
 }
