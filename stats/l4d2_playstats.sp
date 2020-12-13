@@ -479,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.40",
+    version = "0.9.41",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -874,6 +874,11 @@ public Action: Timer_RoundStart ( Handle:timer )
 
 public Event_RoundEnd (Handle:hEvent, const String:name[], bool:dontBroadcast)
 {
+    // In coop, when we fail, the mission lost event has already handled this.
+    if (g_bModeCampaign && g_bFailedPrevious) {
+        return;
+    }
+
     // called on versus round end
     // and mission failed coop
     HandleRoundEnd();
@@ -885,7 +890,7 @@ stock HandleRoundEnd ( bool: bFailed = false )
     PrintDebug( 1, "HandleRoundEnd (failed: %i): inround: %i, current round: %i", bFailed, g_bInRound, g_iRound);
 
     // only do once
-    if ( !g_bInRound ) { return; }
+    if (! g_bInRound && ! g_bModeCampaign) { return; }
 
     // count survivors
     g_iSurvived[g_iCurTeam] = GetUprightSurvivors();
@@ -926,8 +931,13 @@ stock HandleRoundEnd ( bool: bFailed = false )
     // if no-one is on the server anymore, reset the stats (keep it clean when no real game is going on) [safeguard]
     if ( (g_bModeCampaign || g_bSecondHalf) && !AreClientsConnected() )
     {
-        PrintDebug( 2, "HandleRoundEnd: Reset stats for entire game (no players on server)..." );
-        ResetStats( false, -1 );
+        PrintDebug(2, "HandleRoundEnd: Reset stats for entire game (no players on server)...");
+        ResetStats(false, -1);
+    }
+    else if (g_bModeCampaign && bFailed)
+    {
+        PrintDebug(2, "HandleRoundEnd: Reset stats for coop on mission failure...");
+        ResetStats(true, -1);
     }
 
     if ( !g_bModeCampaign )
@@ -946,6 +956,7 @@ stock HandleRoundEnd ( bool: bFailed = false )
 
     g_bPlayersLeftStart = false;
 }
+
 // fix all 0-endtime values
 stock SetRoundEndTimes()
 {
@@ -7298,7 +7309,7 @@ stock PrintDebug( debugLevel, const String:Message[], any:... )
         decl String:DebugBuff[256];
         VFormat(DebugBuff, sizeof(DebugBuff), Message, 3);
         LogMessage(DebugBuff);
-        //PrintToServer(DebugBuff);
+        PrintToServer(DebugBuff);
     }
 }
 
