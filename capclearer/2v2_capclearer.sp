@@ -3,16 +3,24 @@
 #include <sourcemod>
 #include <sdktools>
 #include <colors>
+#undef REQUIRE_PLUGIN
+#include <l4d2_penalty_bonus>
+#define REQUIRE_PLUGIN
 
 #define SOUND_CLEARED "/ui/critical_event_1.wav"
 
 const TEAM_SURVIVOR = 2;
+
+new bPenaltyBonusAvailable = false;
 
 new Handle: hCvarDebug;
 
 // The damage done to the survivors at the time they are double-capped.
 // If a survivor is already incapped, they don't receive this damage.
 new Handle: hCvarFixedDamageOnUprightSurvivorCapped;
+
+// The points given to the survivors as a round penalty for being cleared.
+new Handle: hCvarPenaltyPointsPerClear;
 
 // Delay after domination starts before checking whether we should clear.
 new Handle: hCvarDelayBeforeCheckingToclearDominators;
@@ -41,21 +49,21 @@ public Plugin:myinfo =
     name = "2v2 Double-Cap Clearer",
     author = "Tabun",
     description = "A plugin that prevents double-caps from ending (2v2) rounds instantly",
-    version = "0.0.1",
+    version = "0.0.2",
     url = "https://github.com/Tabbernault/l4d2-plugins"
 };
 
-/*
-    To Do
-        - maybe: different possible punishments
-            - points: penalty bonus
-            - damage
-            - boomed / horde
-            - teleport to start saferoom? (ugh)
+public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
+{
+    MarkNativeAsOptional("PBONUS_AddRoundBonus");
 
-        - make it clearer that the caps are cleared deliberately
-            maybe some visual effect? sparkles? magic twinklies? hmm.
-*/
+    return APLRes_Success;
+}
+
+public OnAllPluginsLoaded()
+{
+    bPenaltyBonusAvailable = LibraryExists("penaltybonus");
+}
 
 public OnPluginStart()
 {
@@ -66,7 +74,10 @@ public OnPluginStart()
         "Delay in seconds before check & clear when a survivor is dominated.",
         FCVAR_NONE, true, 0.0);
     hCvarFixedDamageOnUprightSurvivorCapped = CreateConVar("capclear_punish_damage", "33",
-        "Amount of damage done (at once) before SI suicides to upright survivors on double-cap.",
+        "Amount of damage done to all upright survivors when they are auto-cleared (punishment).",
+        FCVAR_NONE, true, 0.0);
+    hCvarPenaltyPointsPerClear = CreateConVar("capclear_punish_points", "0",
+        "Amount of points penalty given to survivors when they are auto-cleared (punishment).",
         FCVAR_NONE, true, 0.0);
     hCvarMaximumClearsPerRound = CreateConVar("capclear_maximum_clears", "3",
         "After this many clears, the survivors will not be cleared again this round (0 for no limit).",
@@ -289,7 +300,7 @@ void ClearDominatorsAndPunishSurvivors()
     iClearsLeftThisRound--;
 
     ReportCleared();
-
+    PunishSurvivorsWithPointPenalty();
 
     EmitSoundToAll(SOUND_CLEARED, _, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 0.75);
 
@@ -305,6 +316,18 @@ void ClearDominatorsAndPunishSurvivors()
         PunishSurvivorDominatedBy(i, iPlayerDominatedBy[i]);
         KillDominatorAndReportRemainingHealth(iPlayerDominatedBy[i]);
     }
+}
+
+void PunishSurvivorsWithPointPenalty()
+{
+    new iPenalty = GetConVarInt(hCvarPenaltyPointsPerClear);
+
+    if (! bPenaltyBonusAvailable || iPenalty < 1) {
+        return;
+    }
+
+    PrintDebug(5, "[2v2cap] Punishing survivors with %i point penalty.", iPenalty);
+    PBONUS_AddRoundBonus(-1 * iPenalty);
 }
 
 void PunishSurvivorDominatedBy(survivor, infected)
