@@ -49,7 +49,7 @@ public Plugin:myinfo =
     name = "2v2 Double-Cap Clearer",
     author = "Tabun",
     description = "A plugin that prevents double-caps from ending (2v2) rounds instantly",
-    version = "0.0.2",
+    version = "0.0.3",
     url = "https://github.com/Tabbernault/l4d2-plugins"
 };
 
@@ -273,6 +273,12 @@ bool: ShouldDominatorsBeClearedFromSurvivors()
     // If there are no survivors at all, ignore.
     if (iSurvivorCount == 0) {
         PrintDebug(2, "[2v2cap] Not clearing because there are no survivors");
+        return false;
+    }
+
+    // If no survivors are capped, then clearing makes no sense.
+    if (iDominatedCount == 0) {
+        PrintDebug(2, "[2v2cap] Not clearing because no-one is capped");
         return false;
     }
 
