@@ -479,7 +479,7 @@ public Plugin: myinfo =
     name = "Player Statistics",
     author = "Tabun",
     description = "Tracks statistics, even when clients disconnect. MVP, Skills, Accuracy, etc.",
-    version = "0.9.41",
+    version = "1.0.0",
     url = "https://github.com/Tabbernaut/L4D2-Plugins"
 };
 
@@ -937,6 +937,7 @@ stock HandleRoundEnd ( bool: bFailed = false )
     else if (g_bModeCampaign && bFailed)
     {
         PrintDebug(2, "HandleRoundEnd: Reset stats for coop on mission failure...");
+        AutomaticRoundEndPrint(false);
         ResetStats(true, -1);
     }
 
@@ -2654,7 +2655,7 @@ stock ResetStats ( bool:bCurrentRoundOnly = false, iTeam = -1, bool: bFailedRoun
     if ( !bCurrentRoundOnly )
     {
         // just so nobody gets robbed of seeing stats, print to all
-        DisplayStats( );
+        DisplayStats();
 
         // clear game
         g_iRound = 0;
