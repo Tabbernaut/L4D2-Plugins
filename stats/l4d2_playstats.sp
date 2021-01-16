@@ -7209,7 +7209,8 @@ stock CheckGameMode()
             StrEqual(tmpStr, "mutation14", false)   ||          // gib fest
             StrEqual(tmpStr, "mutation20", false)   ||          // healing gnome
             StrEqual(tmpStr, "mutationrandomcoop", false) ||    // my random mutation
-            StrEqual(tmpStr, "mutationrandomcoopeasy", false)
+            StrEqual(tmpStr, "mutationrandomcoopeasy", false) ||
+            StrEqual(tmpStr, "mutationrandomeasy", false)
     ) {
         g_bModeCampaign = true;
         g_bModeScavenge = false;
