@@ -38,6 +38,12 @@ new Handle: hCvarClearDominatorWhenOneSurvivorIsAlive;
 // Whether, when we're freeing the upright survivor, we should also clear other dominators from incapped survivors.
 new Handle: hCvarClearDominatorFromIncappedSurvivor;
 
+// When a smoker drags a survivor and the tongue situation stays in dragging stage, they never got to choke. Clear after X seconds anyway.
+new Handle: hCvarSecondsForSmokerClear;
+
+// By whom the given survivor player is currently smoker grabbed.
+new iPlayerTongueGrabbedBy[MAXPLAYERS+1];
+
 // By whom the given survivor player is currently dominated (capped) by.
 new iPlayerDominatedBy[MAXPLAYERS+1];
 
@@ -49,7 +55,7 @@ public Plugin:myinfo =
     name = "2v2 Double-Cap Clearer",
     author = "Tabun",
     description = "A plugin that prevents double-caps from ending (2v2) rounds instantly",
-    version = "0.0.3",
+    version = "0.0.4",
     url = "https://github.com/Tabbernault/l4d2-plugins"
 };
 
@@ -91,6 +97,9 @@ public OnPluginStart()
     hCvarClearDominatorFromIncappedSurvivor = CreateConVar("capclear_clear_from_incapped", "0",
         "Whether we should also clear the dominator from incapped survivors aswell.",
         FCVAR_NONE, true, 0.0);
+    hCvarSecondsForSmokerClear = CreateConVar("capclear_smoke_clear_seconds", "5",
+        "After how many seconds to clear a survivor if they never get to choke stage with smoker.",
+        FCVAR_NONE, true, 0.0);
 
     HookEvent("round_start", Event_RoundStart, EventHookMode_Post);
 
@@ -104,6 +113,7 @@ public OnPluginStart()
     HookEvent("tongue_release", Event_DominationEnd, EventHookMode_Post);
     HookEvent("choke_stopped", Event_DominationEnd, EventHookMode_Post);
 
+    HookEvent("tongue_grab", Event_SmokerTongueGrab, EventHookMode_Post);
     HookEvent("player_ledge_grab", Event_PlayerIncapacitated, EventHookMode_Post);
     HookEvent("player_incapacitated", Event_PlayerIncapacitated, EventHookMode_Post);
     HookEvent("player_death", Event_PlayerDeath, EventHookMode_Post);
@@ -153,6 +163,19 @@ public Action: Event_DominationEnd(Handle:event, const String:name[], bool:dontB
     HandleSurvivorCleared(victim);
 }
 
+public Action: Event_SmokerTongueGrab(Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new victim   = GetClientOfUserId(GetEventInt(event, "victim"));
+    new attacker = GetClientOfUserId(GetEventInt(event, "userid"));
+
+    if (! victim) {
+        return;
+    }
+
+    PrintDebug(6, "[2v2cap] Tongue grab start on survivor %i, infected %i", victim, attacker);
+    HandleSurvivorTongueGrabbedBy(victim, attacker);
+}
+
 public Action: Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
 {
     CheckIfWeNeedToClearDominators();
@@ -172,6 +195,7 @@ void ClearDominatedByStatus()
 {
     for (new i = 1; i <= MaxClients; i++) {
         iPlayerDominatedBy[i] = -1;
+        iPlayerTongueGrabbedBy[i] = -1;
     }
 }
 
@@ -184,6 +208,46 @@ void ResetClearCount()
     }
 }
 
+void HandleSurvivorTongueGrabbedBy(survivor, infected)
+{
+    iPlayerTongueGrabbedBy[survivor] = infected;
+
+    float fDelay = GetConVarFloat(hCvarSecondsForSmokerClear);
+
+    if (fDelay < 0.05) {
+        return;
+    }
+
+    new Handle: pack = CreateDataPack();
+    WritePackCell(pack, survivor);
+    WritePackCell(pack, infected);
+
+    CreateTimer(fDelay, DelayedCheckIfSmokerTongueDragTakenTooLong_Timer, pack, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action: DelayedCheckIfSmokerTongueDragTakenTooLong_Timer(Handle:timer, Handle:pack)
+{
+    ResetPack(pack);
+    new survivor = ReadPackCell(pack);
+    new infected = ReadPackCell(pack);
+    CloseHandle(pack);
+
+    CheckIfSmokerDragHasTakenTooLong(survivor, infected);
+}
+
+void CheckIfSmokerDragHasTakenTooLong(int survivor, int infected)
+{
+    if (iPlayerTongueGrabbedBy[survivor] != infected || iPlayerDominatedBy[survivor] != -1) {
+        return;
+    }
+
+    PrintDebug(5, "[2v2cap] Smoker tongue grab deemed to have gone on too long, now dominating survivor %i, infected %i", survivor, infected);
+
+    // Consider the player dominated now, since the choke may never happen.
+    iPlayerTongueGrabbedBy[survivor] = -1;
+    HandleSurvivorDominatedBy(survivor, infected);
+}
+
 void HandleSurvivorDominatedBy(survivor, infected)
 {
     iPlayerDominatedBy[survivor] = infected;
@@ -194,6 +258,7 @@ void HandleSurvivorDominatedBy(survivor, infected)
 void HandleSurvivorCleared(survivor)
 {
     iPlayerDominatedBy[survivor] = -1;
+    iPlayerTongueGrabbedBy[survivor] = -1;
 }
 
 void CheckIfWeNeedToClearDominators()
@@ -208,7 +273,7 @@ void CheckIfWeNeedToClearDominators()
     CreateTimer(fDelay, DelayedCheckIfWeNeedToClearDominators_Timer, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-public Action:DelayedCheckIfWeNeedToClearDominators_Timer(Handle:timer)
+public Action: DelayedCheckIfWeNeedToClearDominators_Timer(Handle:timer)
 {
     CheckIfWeNeedToClearDominatorsNow();
 }
