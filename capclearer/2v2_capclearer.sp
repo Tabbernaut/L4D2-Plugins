@@ -10,6 +10,8 @@
 #define SOUND_CLEARED "/ui/critical_event_1.wav"
 
 const TEAM_SURVIVOR = 2;
+const TEAM_INFECTED = 3;
+const ZC_TANK       = 8;
 
 new bPenaltyBonusAvailable = false;
 
@@ -55,7 +57,7 @@ public Plugin:myinfo =
     name = "2v2 Double-Cap Clearer",
     author = "Tabun",
     description = "A plugin that prevents double-caps from ending (2v2) rounds instantly",
-    version = "0.0.4",
+    version = "0.0.5",
     url = "https://github.com/Tabbernault/l4d2-plugins"
 };
 
@@ -117,6 +119,7 @@ public OnPluginStart()
     HookEvent("player_ledge_grab", Event_PlayerIncapacitated, EventHookMode_Post);
     HookEvent("player_incapacitated", Event_PlayerIncapacitated, EventHookMode_Post);
     HookEvent("player_death", Event_PlayerDeath, EventHookMode_Post);
+    HookEvent("player_bot_replace", Event_PlayerBotReplace, EventHookMode_Post);
 }
 
 public OnMapStart()
@@ -186,6 +189,18 @@ public Action: Event_PlayerIncapacitated(Handle:event, const String:name[], bool
     CheckIfWeNeedToClearDominators();
 }
 
+public Action: Event_PlayerBotReplace(Handle:event, const String:name[], bool:dontBroadcast)
+{
+    new human = GetClientOfUserId(GetEventInt(event, "player"));
+    new bot   = GetClientOfUserId(GetEventInt(event, "bot"));
+
+    if (GetClientTeam(bot) != TEAM_INFECTED || GetEntProp(bot, Prop_Send, "m_zombieClass") == ZC_TANK) {
+        return;
+    }
+
+    UpdateDominatingStatus(human, bot);
+}
+
 
 // -------------------------------
 //      Dominator Handling
@@ -205,6 +220,20 @@ void ResetClearCount()
 
     if (iClearsLeftThisRound == 0) {
         iClearsLeftThisRound = -1;
+    }
+}
+
+void UpdateDominatingStatus(previousDominator, newDominator)
+{
+    for (new i = 1; i <= MaxClients; i++) {
+        if (iPlayerDominatedBy[i] == previousDominator) {
+            iPlayerDominatedBy[i] = newDominator;
+            return;
+        }
+        if (iPlayerTongueGrabbedBy[i] == previousDominator) {
+            iPlayerTongueGrabbedBy[i] = newDominator;
+            return;
+        }
     }
 }
 
@@ -423,6 +452,10 @@ void PunishSurvivorDominatedBy(survivor, infected)
 
 void KillDominatorAndReportRemainingHealth(infected)
 {
+    if (GetEntProp(infected, Prop_Send, "m_zombieClass") == ZC_TANK) {
+        return;
+    }
+
     new iRemainingHealth = GetClientHealth(infected);
 
     CPrintToChatAll(
